@@ -21,11 +21,14 @@ void io_delay() {
 void setup_ivt() {
     // fill IVT (Interrupt Vector Table)
     uint16_t *ivt = (uint16_t *)0;
+    uint16_t code_seg;
+
+    __asm__ volatile ("movw %%cs, %0" : "=r"(code_seg));
 
 	// dummy_callbacks for all interrupts
 	for (uint16_t i = 0; i < 256; i++) {
 		ivt[i * 2]     = (uint16_t)(uintptr_t)c_int_dummy_handler;
-		ivt[i * 2 + 1] = ROM_SEG; // 0xF000
+		ivt[i * 2 + 1] = code_seg; // 0xF000
 	}
 
 	// register callback-handlers for specific interrupts
@@ -59,13 +62,23 @@ void setup_bda() {
 }
 
 uint16_t ram_test_and_setup() {
-    // test the first 640kB for BDA
-    volatile uint16_t *ptr = (uint16_t*)0x7E00; // Start above the Stack/Bootsektor
     uint16_t count = 0;
-    
-    // simple pattern-test
+
+    // uint32_t für die Adressberechnung verwenden!
     for (uint16_t kb = 32; kb < 640; kb++) {
-        ptr = (uint16_t*)(kb * 1024);
+        // Overflow-sichere Adressberechnung
+        uint32_t addr = (uint32_t)kb * 1024;
+        
+        // Segmentgrenze beachten: max 0xFFFF im 16-Bit Segment
+        if (addr > 0xFFFF) break;
+        
+        // VRAM-Bereich auslassen
+        if (addr >= VRAM_BASE && addr < (VRAM_BASE + VRAM_SIZE)) {
+            count = kb;
+            continue;   // VRAM nicht testen
+        }
+
+        volatile uint16_t *ptr = (volatile uint16_t*)((uintptr_t)addr);
         *ptr = 0xAA55;
         if (*ptr != 0xAA55) break;
         *ptr = 0x55AA;
@@ -73,10 +86,8 @@ uint16_t ram_test_and_setup() {
         count = kb;
     }
 
-    // enter result into BDA eintragen
     *(uint16_t*)BDA_MEM_SIZE = count;
-	
-	return count;
+    return count;
 }
 
 bool kbd_init() {
@@ -97,6 +108,28 @@ bool kbd_init() {
 	return kbd_ok;
 }
 
+void pic_init() {
+    // ICW1: Start initialization, edge-triggered, cascade
+    outb(0x20, 0x11);   // Master PIC
+    outb(0xA0, 0x11);   // Slave PIC
+
+    // ICW2: Interrupt vector offset
+    outb(0x21, 0x08);   // Master: IRQ0-7 → INT 08h-0Fh
+    outb(0xA1, 0x70);   // Slave:  IRQ8-15 → INT 70h-77h
+
+    // ICW3: Master/Slave Kaskadierung
+    outb(0x21, 0x04);   // Master: Slave an IRQ2
+    outb(0xA1, 0x02);   // Slave:  Kaskaden-ID = 2
+
+    // ICW4: 8086-Modus
+    outb(0x21, 0x01);
+    outb(0xA1, 0x01);
+
+    // OCW1: IRQ-Maske - alle außer Timer(0) und Keyboard(1) sperren
+    outb(0x21, 0xFC);   // 1111 1100: nur IRQ0+IRQ1 erlaubt
+    outb(0xA1, 0xFF);   // Slave komplett sperren
+}
+
 void a20_enable() {
 	// enable gate A20
     uint8_t val = inb(0x92);
@@ -113,36 +146,63 @@ void wdt_disable() {
 }
 
 void boot_dos() {
-	// load sector 1 to 0000:7C00
-    // AH=02, AL=01, CH=0, CL=1, DH=0, DL=80h (First Harddisk), ES:BX=0000:7C00
-	__asm__ volatile (
-		"movb $0x80, %%dl\n"      // Boot-Drive in DL
-		"pushw $0x0000\n"         // Segment of Stack
-		"pushw $0x7C00\n"         // Address of the Master Boot Record
-		"lretw"                   // long-return simulates the far-jump
-		:
-		:
-		: "dl", "memory"
-	);
-	
-    // check boot-signature (0x55AA)
-    uint16_t *sig = (uint16_t *)0x7DFE; // address of the last 2 bytes of MBR
-    if (*sig == 0xAA55) {
-        uart_print("Valid Boot Sector found. Jumping to 0x7C00...\n");
-        
-		// far-jump to MBR
+    uint8_t status = 0xFF;
+    uint8_t retries = 3;
+    
+    // load MBR via INT 13h (AH=02)
+    while (retries-- > 0) {
         __asm__ volatile (
-            "movb $0x80, %%dl\n" // Boot-Drive 80h in DL
-            ".byte 0xea\n"       // JMP FAR
-            ".word 0x7c00\n"     // Address of the Master Boot Record
-            ".word 0x0000"       // Segment
+            "pushw %%es\n"          // ← 'w' suffix erzwingt 16-Bit Operation
+            "xorw %%ax, %%ax\n"
+            "movw %%ax, %%es\n"
+            "movb $0x02, %%ah\n"
+            "movb $0x01, %%al\n"
+            "movb $0x00, %%ch\n"
+            "movb $0x01, %%cl\n"
+            "movb $0x00, %%dh\n"
+            "movb $0x80, %%dl\n"
+            "movw $0x7C00, %%bx\n"
+            "int $0x13\n"
+            "movb %%ah, %0\n"
+            "popw %%es\n"           // ← 'w' suffix erzwingt 16-Bit Operation
+            : "=rm"(status)
             :
-            :
-            : "dl"               // set DL as clobber explicitly
+            : "ax", "bx", "cx", "dx", "memory"
         );
-    } else {
-        uart_print("No Boot Signature found!\n");
+
+        if (status == 0) break;
+
+        uart_print("Disk read error, retrying...\n");
+
+        // INT 13h AH=00: Reset drive before retry
+        __asm__ volatile (
+            "movb $0x00, %%ah\n"
+            "movb $0x80, %%dl\n"
+            "int $0x13\n"
+            ::: "ax", "dx"
+        );
     }
+
+    if (status != 0) {
+        uart_print("Disk read failed after 3 retries!\n");
+        return;
+    }
+
+    // check boot-signature at the end of the MBR
+    uint16_t *sig = (uint16_t *)0x7DFE;
+    if (*sig != 0xAA55) {
+        uart_print("No Boot Signature found!\n");
+        return;
+    }
+    
+    uart_print("Booting from CF-Card...\n");
+    
+    // jump to the loaded MBR at 0x7C00
+    __asm__ volatile (
+        "movb $0x80, %%dl\n"    // Boot-Drive in DL (DOS-convention)
+        "ljmpw $0x0000, $0x7C00\n"
+        ::: "dl"
+    );
 }
 
 // **********************************************************
@@ -157,6 +217,13 @@ void bios_main() {
 	//pirq_init();
 	//uart_interrupt_enable();
     uart_print("DDX3216 BIOS Booting...\n");
+
+    uart_print("Initializing PIC...\n");
+    pic_init();
+    
+    uart_print("Setting IVT and BDA...\n");
+	setup_ivt();
+	setup_bda();
 
     uart_print("Initializing LCD...\n");
     lcd_init();
@@ -175,12 +242,9 @@ void bios_main() {
 	uart_print("Initializing timer...\n");
 	timer_init();
 
-    uart_print("Setting IVT and BDA...\n");
-	setup_ivt();
-	setup_bda();
-
     uart_print("Starting RAM-Test...\n");
 	ram_test_and_setup();
+
     uart_print("Enabling Gate A20 via Port 0x92...\n");
 	a20_enable();
 

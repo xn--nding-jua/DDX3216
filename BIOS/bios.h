@@ -9,6 +9,7 @@
 
 #include <stdint.h>
 #include <stdarg.h>
+#include <stdbool.h>
 
 #include "inline.h"
 #include "uart.h"
@@ -31,8 +32,8 @@
 
 #define BDA_KBD_HEAD        	((volatile uint16_t*)0x041A) // Kopf (nächstes zu lesendes Zeichen)
 #define BDA_KBD_TAIL        	((volatile uint16_t*)0x041C) // Ende (nächstes zu schreibendes Zeichen)
-#define BDA_KBD_BUF_START   	0x001E                       // Offset des Puffers in Segment 0x40
-#define BDA_KBD_BUF_END     	0x003E                       // Ende des Puffers
+#define BDA_KBD_BUF_START   	0x041E                       // Offset des Puffers in Segment 0x40
+#define BDA_KBD_BUF_END     	0x043E                       // Ende des Puffers
 
 #define UART_BASE				0x1000
 #define UART_CLK				14336000        // external UART is connected to CLK14OUT of SC300
@@ -84,5 +85,11 @@
 #define KBD_DATA_PORT    0x60
 #define KBD_STATUS_PORT  0x64
 #define KBD_STAT_OBF     0x01 // Output Buffer Full
+
+#define VRAM_BASE           0x7E00 // directly after boot-sector
+#define LCD_COLUMNS_BYTES   30
+#define LCD_ROWS            64
+#define VRAM_SIZE           (LCD_COLUMNS_BYTES * LCD_ROWS)  // 1920
+
 
 #endif

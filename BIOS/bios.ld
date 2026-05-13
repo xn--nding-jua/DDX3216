@@ -3,11 +3,22 @@
 	(c) 2026 Chris Noeding, christian@noeding-online.de
 	https://chrisdevblog.com
 	
-	ROM-Layout (64kB):
-	0x0000: Begin of ROM (mapped via ROMCS# to 0xF0000)
-	....
-	0xFFF0: Reset-Vector (mapped via ROMCS# to 0xFFFF0)
-	0xFFFF: End of ROM (mapped via ROMCS# to 0xFFFFF)
+	ROM (after linking):           RAM (runtime):
+	┌─────────────────┐ 0x0000     ┌─────────────────┐ 0x0000
+	│   .text16       │            │   IVT           │
+	│   (Code)        │            ├─────────────────┤ 0x0400
+	│   CS=0xF000     │            │   BDA           │
+	│   will be run   │            ├─────────────────┤ 0x0500
+	│                 │            │   .data (VMA)   │ ← DS=0x0000
+	├─────────────────┤ ~0x16BC    │   globale Vars  │   reachable
+	│   .data  (LMA)  │──────────> ├─────────────────┤
+	│   .rodata(LMA)  │  kopiert   │   .rodata (VMA) │ ← DS=0x0000
+	│                 │            │   Strings etc.  │   reachable
+	├─────────────────┤            ├─────────────────┤
+	│   (free)        │            │   .bss          │ ← zeroed
+	├─────────────────┤ 0xFFF0     ├─────────────────┤ 0x7C00
+	│   .reset        │            │   Stack \/      │ ← SS=0x0000
+	└─────────────────┘ 0xFFFF     └─────────────────┘
 */
 
 OUTPUT_FORMAT("elf32-i386")
@@ -23,27 +34,45 @@ MEMORY {
 }
 
 SECTIONS {
-	/* Placed at the very beginning of the ROM. Bare-Metal Assembler-Code */
-    .text16 0x0000 : {
+	/* Bare-Metal Assembler and C-Code at the very beginning of the ROM */
+    .text16 : {
+        __text_start = .;
         KEEP(*(.text16))
         *(.text16.*)
-    } > ROM
-
-	/* C-Code */
-    .text : {
         *(.text)
         *(.text.*)
+        . = ALIGN(4);
+        __text_end = .;
     } > ROM
 
-	/* Read-only data (Strings, Tables, etc.) */
-    .rodata : { *(.rodata*) } > ROM
-	/*.data : { *(.data*) } > ROM*/
+	/* Strings, Tables, Data, etc. */
+    /* Virtual Memory Address (VMA) is at 0x0500 in RAM */
+    /* Loader Memory Address (LMA) is at __text_end in ROM */
+    .data : {
+        __data_start = .;
+        *(.data)
+        *(.data.*)
+        . = ALIGN(4);
+        __data_end = .;
+    } > RAM AT> ROM /* this produces an overlap-error in the linker, but we will disable this check */
 
+    .rodata : {
+        __rodata_start = .;
+        *(.rodata)
+        *(.rodata.*)
+        . = ALIGN(4);
+        __rodata_end = .;
+    } > RAM AT> ROM /* this produces an overlap-error in the linker, but we will disable this check */
+
+    __data_size = __rodata_end - __data_start;
+
+    /* uninitialized data (zeroed at runtime, not in ROM) */
     .bss (NOLOAD) : {
         __bss_start = .;
         *(.bss)
         *(.bss.*)
         *(COMMON)
+        . = ALIGN(4);
         __bss_end = .;
     } > RAM
 
@@ -53,4 +82,5 @@ SECTIONS {
     } > ROM
 }
 
+/* Sanity Checks */
 ASSERT(SIZEOF(.reset) <= 16, "ERROR: Reset-Sector has more than 16 Bytes!")

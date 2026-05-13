@@ -29,8 +29,8 @@ __attribute__((interrupt)) void c_int08_handler(struct interrupt_frame *frame) {
 	uint16_t old_ds;
 
 	// store DS and reset it to 0
-	__asm__ volatile("mov %%ds, %0" : "=r"(old_ds));
-	__asm__ volatile("mov $0, %%ax; mov %%ax, %%ds" ::: "ax");
+	__asm__ volatile("movw %%ds, %0" : "=r"(old_ds));
+	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
 
 	// increment BIOS-Timer-Counter in BDA
     (*BDA_TIMER_COUNTER)++;
@@ -38,11 +38,14 @@ __attribute__((interrupt)) void c_int08_handler(struct interrupt_frame *frame) {
 	// call INT 1Ch (User Timer Tick)
     __asm__ volatile ("int $0x1C");
 
+    // restore DS after INT1Ch
+    __asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
+
     // send end of interrupt to port 0x20
     outb(0x20, 0x20);
 	
 	// restore DS
-	__asm__ volatile("mov %0, %%ds" : : "r"(old_ds));
+	__asm__ volatile("movw %0, %%ds" : : "r"(old_ds));
 }
 
 // INT 09h: keyboard-interrupt
@@ -51,8 +54,8 @@ __attribute__((interrupt)) void c_int09_handler(struct interrupt_frame *frame) {
     uint8_t scancode;
     
 	// store DS and reset it to 0
-	__asm__ volatile("mov %%ds, %0" : "=r"(old_ds));
-	__asm__ volatile("mov $0, %%ax; mov %%ax, %%ds" ::: "ax");
+	__asm__ volatile("movw %%ds, %0" : "=r"(old_ds));
+	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
 
 	scancode = inb(KBD_DATA_PORT);
 
@@ -67,7 +70,7 @@ __attribute__((interrupt)) void c_int09_handler(struct interrupt_frame *frame) {
         // if buffer is not full (Tail + 2 != Head)
         if (next_tail != *BDA_KBD_HEAD) {
             // store scancode (high) and ASCII (low)
-            uint16_t *ptr = (uint16_t*)(uintptr_t)(0x0400 + tail);
+            uint16_t *ptr = (uint16_t*)(uintptr_t)(tail);
             *ptr = (uint16_t)((scancode << 8) | ascii);
             *BDA_KBD_TAIL = next_tail;
         }
@@ -77,7 +80,7 @@ __attribute__((interrupt)) void c_int09_handler(struct interrupt_frame *frame) {
     outb(0x20, 0x20);
 	
 	// restore DS
-	__asm__ volatile("mov %0, %%ds" : : "r"(old_ds));
+	__asm__ volatile("movw %0, %%ds" : : "r"(old_ds));
 }
 
 // INT 10h: Video-interrupt
@@ -85,14 +88,19 @@ __attribute__((interrupt)) void c_int10_handler(struct interrupt_frame *frame) {
 	uint16_t old_ds;
     uint8_t ah, al;
 
-	// store DS and reset it to 0
-	__asm__ volatile("mov %%ds, %0" : "=r"(old_ds));
-	__asm__ volatile("mov $0, %%ax; mov %%ax, %%ds" ::: "ax");
-    
-    // AH = Funktion, AL = Character (on function 0Eh)
-    __asm__ volatile ("movb %%ah, %0" : "=r"(ah));
-    __asm__ volatile ("movb %%al, %0" : "=r"(al));
+    // read registers first
+    __asm__ volatile (
+        "movb %%ah, %0\n"
+        "movb %%al, %1\n"
+        : "=r"(ah), "=r"(al)
+        :
+        :
+    );
 
+	// store DS and reset it to 0
+	__asm__ volatile("movw %%ds, %0" : "=r"(old_ds));
+	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
+    
     switch (ah) {
         case 0x0E: // Video - Write Character in TTY Mode
             // simply redirect character to TTY
@@ -117,7 +125,7 @@ __attribute__((interrupt)) void c_int10_handler(struct interrupt_frame *frame) {
     }
 	
 	// restore DS
-	__asm__ volatile("mov %0, %%ds" : : "r"(old_ds));
+	__asm__ volatile("movw %0, %%ds" : : "r"(old_ds));
 }
 
 // INT 11h: Get Equipment List
@@ -125,8 +133,8 @@ __attribute__((interrupt)) void c_int11_handler(struct interrupt_frame *frame) {
 	uint16_t old_ds;
 
 	// store DS and reset it to 0
-	__asm__ volatile("mov %%ds, %0" : "=r"(old_ds));
-	__asm__ volatile("mov $0, %%ax; mov %%ax, %%ds" ::: "ax");
+	__asm__ volatile("movw %%ds, %0" : "=r"(old_ds));
+	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
 
     /*
        Bitmask for Equipment Word:
@@ -138,6 +146,9 @@ __attribute__((interrupt)) void c_int11_handler(struct interrupt_frame *frame) {
     */
 	uint16_t equipment = *(uint16_t*)BDA_EQUIPMENT_WORD;
     __asm__ volatile ("movw %0, %%ax" : : "r"(equipment)); // write result into AX-register of caller directly
+
+    // restore DS
+	__asm__ volatile("movw %0, %%ds" : : "r"(old_ds));
 }
 
 // INT 12h: Get Memory Size
@@ -145,126 +156,208 @@ __attribute__((interrupt)) void c_int12_handler(struct interrupt_frame *frame) {
 	uint16_t old_ds;
 
 	// store DS and reset it to 0
-	__asm__ volatile("mov %%ds, %0" : "=r"(old_ds));
-	__asm__ volatile("mov $0, %%ax; mov %%ax, %%ds" ::: "ax");
+	__asm__ volatile("movw %%ds, %0" : "=r"(old_ds));
+	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
 
 	uint16_t mem_kb = *(uint16_t*)BDA_MEM_SIZE;
     __asm__ volatile ("movw %0, %%ax" : : "r"(mem_kb)); // write result into AX-register of caller directly
 	
 	// restore DS
-	__asm__ volatile("mov %0, %%ds" : : "r"(old_ds));
+	__asm__ volatile("movw %0, %%ds" : : "r"(old_ds));
 }
 
 // disk-interrupt
 __attribute__((interrupt)) void c_int13_handler(struct interrupt_frame *frame) {
-	uint16_t old_ds;
-    uint8_t ah, al, ch, cl, dh, dl;
-    uint16_t es, bx;
+    uint16_t old_ds;
+    uint8_t  ah, al, ch, cl, dh, dl;
+    uint16_t target_bx, target_es;
 
-	// store DS and reset it to 0
-	__asm__ volatile("mov %%ds, %0" : "=r"(old_ds));
-	__asm__ volatile("mov $0, %%ax; mov %%ax, %%ds" ::: "ax");
+    __asm__ volatile ("movb %%ah, %0" : "=m"(ah)        : : );
+    __asm__ volatile ("movb %%al, %0" : "=m"(al)        : : );
+    __asm__ volatile ("movb %%ch, %0" : "=m"(ch)        : : );
+    __asm__ volatile ("movb %%cl, %0" : "=m"(cl)        : : );
+    __asm__ volatile ("movb %%dh, %0" : "=m"(dh)        : : );
+    __asm__ volatile ("movb %%dl, %0" : "=m"(dl)        : : );
+    __asm__ volatile ("movw %%bx, %0" : "=m"(target_bx) : : );
+    __asm__ volatile (
+        "movw %%es, %%ax\n"
+        "movw %%ax, %0"
+        : "=m"(target_es) : : "ax"
+    );
 
-    // get register from context
-    __asm__ volatile ("movb %%ah, %0" : "=r"(ah));
-    __asm__ volatile ("movb %%al, %0" : "=r"(al));
-    __asm__ volatile ("movb %%cl, %0" : "=r"(cl)); // sector
-    __asm__ volatile ("movb %%ch, %0" : "=r"(ch)); // cylinder low
-    
-    if (ah == 0x00) { // reset disk system
-        __asm__ volatile ("movb $0x00, %%ah" ::: "ah");
-        __asm__ volatile ("andw $0xFFFE, 6(%ebp)"); // reset carry-flag (success)
-    } 
-    else if (ah == 0x02) { // read sectors
-		uint8_t sectors_to_read;
-        uint16_t target_bx, target_es;
-        
-        // get parameters from registers of caller
-        __asm__ volatile ("movb %%al, %0" : "=r"(sectors_to_read));
-        __asm__ volatile ("movw %%bx, %0" : "=r"(target_bx));
-        __asm__ volatile ("movw %%es, %0" : "=r"(target_es));
-        
-        // CH, CL, DH contains the CHS-addresses (used as LBA here for simplification)
-        uint8_t sector, cylinder, head;
-        __asm__ volatile ("movb %%cl, %0" : "=r"(sector)); 
-        __asm__ volatile ("movb %%ch, %0" : "=r"(cylinder));
-        __asm__ volatile ("movb %%dh, %0" : "=r"(head));
+    // store DS and switch to RAM (0x0000)
+    __asm__ volatile ("movw %%ds, %0"                   : "=r"(old_ds));
+    __asm__ volatile ("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
+
+    // support only for drive 0x80
+    if (dl != 0x80 && ah != 0x00) {
+        __asm__ volatile (
+            "movb $0x01, %%ah\n"
+            "orw  $0x0001, 6(%%bp)"
+            ::: "ax", "memory"
+        );
+        __asm__ volatile ("movw %0, %%ds" : : "r"(old_ds));
+        return;
+    }
+
+    if (ah == 0x00) {
+        // ------------------------------------------------------
+        // AH=00h: Reset Disk System
+        // ------------------------------------------------------
+        outb(IDE_DEV_CTRL, 0x06);
+        for (volatile uint16_t i = 0; i < 10000; i++);
+        outb(IDE_DEV_CTRL, 0x02);
+        ide_wait_ready();
+
+        __asm__ volatile (
+            "movb $0x00, %%ah\n"
+            "andw $0xFFFE, 6(%%bp)"
+            ::: "ax", "memory"
+        );
+    }
+    else if (ah == 0x02) {
+        // ------------------------------------------------------
+        // AH=02h: Read Sectors
+        // ------------------------------------------------------
+        uint8_t  sectors_to_read = al;
+        uint8_t  sector          = cl & 0x3F;
+        uint16_t cylinder        = ((uint16_t)(cl & 0xC0) << 2) | ch;
+        uint8_t  head            = dh;
+        uint32_t lba             = CHS_TO_LBA(cylinder, head, sector);
+        uint8_t  error           = 0;
 
         for (uint8_t s = 0; s < sectors_to_read; s++) {
-            ide_wait_ready();
-            
-            // send IDE command (LBA-addressing)
-            outb(0x1F2, 1);                         // 1 Sector
-            outb(0x1F3, sector + s);                // LBA Low
-            outb(0x1F4, cylinder);                  // LBA Mid
-            outb(0x1F5, 0);                         // LBA High
-            outb(0x1F6, 0xE0 | (head & 0x0F));      // Drive/Head + LBA Mode
-            outb(0x1F7, 0x20);                      // Command: Read with retry
+            uint32_t cur_lba = lba + s;
 
-			// ATA-specification requires a 400ns delay before reading the state-port
-			inb(0x1F7); // dummy read
-			inb(0x1F7); // dummy read
-			inb(0x1F7); // dummy read
-			inb(0x1F7); // dummy read
-            ide_wait_ready();
+            if (!ide_wait_ready()) {
+                error = 0xAA;
+                break;
+            }
 
-            // data transmission to ES:BX
-            // simulate a far-pointer here
-            for (int i = 0; i < 256; i++) {
-                uint16_t word = inw(0x1F0);
-                
-                // as GCC works DS-relative in 16-bit mode we use inline-assembly
-                // for segmented write-access
-				__asm__ volatile (
-					"movw %0, %%es:(%%bx)" 
-					: 
-					: "r"(word), "b"(target_bx) 
-				);
-				target_bx += 2;
+            // send LBA command to disk
+            outb(IDE_SECT_COUNT, 1);
+            outb(IDE_LBA_LOW,   (uint8_t)( cur_lba        & 0xFF));
+            outb(IDE_LBA_MID,   (uint8_t)((cur_lba >>  8) & 0xFF));
+            outb(IDE_LBA_HIGH,  (uint8_t)((cur_lba >> 16) & 0xFF));
+            outb(IDE_DRIVE_HEAD, 0xE0 | (uint8_t)((cur_lba >> 24) & 0x0F));
+            outb(IDE_COMMAND, IDE_CMD_READ);
+
+            if (!ide_wait_drq()) {
+                error = 0xBB;
+                break;
+            }
+
+            // read 256 words -> write to ES:BX
+            for (uint16_t i = 0; i < 256; i++) {
+                uint16_t word = inw(IDE_DATA);
+                __asm__ volatile (
+                    "movw %0, %%es:(%%bx)"
+                    : : "r"(word), "b"(target_bx)
+                );
+                target_bx += 2;
             }
         }
 
-        // send success (AH=0, Carry-Flag resetted)
-        __asm__ volatile ("movb $0x00, %%ah" ::: "ah");
-        __asm__ volatile ("andw $0xFFFE, 6(%%ebp)" ::: "memory");
+        if (error == 0) {
+            __asm__ volatile (
+                "movb $0x00, %%ah\n"
+                "andw $0xFFFE, 6(%%bp)"
+                ::: "ax", "memory"
+            );
+        } else {
+            __asm__ volatile (
+                "movb %0, %%ah\n"
+                "orw  $0x0001, 6(%%bp)"
+                : : "r"(error) : "ax", "memory"
+            );
+        }
     }
-	
-	// restore DS
-	__asm__ volatile("mov %0, %%ds" : : "r"(old_ds));
+    else if (ah == 0x08) {
+        // ------------------------------------------------------
+        // AH=08h: Get Drive Parameters
+        // ------------------------------------------------------
+        uint8_t max_heads   = CF_HEADS - 1;
+        uint8_t max_sectors = CF_SECTORS;
+        uint16_t max_cyls   = CF_CYLINDERS - 1;
+
+        uint8_t cl_val = (max_sectors & 0x3F) |
+                         (uint8_t)((max_cyls >> 2) & 0xC0);
+        uint8_t ch_val = (uint8_t)(max_cyls & 0xFF);
+
+        __asm__ volatile (
+            "movb $0x00, %%ah\n"
+            "movb $0x01, %%bl\n"
+            "movb %0,    %%ch\n"
+            "movb %1,    %%cl\n"
+            "movb %2,    %%dh\n"
+            "movb $0x01, %%dl\n"
+            "andw $0xFFFE, 6(%%bp)"
+            : : "m"(ch_val), "m"(cl_val), "m"(max_heads)
+            : "ax", "bx", "cx", "dx", "memory"
+        );
+    }
+    else if (ah == 0x15) {
+        // ------------------------------------------------------
+        // AH=15h: Get Disk Type
+        // ------------------------------------------------------
+        __asm__ volatile (
+            "movb $0x03, %%ah\n"
+            "andw $0xFFFE, 6(%%bp)"
+            ::: "ax", "memory"
+        );
+    }
+    else {
+        // ------------------------------------------------------
+        // Unbekannte Funktion
+        // ------------------------------------------------------
+        __asm__ volatile (
+            "movb $0x01, %%ah\n"
+            "orw  $0x0001, 6(%%bp)"
+            ::: "ax", "memory"
+        );
+    }
+
+    // ④ DS wiederherstellen
+    __asm__ volatile ("movw %0, %%ds" : : "r"(old_ds));
 }
 
 // uart-interrupt
 __attribute__((interrupt)) void c_int14_handler(struct interrupt_frame *frame) {
 	uint16_t old_ds;
 
-	// store DS and reset it to 0
-	__asm__ volatile("mov %%ds, %0" : "=r"(old_ds));
-	__asm__ volatile("mov $0, %%ax; mov %%ax, %%ds" ::: "ax");
-
     // AH contains the function-number (0=Init, 1=Transmit, 2=Receive, 3=State)
     // use inline-assembler as GCC-interrupts are more complex
 	uint8_t service;
     uint8_t al_val;
-    __asm__ volatile ("movb %%ah, %0" : "=r"(service));
-    __asm__ volatile ("movb %%al, %0" : "=r"(al_val));
+    __asm__ volatile (
+        "movb %%ah, %0\n"
+        "movb %%al, %1\n"
+        : "=r"(service), "=r"(al_val)
+        :
+        :
+    );
+
+    // store DS and reset it to 0
+	__asm__ volatile("movw %%ds, %0" : "=r"(old_ds));
+	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
 
 	switch (service) {
         case 0x00: // initializing (not implemented)
 			// we are initializing the UART with fixed 38400 Baud for now. But later we
 			// could use this to switch between different speeds and settings
             //uart_init(al_val); // al_val contains the initializing-parameter
-            __asm__ volatile ("movb $0x00, %ah"); // state OK
+            __asm__ volatile ("movb $0x00, %%ah" ::: "ax"); // state OK
             break;
 
         case 0x01: // transmit char
             uart_putc((char)al_val);
             // AH Bit 7 = 0 (success), other bits = LSR Status
-            __asm__ volatile ("movb $0x60, %ah"); 
+            __asm__ volatile ("movb $0x60, %%ah" ::: "ax"); 
             break;
 
         case 0x02: // receive char (not implemented)
-            __asm__ volatile ("movb $0x00, %al");
-            __asm__ volatile ("movb $0x80, %ah"); // Timeout/Error
+            __asm__ volatile ("movb $0x00, %%al" ::: "ax");
+            __asm__ volatile ("movb $0x80, %%ah" ::: "ax"); // Timeout/Error
             break;
 
         case 0x03: // request state
@@ -278,7 +371,7 @@ __attribute__((interrupt)) void c_int14_handler(struct interrupt_frame *frame) {
     }
 	
 	// restore DS
-	__asm__ volatile("mov %0, %%ds" : : "r"(old_ds));
+	__asm__ volatile("movw %0, %%ds" : : "r"(old_ds));
 }
 
 // this interrupt is called by DOS to request next char from ringbuffer
@@ -286,19 +379,19 @@ __attribute__((interrupt)) void c_int16_handler(struct interrupt_frame *frame) {
 	uint16_t old_ds;
     uint8_t ah;
 
-	// store DS and reset it to 0
-	__asm__ volatile("mov %%ds, %0" : "=r"(old_ds));
-	__asm__ volatile("mov $0, %%ax; mov %%ax, %%ds" ::: "ax");
-	
     __asm__ volatile ("movb %%ah, %0" : "=r"(ah));
 
+    // store DS and reset it to 0
+	__asm__ volatile("movw %%ds, %0" : "=r"(old_ds));
+	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
+	
     if (ah == 0x00) { // read character (blocking)
         while (*BDA_KBD_HEAD == *BDA_KBD_TAIL) {
-            __asm__ volatile ("hlt"); // halt CPU until next interrupt
+            __asm__ volatile ("sti; hlt; cli"); // halt CPU until next interrupt
         }
         
         uint16_t head = *BDA_KBD_HEAD;
-        uint16_t val = *(uint16_t*)(uintptr_t)(0x0400 + head);
+        uint16_t val = *(uint16_t*)(uintptr_t)(head);
         
         uint16_t next_head = head + 2;
         if (next_head >= BDA_KBD_BUF_END) next_head = BDA_KBD_BUF_START;
@@ -310,17 +403,17 @@ __attribute__((interrupt)) void c_int16_handler(struct interrupt_frame *frame) {
     else if (ah == 0x01) { // check state
         if (*BDA_KBD_HEAD != *BDA_KBD_TAIL) {
             // Key in buffer -> delete ZF
-            __asm__ volatile ("andw $0xFFBF, 6(%ebp)");
-            uint16_t val = *(uint16_t*)(uintptr_t)(0x0400 + *BDA_KBD_HEAD);
+            __asm__ volatile ("andw $0xFFBF, 6(%%bp)" ::: "memory");
+            uint16_t val = *(uint16_t*)(uintptr_t)(*BDA_KBD_HEAD);
             __asm__ volatile ("movw %0, %%ax" : : "r"(val) : "ax");
         } else {
             // buffer empty -> set ZF
-            __asm__ volatile ("orw $0x0040, 6(%ebp)");
+            __asm__ volatile ("orw  $0x0040, 6(%%bp)" ::: "memory");
         }
     }
 	
 	// restore DS
-	__asm__ volatile("mov %0, %%ds" : : "r"(old_ds));
+	__asm__ volatile("movw %0, %%ds" : : "r"(old_ds));
 }
 
 // INT04 (PIRQ0 is mapped here)
@@ -328,8 +421,8 @@ __attribute__((interrupt)) void c_int0c_handler(struct interrupt_frame *frame) {
 	uint16_t old_ds;
 	
 	// store DS and reset it to 0
-	__asm__ volatile("mov %%ds, %0" : "=r"(old_ds));
-	__asm__ volatile("mov $0, %%ax; mov %%ax, %%ds" ::: "ax");
+	__asm__ volatile("movw %%ds, %0" : "=r"(old_ds));
+	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
 
 
 	while (!(inb(UART_IIR) & IIR_PENDING)) {
@@ -348,7 +441,7 @@ __attribute__((interrupt)) void c_int0c_handler(struct interrupt_frame *frame) {
                 if (next_tail >= BDA_KBD_BUF_END) next_tail = BDA_KBD_BUF_START;
                 
                 if (next_tail != *BDA_KBD_HEAD) {
-                    uint16_t *ptr = (uint16_t*)(uintptr_t)(0x0400 + tail);
+                    uint16_t *ptr = (uint16_t*)(uintptr_t)(tail);
                     *ptr = (uint16_t)c; // Scancode 0, ASCII = c
                     *BDA_KBD_TAIL = next_tail;
                 }
@@ -374,7 +467,7 @@ __attribute__((interrupt)) void c_int0c_handler(struct interrupt_frame *frame) {
     outb(0x20, 0x20);
 
 	// restore DS
-	__asm__ volatile("mov %0, %%ds" : : "r"(old_ds));
+	__asm__ volatile("movw %0, %%ds" : : "r"(old_ds));
 }
 
 // INT 1Ah for RTC access
@@ -382,11 +475,11 @@ __attribute__((interrupt)) void c_int1a_handler(struct interrupt_frame *frame) {
 	uint16_t old_ds;
 	uint8_t ah;
 
-	// store DS and reset it to 0
-	__asm__ volatile("mov %%ds, %0" : "=r"(old_ds));
-	__asm__ volatile("mov $0, %%ax; mov %%ax, %%ds" ::: "ax");
-
     __asm__ volatile ("movb %%ah, %0" : "=r"(ah));
+
+    // store DS and reset it to 0
+	__asm__ volatile("movw %%ds, %0" : "=r"(old_ds));
+	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
 	
     switch (ah) {
         case 0x00: // Get System Time
@@ -430,7 +523,7 @@ __attribute__((interrupt)) void c_int1a_handler(struct interrupt_frame *frame) {
     }
 
 	// restore DS
-    __asm__ volatile("mov %0, %%ds" : : "r"(old_ds));
+    __asm__ volatile("movw %0, %%ds" : : "r"(old_ds));
 }
 
 // software-interrupt

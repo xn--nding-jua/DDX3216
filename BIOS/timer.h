@@ -10,7 +10,6 @@
 #include "bios.h"
 
 void timer_init();
-static uint8_t bcd_to_bin(uint8_t val);
 uint8_t read_rtc(uint8_t reg);
 
 #endif

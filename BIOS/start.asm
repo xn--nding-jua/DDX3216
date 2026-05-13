@@ -18,11 +18,14 @@
 ; 
 
 SECTION .text
-
 USE16           ; same as "BITS 16"
 CPU 386         ; allow cpu-instructions up to 386
 
-EXTERN bios_main
+EXTERN __data_start
+EXTERN __data_size
+EXTERN __bss_start
+EXTERN __bss_end
+EXTERN bios_main            ; main-function in C-Code
 
 ; segment-addresses
 ROM_SEG     EQU 0xF000
@@ -66,6 +69,7 @@ start:
     mov     ds, ax				; now DS directs to 0xF000
     mov     es, ax
     mov     ss, ax				; set stack-segment to ROM_SEG to prevent uncontrolled writes to uninitialized DRAM
+    mov     sp, 0xFE00          ; set stack to ROM-area temporary
 
     ; ---------------------------------------------------------
     ; setup internal registers of the SC300 using
@@ -79,74 +83,7 @@ start:
 
     ; Elan SC300 mandatory configuration
     ; must be called after reset directly
-    call    sc300_init
-
-    ; check if we come from an SMI (System Management Interrupt)
-    ; Version Register (Index 0x64), Bit 7 = RSMI
-    mov     al, 0x64
-    out     CFG_ADDR, al
-    in      al, CFG_DATA
-    test    al, 0x80
-    jnz     smi_handler         ; Wenn SMI, zum SMI-Handler
-
-	; initialize the DRAM
-	call dram_init
-	
-    ; initialize the stack
-    mov     ax, STACK_SEG
-    mov     ss, ax				; redirect stack-segment to 0x0000
-    mov     sp, STACK_TOP		; set stack-pointer to desired 0x7C00
-
-    ; call the main-c-function of the BIOS
-    call    bios_main           ; defined in main.c
-
-    ; we should never come back to here
-
-halt:
-    hlt                 ; CPU anhalten
-    jmp     halt
-
-; ========================================================
-; SMI-Handler (will be called when RSMI-bit is set)
-; ========================================================
-smi_handler:
-    ; SMI-Status lesen
-    mov     al, 0x43            ; SMI Status Register
-    out     CFG_ADDR, al
-    in      al, CFG_DATA
-    ; Status sichern
-    mov     bl, al
-
-    ; PCMCIA Socket A Status schreiben um SMI zu quittieren
-    mov     al, 0xA2
-    out     CFG_ADDR, al
-    mov     al, 0xFF
-    out     CFG_DATA, al
-
-    ; NMI/SMI Control Register lesen
-    mov     al, 0xA5
-    out     CFG_ADDR, al
-    in      al, CFG_DATA
-
-    ; NMI/SMI Control schreiben (PMU-Zustand freigeben)
-    mov     al, 0xA5
-    out     CFG_ADDR, al
-    mov     al, 0x00
-    out     CFG_DATA, al
-
-    ; Zurück zum normalen Boot
-    jmp     start
-
-
-
-; ========================================================
-; Elan SC300 mandatory configuration
-; has to be called after reset directly
-; based on table 5-2 "Mandatory Configuration Bit Settings"
-; ========================================================
 sc300_init:
-    push    ax
-
     ; Index 0x0F: disables internal write-protection-mechanism and allows control of config-registers
     mov     al, 0x0F
     out     CFG_ADDR, al
@@ -277,12 +214,19 @@ sc300_init:
     ; Attention: Bit0 (ENROMF) reads back inverted, we write a "0" to enable it
     out     CFG_DATA, al
 
-    pop     ax
-    ret
 
-; ========================================================
-; sub-routines for DRAM
-; ========================================================
+
+    ; check if we come from an SMI (System Management Interrupt)
+    ; Version Register (Index 0x64), Bit 7 = RSMI
+    mov     al, 0x64
+    out     CFG_ADDR, al
+    in      al, CFG_DATA
+    test    al, 0x80
+    jnz     smi_handler         ; Wenn SMI, zum SMI-Handler
+
+
+
+	; initialize the DRAM
 dram_init:
 	; set DRAM-bank-size and type
     mov     al, 0x66        ; Index: Memory Configuration 1
@@ -313,4 +257,78 @@ dram_init:
     mov     al, 0x32		; from original DDX3216-EPROM
     out     0x23, al
 
-    ret
+
+
+copy_romdata:
+    ; copy initialized data from ROM to RAM
+    mov ax, ROM_SEG
+    mov ds, ax                  ; DS source = ROM
+    mov ax, STACK_SEG
+    mov es, ax                  ; ES destination = RAM
+
+    mov si, __data_start        ; 16-bit offset in ROM-Segment
+    mov di, 0x0500              ; destination in RAM
+    mov cx, __data_size
+    jcxz .skip_data             ; if no data to copy -> skip this part
+    rep movsb                   ; copy .data and .rodata into RAM
+.skip_data:
+    ; clear data in BSS to zero
+    mov ax, STACK_SEG
+    mov ds, ax
+
+    mov di, __bss_start
+    mov cx, __bss_end
+    sub cx, di                  ; calc number of bytes
+    jcxz .skip_bss               ; no data in bss
+    xor al, al
+    rep stosb                   ; write zeros
+.skip_bss:
+
+
+
+    ; initialize the stack
+    mov     ax, STACK_SEG
+    mov     ds, ax              ; keep DS at RAM (0x0000)
+    mov     es, ax
+    mov     ss, ax				; redirect stack-segment to 0x0000
+    mov     sp, STACK_TOP		; set stack-pointer to desired 0x7C00
+
+    ; call the main-c-function of the BIOS
+    call    bios_main           ; defined in main.c
+
+    ; we should never come back to here
+
+halt:
+    hlt                         ; CPU anhalten
+    jmp     halt
+
+; ========================================================
+; SMI-Handler (will be called when RSMI-bit is set)
+; ========================================================
+smi_handler:
+    ; SMI-Status lesen
+    mov     al, 0x43            ; SMI Status Register
+    out     CFG_ADDR, al
+    in      al, CFG_DATA
+    ; Status sichern
+    mov     bl, al
+
+    ; PCMCIA Socket A Status schreiben um SMI zu quittieren
+    mov     al, 0xA2
+    out     CFG_ADDR, al
+    mov     al, 0xFF
+    out     CFG_DATA, al
+
+    ; NMI/SMI Control Register lesen
+    mov     al, 0xA5
+    out     CFG_ADDR, al
+    in      al, CFG_DATA
+
+    ; NMI/SMI Control schreiben (PMU-Zustand freigeben)
+    mov     al, 0xA5
+    out     CFG_ADDR, al
+    mov     al, 0x00
+    out     CFG_DATA, al
+
+    ; Zurück zum normalen Boot
+    jmp     start
