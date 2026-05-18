@@ -50,6 +50,28 @@ static inline void write_sc300_cfgw(uint8_t reg, uint16_t data) {
 	outb(CFG_DATA, (uint8_t)((data >> 8) & 0xFF));
 }
 
+// functions for accessing ROM space
+// ==========================================================
+static inline uint8_t readRomByte(uint16_t rom_offset) {
+    uint8_t val;
+    __asm__ __volatile__(
+        "movb %%cs:(%1), %0"  // Segment-Override: force CS instead of DS!
+        : "=q"(val)
+        : "r"(rom_offset)
+    );
+    return val;
+}
+
+static inline uint16_t readRomWord(uint16_t rom_offset) {
+    uint16_t val;
+    __asm__ __volatile__(
+        "movw %%cs:(%1), %0"  // Segment-Override: force CS instead of DS
+        : "=r"(val)
+        : "r"(rom_offset)
+    );
+    return val;
+}
+
 // functions for accessing RAM space in other than the current segment
 // ==========================================================
 static inline void writeFarByte(uint16_t segment, uint16_t offset, uint8_t value) {
