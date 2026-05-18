@@ -87,7 +87,7 @@
 #define KBD_STATUS_PORT  0x64
 #define KBD_STAT_OBF     0x01 // Output Buffer Full
 
-#define VRAM_BASE           0x7E00 // directly after boot-sector
+#define VRAM_SEG            0xB800 // directly after boot-sector
 #define LCD_COLUMNS_BYTES   30
 #define LCD_ROWS            64
 #define VRAM_SIZE           (LCD_COLUMNS_BYTES * LCD_ROWS)  // 1920

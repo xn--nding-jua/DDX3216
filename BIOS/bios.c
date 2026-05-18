@@ -127,6 +127,9 @@ void ram_test_and_setup_2MB() {
         uart_print("Low RAM Fault!");
         while(1) { __asm__("hlt"); }
     }
+	
+	// dont test in the range of 0xA0000 ... 0xFFFFF as this is
+	// reserved memory for I/O-ports, VideoRAM, Expansion ROMs, etc.
 
     // test extended Memory (above 1 MB)
     uint32_t extended_ram_start = 0x00100000;
@@ -285,7 +288,8 @@ void bios_main() {
 
     uart_print("Initializing LCD...\n");
     lcd_init();
-    lcd_clear_test();
+    //lcd_clear_test();
+	lcd_print_string(0, 0, "AMD Elan SC300 BIOS Initialized!", 0x07);
 	
 	uart_print("Initializing keyboard...");
 	if (kbd_init()) {

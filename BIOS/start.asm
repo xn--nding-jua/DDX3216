@@ -19,11 +19,12 @@
 ; --------------------------------------------------------------------------
 ; 0x80000 - 0x9FFFF | 128 kB     | EBDA (Extended BIOS Data Area)
 ; --------------------------------------------------------------------------
-; 0xA0000 - 0xBFFFF | 128 kB     | Video display memory
+; 0xA0000 - 0xB7FFF | 95 kB      | Video display memory for enhanced graphics-mode
+; 0xB8000 - 0xBFFFF | 31 kB      | Video display memory for CGA-Textmode
 ; --------------------------------------------------------------------------
 ; 0xC0000 - 0xC7FFF | 32 kB      | Video BIOS
-; 0xC8000 - 0xEFFFF | 160 kB     | BIOS Expansions
-; 0xF0000 - 0xFFFFF | 64 kB      | Motherboard BIOS
+; 0xC8000 - 0xEFFFF | 160 kB     | Expansion-ROMs
+; 0xF0000 - 0xFFFFF | 64 kB      | Motherboard BIOS (we)
 ; 
 ; 1. Reset-Vector is called at end of 4GB Address-range at 0xFFFFFFF0 (ROM is displayed here during "Un"real mode)
 ; 2. Far-Jump to address 0x000F0000 in ROM_SEG at 0xF000 (DS is set to ROM_SEG = 0xF000)
