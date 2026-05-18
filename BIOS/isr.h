@@ -23,6 +23,7 @@ __attribute__((interrupt)) void c_int11_handler(struct interrupt_frame *frame);
 __attribute__((interrupt)) void c_int12_handler(struct interrupt_frame *frame);
 __attribute__((interrupt)) void c_int13_handler(struct interrupt_frame *frame);
 __attribute__((interrupt)) void c_int14_handler(struct interrupt_frame *frame);
+__attribute__((interrupt)) void c_int15_handler(struct interrupt_frame *frame);
 __attribute__((interrupt)) void c_int16_handler(struct interrupt_frame *frame);
 __attribute__((interrupt)) void c_int0c_handler(struct interrupt_frame *frame);
 __attribute__((interrupt)) void c_int1a_handler(struct interrupt_frame *frame);

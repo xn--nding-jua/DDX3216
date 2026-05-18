@@ -7,6 +7,8 @@
 	in, out will control IOR# and IOW#
 */
 
+__asm__(".code16gcc\n"); // we are using -m16 compiler-switch so this line is redundant
+
 #include "bios.h"
 
 // **********************************************************
@@ -19,75 +21,121 @@ void io_delay() {
 }
 
 void setup_ivt() {
-    // fill IVT (Interrupt Vector Table)
-    uint16_t *ivt = (uint16_t *)0;
-    uint16_t code_seg;
-
-    __asm__ volatile ("movw %%cs, %0" : "=r"(code_seg));
-
 	// dummy_callbacks for all interrupts
 	for (uint16_t i = 0; i < 256; i++) {
-		ivt[i * 2]     = (uint16_t)(uintptr_t)c_int_dummy_handler;
-		ivt[i * 2 + 1] = code_seg; // 0xF000
+		writeFarWord(0x0000, (i * 4), (uint16_t)(uintptr_t)c_int_dummy_handler);
+		writeFarWord(0x0000, (i * 4) + 2, ROM_SEG); // keep ROM-Segment
 	}
 
 	// register callback-handlers for specific interrupts
-	// ivt is a 16-bit pointer so "* 2" increases by 2 bytes!
-    ivt[0x08 * 2]     = (uint16_t)(uintptr_t)c_int08_handler;
-    ivt[0x09 * 2]     = (uint16_t)(uintptr_t)c_int09_handler;
-    ivt[0x10 * 2]     = (uint16_t)(uintptr_t)c_int10_handler; // double-cast to mitigate warning about 32/16-bit pointer
-    ivt[0x11 * 2]     = (uint16_t)(uintptr_t)c_int11_handler; // double-cast to mitigate warning about 32/16-bit pointer
-    ivt[0x12 * 2]     = (uint16_t)(uintptr_t)c_int12_handler; // double-cast to mitigate warning about 32/16-bit pointer
-    ivt[0x13 * 2]     = (uint16_t)(uintptr_t)c_int13_handler; // double-cast to mitigate warning about 32/16-bit pointer
-    ivt[0x14 * 2]     = (uint16_t)(uintptr_t)c_int14_handler; // double-cast to mitigate warning about 32/16-bit pointer
-    ivt[0x16 * 2]     = (uint16_t)(uintptr_t)c_int16_handler; // double-cast to mitigate warning about 32/16-bit pointer
-    //ivt[0x0C * 2]     = (uint16_t)(uintptr_t)c_int0c_handler; // double-cast to mitigate warning about 32/16-bit pointer
-    ivt[0x1A * 2]     = (uint16_t)(uintptr_t)c_int1a_handler; // double-cast to mitigate warning about 32/16-bit pointer
-    ivt[0x1C * 2]     = (uint16_t)(uintptr_t)c_int1c_handler; // double-cast to mitigate warning about 32/16-bit pointer
+	// the following code will produce warnings during compilation, but
+	// the warning is the proof of using the 16-bit "iret" after the ISR
+	writeFarWord(0x0000, (0x08 * 4), (uint16_t)(uintptr_t)c_int08_handler); // double-cast to mitigate warning about 32/16-bit pointer
+	writeFarWord(0x0000, (0x09 * 4), (uint16_t)(uintptr_t)c_int09_handler); // double-cast to mitigate warning about 32/16-bit pointer
+	writeFarWord(0x0000, (0x10 * 4), (uint16_t)(uintptr_t)c_int10_handler); // double-cast to mitigate warning about 32/16-bit pointer
+	writeFarWord(0x0000, (0x11 * 4), (uint16_t)(uintptr_t)c_int11_handler); // double-cast to mitigate warning about 32/16-bit pointer
+	writeFarWord(0x0000, (0x12 * 4), (uint16_t)(uintptr_t)c_int12_handler); // double-cast to mitigate warning about 32/16-bit pointer
+	writeFarWord(0x0000, (0x13 * 4), (uint16_t)(uintptr_t)c_int13_handler); // double-cast to mitigate warning about 32/16-bit pointer
+	writeFarWord(0x0000, (0x14 * 4), (uint16_t)(uintptr_t)c_int14_handler); // double-cast to mitigate warning about 32/16-bit pointer
+	writeFarWord(0x0000, (0x15 * 4), (uint16_t)(uintptr_t)c_int15_handler); // double-cast to mitigate warning about 32/16-bit pointer
+	writeFarWord(0x0000, (0x16 * 4), (uint16_t)(uintptr_t)c_int16_handler); // double-cast to mitigate warning about 32/16-bit pointer
+	//writeFarWord(0x0000, (0x0C * 4), (uint16_t)(uintptr_t)c_int0c_handler); // double-cast to mitigate warning about 32/16-bit pointer
+	writeFarWord(0x0000, (0x1A * 4), (uint16_t)(uintptr_t)c_int1a_handler); // double-cast to mitigate warning about 32/16-bit pointer
+	writeFarWord(0x0000, (0x1C * 4), (uint16_t)(uintptr_t)c_int1c_handler); // double-cast to mitigate warning about 32/16-bit pointer
 }
 
 void setup_bda() {
+	// BDA is within our STACK_SEG so we can access it with 16-bit pointers directly
+	
 	// create DOS-compatibility by updating BDA
-
-	*(uint8_t *)BDA_VIDEO_INFO = 0x03; // current video mode (80x25 Text)
-	*(uint16_t *)BDA_VIDEO_COLUMS = 80;   // number of columns
+	*(volatile uint8_t*)BDA_VIDEO_INFO = 0x03; // current video mode (80x25 Text)
+	*(volatile uint16_t*)BDA_VIDEO_COLUMS = 80;   // number of columns
 
 	// set address of COM1 (external UART)
-    *(uint16_t *)BDA_COM1_BASE = UART_BASE; // COM1 = 0x1000
+    *(volatile uint16_t*)BDA_COM1_BASE = UART_BASE; // COM1 = 0x1000
 
 	// set Equipment Word within BDA to tell DOS that we have an UART and a CGA-graphic
 	//                                     FEDCBA9876543210
-	*(uint16_t *)BDA_EQUIPMENT_WORD = 0b0000001000010000; // 1 COM-port / CGA-graphics
-
+	*(volatile uint16_t*)BDA_EQUIPMENT_WORD = 0b0000001000010000; // 1 COM-port / CGA-graphics
+	
+	*(volatile uint16_t*)BDA_MEM_SIZE = 640; // enter common 640kB of free conventional RAM
 }
 
-uint16_t ram_test_and_setup() {
-    uint16_t count = 0;
+int test_ram_range(uint16_t start_seg, uint16_t end_seg) {
+    uint16_t test_pattern1 = 0x55AA;
+    uint16_t test_pattern2 = 0xAA55;
 
-    // uint32_t für die Adressberechnung verwenden!
-    for (uint16_t kb = 32; kb < 640; kb++) {
-        // Overflow-sichere Adressberechnung
-        uint32_t addr = (uint32_t)kb * 1024;
-        
-        // Segmentgrenze beachten: max 0xFFFF im 16-Bit Segment
-        if (addr > 0xFFFF) break;
-        
-        // VRAM-Bereich auslassen
-        if (addr >= VRAM_BASE && addr < (VRAM_BASE + VRAM_SIZE)) {
-            count = kb;
-            continue;   // VRAM nicht testen
+    // write pattern #1 and check it
+    for (uint32_t seg = start_seg; seg <= end_seg; seg += 0x1000) { // Springe in 64KB Schritten
+        for (uint32_t off = 0; off < 0xFFFF; off += 2) {
+            writeFarWord(seg, off, test_pattern1);
+            if (readFarWord(seg, off) != test_pattern1) {
+                return 0; // error in RAM
+            }
         }
-
-        volatile uint16_t *ptr = (volatile uint16_t*)((uintptr_t)addr);
-        *ptr = 0xAA55;
-        if (*ptr != 0xAA55) break;
-        *ptr = 0x55AA;
-        if (*ptr != 0x55AA) break;
-        count = kb;
     }
 
-    *(uint16_t*)BDA_MEM_SIZE = count;
-    return count;
+    // write pattern #2 and check it again
+    for (uint32_t seg = start_seg; seg <= end_seg; seg += 0x1000) {
+        for (uint32_t off = 0; off < 0xFFFF; off += 2) {
+            writeFarWord(seg, off, test_pattern2);
+            if (readFarWord(seg, off) != test_pattern2) {
+                return 0; // error in RAM
+            }
+        }
+    }
+
+    return 1; // RAM OK
+}
+
+int test_linear_ram_range(uint32_t start_addr, uint32_t end_addr) {
+    uint16_t p1 = 0x55AA;
+    uint16_t p2 = 0xAA55;
+
+    // write pattern #1 and check it
+    for (uint32_t addr = start_addr; addr < end_addr; addr += 2) {
+        writeFlatWord(addr, p1);
+        if (readFlatWord(addr) != p1) return 0;
+    }
+
+    // write pattern #2 and check it again
+    for (uint32_t addr = start_addr; addr < end_addr; addr += 2) {
+        writeFlatWord(addr, p2);
+        if (readFlatWord(addr) != p2) return 0;
+    }
+
+    return 1;
+}
+
+void ram_test_and_setup_1MB() {
+	// we have 2MB of RAM installed, but in Real Mode we can test only the first megabyte
+
+	// test begin of OS Boot-Sector to end of conventional memory
+    if (test_ram_range(0x07C0, 0x9000)) {
+        uart_print("RAM OK");
+    } else {
+        uart_print("RAM FAULT");
+        while(1) { __asm__("hlt"); }
+    }
+}
+
+void ram_test_and_setup_2MB() {
+	// we have 2MB of RAM installed, but in Real Mode we can test only the first megabyte
+
+	// test begin of OS Boot-Sector to end of conventional memory below 1MB
+    if (!test_linear_ram_range(0x00007C00, 0x0009FFFF)) {
+        uart_print("Low RAM Fault!");
+        while(1) { __asm__("hlt"); }
+    }
+
+    // test extended Memory (above 1 MB)
+    uint32_t extended_ram_start = 0x00100000;
+    uint32_t extended_ram_end   = 0x00200000; 
+
+    if (!test_linear_ram_range(extended_ram_start, extended_ram_end)) {
+        uart_print("High RAM Fault!");
+        while(1) { __asm__("hlt"); }
+    }
 }
 
 bool kbd_init() {
@@ -152,7 +200,7 @@ void boot_dos() {
     // load MBR via INT 13h (AH=02)
     while (retries-- > 0) {
         __asm__ volatile (
-            "pushw %%es\n"          // ← 'w' suffix erzwingt 16-Bit Operation
+            "pushw %%es\n"
             "xorw %%ax, %%ax\n"
             "movw %%ax, %%es\n"
             "movb $0x02, %%ah\n"
@@ -164,7 +212,7 @@ void boot_dos() {
             "movw $0x7C00, %%bx\n"
             "int $0x13\n"
             "movb %%ah, %0\n"
-            "popw %%es\n"           // ← 'w' suffix erzwingt 16-Bit Operation
+            "popw %%es\n"
             : "=rm"(status)
             :
             : "ax", "bx", "cx", "dx", "memory"
@@ -189,7 +237,7 @@ void boot_dos() {
     }
 
     // check boot-signature at the end of the MBR
-    uint16_t *sig = (uint16_t *)0x7DFE;
+    uint16_t *sig = (uint16_t*)0x7DFE;
     if (*sig != 0xAA55) {
         uart_print("No Boot Signature found!\n");
         return;
@@ -218,6 +266,16 @@ void bios_main() {
 	//uart_interrupt_enable();
     uart_print("DDX3216 BIOS Booting...\n");
 
+    uart_print("Enabling unreal-mode...\n");
+	activate_unreal_mode(); // enable "Un"real mode to allow flat-access to full 32-bit memory
+
+    uart_print("Enabling Gate A20 via Port 0x92...\n");
+	a20_enable();
+
+    uart_print("Starting RAM-Test...\n");
+	//ram_test_and_setup_1MB();
+	ram_test_and_setup_2MB();
+
     uart_print("Initializing PIC...\n");
     pic_init();
     
@@ -241,12 +299,6 @@ void bios_main() {
 	
 	uart_print("Initializing timer...\n");
 	timer_init();
-
-    uart_print("Starting RAM-Test...\n");
-	ram_test_and_setup();
-
-    uart_print("Enabling Gate A20 via Port 0x92...\n");
-	a20_enable();
 
     uart_print("Enabling interrupts...\n");
 	__asm__ volatile ("sti");

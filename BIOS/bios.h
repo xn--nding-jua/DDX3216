@@ -17,6 +17,7 @@
 #include "disk.h"
 #include "timer.h"
 #include "isr.h"
+#include "helper.h"
 
 #define CFG_ADDR    0x22
 #define CFG_DATA    0x23
@@ -91,5 +92,6 @@
 #define LCD_ROWS            64
 #define VRAM_SIZE           (LCD_COLUMNS_BYTES * LCD_ROWS)  // 1920
 
+extern void activate_unreal_mode(void);
 
 #endif

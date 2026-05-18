@@ -16,6 +16,7 @@ C:\Programme2\i686-elf-tools-windows\bin\i686-elf-gcc.exe -m32 -march=i386  -m16
 C:\Programme2\i686-elf-tools-windows\bin\i686-elf-gcc.exe -m32 -march=i386  -m16 -ffreestanding -fno-stack-protector -mno-80387 -nostdlib disk.c -o obj\disk.o -c
 C:\Programme2\i686-elf-tools-windows\bin\i686-elf-gcc.exe -m32 -march=i386  -m16 -ffreestanding -fno-stack-protector -mno-80387 -nostdlib timer.c -o obj\timer.o -c
 C:\Programme2\i686-elf-tools-windows\bin\i686-elf-gcc.exe -m32 -march=i386  -m16 -ffreestanding -fno-stack-protector -mno-80387 -nostdlib isr.c -o obj\isr.o -c
+C:\Programme2\i686-elf-tools-windows\bin\i686-elf-gcc.exe -m32 -march=i386  -m16 -ffreestanding -fno-stack-protector -mno-80387 -nostdlib helper.c -o obj\helper.o -c
 echo Done
 echo .
 

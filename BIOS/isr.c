@@ -374,6 +374,44 @@ __attribute__((interrupt)) void c_int14_handler(struct interrupt_frame *frame) {
 	__asm__ volatile("movw %0, %%ds" : : "r"(old_ds));
 }
 
+__attribute__((interrupt)) void c_int15_handler(struct interrupt_frame *frame) {
+    uint16_t current_sp;
+    __asm__ __volatile__("movw %%sp, %0" : "=r"(current_sp));
+
+    uint16_t current_ax;
+    __asm__ __volatile__("movw %%ax, %0" : "=r"(current_ax));
+    uint8_t ah = (uint8_t)(current_ax >> 8);
+
+    switch (ah) {
+        case 0x88: {
+            // request enhanced memory (return 1024 KB in AX)
+            uint16_t return_value = 1024;
+
+            __asm__ __volatile__(
+                "movw %0, %%ax" 
+                : 
+                : "r"(return_value) 
+                : "ax"
+            );
+            
+            frame->flags &= ~0x0001; // send success by deleting CarryFlag
+            return;
+        }
+
+        case 0x87:
+            // function 0x87: block-move (send success)
+            __asm__ __volatile__("xorw %%ax, %%ax" : : : "ax");
+            frame->flags &= ~0x0001; // send success by deleting CarryFlag
+            return;
+
+        default:
+            // unknown function -> send error (AH = 0x86, Carry Flag = 1)
+            __asm__ __volatile__("movw $0x8600, %%ax" : : : "ax");
+            frame->flags |= 0x0001; // Set Carry Flag
+            return;
+    }
+}
+
 // this interrupt is called by DOS to request next char from ringbuffer
 __attribute__((interrupt)) void c_int16_handler(struct interrupt_frame *frame) {
 	uint16_t old_ds;

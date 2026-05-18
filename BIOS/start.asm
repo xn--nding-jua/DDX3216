@@ -8,14 +8,35 @@
 ;
 ; x86-Instructions: https://www.felixcloutier.com/x86/
 ;
-; memory-map
-; ================
-; 0x0000 - 0x03FF: Interrupt-Vector Table (IVT)
-; 0x0400 - 0x04FF: Bios Data Area (BDA)
-; 0x0500 - 0x7BFF: 31kB free RAM (for the Stack)
-; 0x7C00 - 0x7DFF: 512 bytes for the Boot-Sector
-; 0x7E00 - 0xFFFE: 32kB free RAM
+; memory-map      
+; start    end      | size       | description
+; ==========================================================================
+; 0x00000 - 0x003FF | 1 kB       | Real Mode IVT (Interrupt-Vector Table)
+; 0x00400 - 0x004FF | 256 bytes  | BDA (BIOS Data Area)
+; 0x00500 - 0x07BFF | 29.7kB     | Conventional Memory (free RAM)
+; 0x07C00 - 0x07DFF | 512 bytes  | OS Boot-Sector
+; 0x07E00 - 0x7FFFF | 32kB       | Conventional memory (free RAM)
+; --------------------------------------------------------------------------
+; 0x80000 - 0x9FFFF | 128 kB     | EBDA (Extended BIOS Data Area)
+; --------------------------------------------------------------------------
+; 0xA0000 - 0xBFFFF | 128 kB     | Video display memory
+; --------------------------------------------------------------------------
+; 0xC0000 - 0xC7FFF | 32 kB      | Video BIOS
+; 0xC8000 - 0xEFFFF | 160 kB     | BIOS Expansions
+; 0xF0000 - 0xFFFFF | 64 kB      | Motherboard BIOS
 ; 
+; 1. Reset-Vector is called at end of 4GB Address-range at 0xFFFFFFF0 (ROM is displayed here during "Un"real mode)
+; 2. Far-Jump to address 0x000F0000 in ROM_SEG at 0xF000 (DS is set to ROM_SEG = 0xF000)
+; 3. CPU is now in "real" 16-bit RealMode
+; 4. After Startup, data (const, text, tables, etc.) is copied from ROM_SEG (0xF000) to STACK_SEG (0x0000) at Offset (0x0500)
+; 5. DataSegment DS is set to 0x0000, CodeSegment CS is kept at 0xF000
+; 6. C-Code and ISRs are still called from ROM_SEG but data is in 0x0500
+; 
+;
+; Within the C-Code the "Un"real-Mode is used to access the RAM via 32-bit accesses
+; we are using only FS/GS for the flat-access so that DS/SS is staying in 64kB-segment-mode
+; as DOS-programs seems to use Segment-Wrap-Around-techniques
+;
 
 SECTION .text
 USE16           ; same as "BITS 16"
@@ -27,6 +48,8 @@ EXTERN __bss_start
 EXTERN __bss_end
 EXTERN bios_main            ; main-function in C-Code
 
+global activate_unreal_mode
+
 ; segment-addresses
 ROM_SEG     EQU 0xF000
 STACK_SEG   EQU 0x0000
@@ -36,21 +59,18 @@ STACK_TOP   EQU 0x7C00      ; stack grows downwards (below boot-sector)
 CFG_ADDR    EQU 0x22
 CFG_DATA    EQU 0x23
 
-; base-addresses
-%define UART_BASE 0x1000
-
-; other configurations
-%define LCD_COLUMNS_BYTES  30  ; 240 / 8
-%define LCD_ROWS           64
-
 ; ========================================================
 ; Reset-Vector (must be at offset 0xFFF0 in ROM)
 ; ========================================================
+; we are in the "Unreal" Mode / Reset-Mode
+; CS (CodeSegment) is loaded to 0xFFFF:0000 (last 64kB segment of 32-bit address-mode)
+; IP (InstructionPointer) is set to 0xFFF0
+; So the very first assembler-command has to be at physical address 0xFFFF:FFF0
+; 
 SECTION .reset
 GLOBAL reset_vector
 reset_vector:
-    cli                         ; disable interrupts
-	jmp 0xF000:start            ; far-jump to the start-point (start is at offset 0x0000)
+	jmp 0xF000:start            ; far-jump to ROM_SEG (0x0F00) at offset 0x0000. (0xF000 will be shifted 4 bits to right!)
 
     ; Padding to offset 0xFFFE
     times (0x10 - ($ - $$) - 2) db 0xFF
@@ -64,6 +84,10 @@ reset_vector:
 SECTION .text16
 GLOBAL start
 start:
+	; disable interrupts
+    cli
+	cld
+
     ; initialize all segment-registers
     mov     ax, ROM_SEG
     mov     ds, ax				; now DS directs to 0xF000
@@ -284,8 +308,6 @@ copy_romdata:
     rep stosb                   ; write zeros
 .skip_bss:
 
-
-
     ; initialize the stack
     mov     ax, STACK_SEG
     mov     ds, ax              ; keep DS at RAM (0x0000)
@@ -332,3 +354,40 @@ smi_handler:
 
     ; Zurück zum normalen Boot
     jmp     start
+
+; ========================================================
+; activate "Un"real-mode for extended RAM-test above 1MB
+; ========================================================
+activate_unreal_mode:
+    ;cli                         ; disable interrupts
+
+    lgdt [gdt_ptr]              ; load GDT
+
+    mov eax, cr0
+    or al, 1                    ; set protected mode bit
+    mov cr0, eax
+
+    jmp +2                      ; flash CPU-Pipeline
+
+    mov ax, 0x08                ; 0x08 directs to 4GB-entry in GDT
+    mov fs, ax                  ; set FS to 4GB limit
+    mov gs, ax                  ; set GS to 4GB limit
+
+    mov eax, cr0
+    and al, 0xFE                ; delete Protected Mode Bit and get back to real-mode
+    mov cr0, eax
+
+    ;sti                         ; enable interrupts again
+    ret
+	
+; a minimum GDT for change into "Un"real-mode
+align 4
+gdt_start:
+    dq 0x0000000000000000       ; null-descriptor (requested by CPU)
+    ; 4GB Data-Segment: Base=0, Limit=0xFFFFF, G=1 (Page-Granularity -> 4GB), D/B=1, W=1, P=1
+    dq 0x00CF92000000FFFF       
+gdt_end:
+
+gdt_ptr:
+    dw gdt_end - gdt_start - 1  ; GDT Limit
+    dd gdt_start                ; GDT Base (physical Address)
