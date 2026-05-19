@@ -62,41 +62,40 @@ struct __attribute__((packed)) bios_data_area {
 };
 
 struct __attribute__((packed)) bios_parameter_block {
-    uint8_t  jmp_boot[3];        // 0x00: Assembler-Jump-Command (z.B. 0xEB 0x3C 0x90)
-    char     oem_name[8];        // 0x03: Name of the OEM (z.B. "MSDOS5.0")
+    uint8_t  jmp_boot[3];         // 0x00: Assembler-Jump-Command (z.B. 0xEB 0x3C 0x90)
+    char     oem_name[8];         // 0x03: Name of the OEM (z.B. "MSDOS5.0")
     
     // bootsector-structure
-    uint16_t bytes_per_sector;   // 0x0B: Default = 512
-    uint8_t  sectors_per_cluster;// 0x0D: Sectors per cluster (z.B. 2, 4, 8)
-    uint16_t reserved_sectors;   // 0x0E: Sectors before first FAT (1 for MBR/bootsector)
-    uint8_t  num_fats;           // 0x10: Number of FATs (should be 2)
-    uint16_t root_dir_entries;   // 0x11: Max. Entries in the root directory (z.B. 512)
-    uint16_t total_sectors_short;// 0x13: Total sectors (when < 65535, otherwise 0)
-    uint8_t  media_descriptor;   // 0x15: Media type (z.B. 0xF8 for hard disk/CF card)
-    uint16_t sectors_per_fat;    // 0x16: Size of FAT in sectors
-    uint16_t sectors_per_track;  // 0x18: Sectors per track (important for INT 13h geometry!)
-    uint16_t num_heads;          // 0x1A: Number of read/write heads
-    uint32_t hidden_sectors;     // 0x1C: Sectors before Partition (LBA-Offset)
-    uint32_t total_sectors_large;// 0x20: Total sectors (when 'total_sectors_short' == 0)
+    uint16_t bytes_per_sector;    // 0x0B: Default = 512
+    uint8_t  sectors_per_cluster; // 0x0D: Sectors per cluster (z.B. 2, 4, 8)
+    uint16_t reserved_sectors;    // 0x0E: Sectors before first FAT (1 for MBR/bootsector)
+    uint8_t  num_fats;            // 0x10: Number of FATs (should be 2)
+    uint16_t root_dir_entries;    // 0x11: Max. Entries in the root directory (z.B. 512)
+    uint16_t total_sectors_short; // 0x13: Total sectors (when < 65535, otherwise 0)
+    uint8_t  media_descriptor;    // 0x15: Media type (z.B. 0xF8 for hard disk/CF card)
+    uint16_t sectors_per_fat;     // 0x16: Size of FAT in sectors
+    uint16_t sectors_per_track;   // 0x18: Sectors per track (important for INT 13h geometry!)
+    uint16_t num_heads;           // 0x1A: Number of read/write heads
+    uint32_t hidden_sectors;      // 0x1C: Sectors before Partition (LBA-Offset)
+    uint32_t total_sectors_large; // 0x20: Total sectors (when 'total_sectors_short' == 0)
     
-    // Erweiterter BPB (für FAT16)
-    uint8_t  drive_number;       // 0x24: 0x00 for Floppy, 0x80 for HDD
-    uint8_t  reserved;           // 0x25: Reserved (should be 0)
-    uint8_t  extended_signature; // 0x26: Most 0x29
-    uint32_t volume_id;          // 0x27: Serialnumber of the volume (z.B. 0x12345678)
-    char     volume_label[11];   // 0x2B: Name of Device (e.g. "NO NAME    ")
-    char     file_system_type[8];// 0x36: "FAT12   " or "FAT16   "
+    // enhanced BPB (for FAT16)
+    uint8_t  drive_number;        // 0x24: 0x00 for Floppy, 0x80 for HDD
+    uint8_t  reserved;            // 0x25: Reserved (should be 0)
+    uint8_t  extended_signature;  // 0x26: Most 0x29
+    uint32_t volume_id;           // 0x27: Serialnumber of the volume (z.B. 0x12345678)
+    char     volume_label[11];    // 0x2B: Name of Device (e.g. "NO NAME    ")
+    char     file_system_type[8]; // 0x36: "FAT12   " or "FAT16   "
 };
 
 struct __attribute__((packed)) boot_sector {
-    struct bios_parameter_block bpb;        // head of sector
-    uint8_t                     boot_code[448]; // The actual bootloader code (e.g. DOS bootloader)
-    uint16_t                    signature;  // Must be 0xAA55
+    struct bios_parameter_block bpb;             // head of sector
+    uint8_t                     boot_code[448];  // The actual bootloader code (e.g. DOS bootloader)
+    uint16_t                    signature;       // Must be 0xAA55
 };
 
 extern volatile struct ivt_entry *const ivt;
 extern volatile struct bios_data_area *const bda;
 extern volatile struct boot_sector *const bootsector;
-extern void activate_unreal_mode(void);
 
 #endif

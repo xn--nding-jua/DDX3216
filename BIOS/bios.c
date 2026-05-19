@@ -314,9 +314,6 @@ void bios_main() {
 	//uart_interrupt_enable();
     uart_print("DDX3216 BIOS Booting...\n");
 
-    uart_print("Enabling unreal-mode...\n");
-	activate_unreal_mode(); // enable "Un"real mode to allow flat-access to full 32-bit memory
-
     uart_print("Enabling Gate A20 via Port 0x92...\n");
 	a20_enable();
 

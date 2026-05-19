@@ -334,6 +334,9 @@ copy_romdata:
     mov     ss, ax				; redirect stack-segment to 0x0000
     mov     sp, STACK_TOP		; set stack-pointer to desired 0x7C00
 
+    ; enable "Un"real mode to allow flat-access to full 32-bit memory
+    jmp activate_unreal_mode
+
     ; call the main-c-function of the BIOS
     call    bios_main           ; defined in main.c
 
@@ -378,7 +381,7 @@ smi_handler:
 ; activate "Un"real-mode for extended RAM-test above 1MB
 ; ========================================================
 activate_unreal_mode:
-    ;cli                         ; disable interrupts
+    ;cli                        ; disable interrupts
 
     lgdt [gdt_ptr]              ; load GDT
 
@@ -389,8 +392,11 @@ activate_unreal_mode:
     jmp +2                      ; flash CPU-Pipeline
 
     mov ax, 0x08                ; 0x08 directs to 4GB-entry in GDT
-    mov fs, ax                  ; set FS to 4GB limit
-    mov gs, ax                  ; set GS to 4GB limit
+    ;mov ds, ax                  ; set DS to 4GB limit <- don't use this if DOS is planned
+    ;mov es, ax                  ; set ES to 4GB limit <- don't use this if DOS is planned
+    ;mov ss, ax                  ; set SS to 4GB limit <- don't use this if DOS is planned
+    mov fs, ax                  ; set FS to 4GB limit <- this prevents the usage of EMM386!!!
+    mov gs, ax                  ; set GS to 4GB limit <- this prevents the usage of EMM386!!!
 
     mov eax, cr0
     and al, 0xFE                ; delete Protected Mode Bit and get back to real-mode
