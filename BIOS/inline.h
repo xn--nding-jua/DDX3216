@@ -1,11 +1,7 @@
 #ifndef HELPER_H_
 #define HELPER_H_
 
-#include "bios.h"
-
-#define CFG_ADDR    0x22
-#define CFG_DATA    0x23
-
+#include "registers.h"
 
 // **********************************************************
 // General inline-functions
@@ -37,17 +33,40 @@ static inline uint16_t inw(uint16_t port) {
     return val;
 }
 
-static inline void write_sc300_cfg(uint8_t reg, uint8_t data) {
+// functions for accessing config spaces
+// ==========================================================
+
+static inline void write_sc300_cfg(uint16_t reg, uint8_t data) {
 	outb(CFG_ADDR, reg);
 	outb(CFG_DATA, data);
 }
 
-static inline void write_sc300_cfgw(uint8_t reg, uint16_t data) {
+static inline uint8_t read_sc300_cfg(uint16_t reg) {
+	outb(CFG_ADDR, reg);
+	return inb(CFG_DATA);
+}
+
+static inline void write_sc300_cfgw(uint16_t reg, uint16_t data) {
 	outb(CFG_ADDR, reg);
 	outb(CFG_DATA, (uint8_t)(data & 0xFF));
 	
-	outb(CFG_ADDR, reg + 1); 
+	outb(CFG_ADDR, reg + 1);
 	outb(CFG_DATA, (uint8_t)((data >> 8) & 0xFF));
+}
+
+static inline void write_sc300_lcd_cfg(uint16_t reg, uint8_t data) {
+	outb(LCD_CGA_IDX_ADDR, reg);
+	outb(LCD_CGA_IDX_DATA, data);
+}
+
+static inline void write_sc300_rtc_cfg(uint16_t reg, uint8_t data) {
+	outb(RTC_IDX_ADDR, reg);
+	outb(RTC_IDX_DATA, data);
+}
+
+static inline uint8_t read_sc300_rtc_cfg(uint16_t reg) {
+	outb(RTC_IDX_ADDR, reg);
+	return inb(RTC_IDX_DATA);
 }
 
 // functions for accessing ROM space

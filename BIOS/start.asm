@@ -8,23 +8,38 @@
 ;
 ; x86-Instructions: https://www.felixcloutier.com/x86/
 ;
-; memory-map      
-; start    end      | size       | description
-; ==========================================================================
+; general memory-map of SC300
+; start     end     | size       | description
+; == conventional memory ===================================================
 ; 0x00000 - 0x003FF | 1 kB       | Real Mode IVT (Interrupt-Vector Table)
 ; 0x00400 - 0x004FF | 256 bytes  | BDA (BIOS Data Area)
 ; 0x00500 - 0x07BFF | 29.7kB     | Conventional Memory (free RAM)
 ; 0x07C00 - 0x07DFF | 512 bytes  | OS Boot-Sector
 ; 0x07E00 - 0x7FFFF | 32kB       | Conventional memory (free RAM)
-; --------------------------------------------------------------------------
 ; 0x80000 - 0x9FFFF | 128 kB     | EBDA (Extended BIOS Data Area)
-; --------------------------------------------------------------------------
-; 0xA0000 - 0xB7FFF | 95 kB      | Video display memory for enhanced graphics-mode
-; 0xB8000 - 0xBFFFF | 31 kB      | Video display memory for CGA-Textmode
-; --------------------------------------------------------------------------
+; -- high memory -----------------------------------------------------------
+; 0xA0000 - 0xAFFFF | 64 kB      | optional BIOS
+; 0xB0000 - 0xB7FFF | 32 kB      | External Video-SRAM in HGA-Mode
+; 0xB8000 - 0xBFFFF | 32 kB      | External Video-SRAM in CGA-Mode (default)
 ; 0xC0000 - 0xC7FFF | 32 kB      | Video BIOS
 ; 0xC8000 - 0xEFFFF | 160 kB     | Expansion-ROMs
 ; 0xF0000 - 0xFFFFF | 64 kB      | Motherboard BIOS (we)
+; -- extended memory -------------------------------------------------------
+; 0x100000 - 0xFFFFFF | 16 MB | Extended Memory Area (see ref-manual on page 5-85 for /DOSCS-mapping)
+; 0x100000 - 0x1FFFFF | 1 MB  | External DRAM Memory (RAM)
+; 0xE00000 - 0xFEFFFF | 2 MB  | External Flash-Memory (RDOSSIZ[3..0] = 0010)
+; 
+; 
+; memory-map of external Video-SRAM in CGA Text Mode
+; start     end     | size   | description
+; =============================================================================
+; 0xB8000 - 0xBBFFF | 16 kB  | Display data
+; 0xBC000 - 0xBCFFF | 4 kB   | Free
+; 0xBD000 - 0xBDFFF | 4 kB   | Free
+; 0xBE000 - 0xBEFFF | 4 kB   | Free
+; 0xBF000 - 0xBF7FF | 2 kB   | Free
+; 0xBF800 - 0xBFFFF | 2 kB   | Character fonts 1 (8x8)
+; 
 ; 
 ; 1. Reset-Vector is called at end of 4GB Address-range at 0xFFFFFFF0 (ROM is displayed here during "Un"real mode)
 ; 2. Far-Jump to address 0x000F0000 in ROM_SEG at 0xF000 (DS is set to ROM_SEG = 0xF000)
@@ -218,7 +233,10 @@ sc300_init:
     ; additional mandatory settings for 33-MHz:
 
     ; Index 0x60: x 0 0 x 0 x x x -> Bit6=0, Bit5=0, Bit2=0
-    ; (already set above)
+    mov     al, 0x60
+    out     CFG_ADDR, al
+    mov     al, 0x00
+    out     CFG_DATA, al
 
     ; Index 0x62 (MMS Wait State 1): 0 x x 1 x x x x -> Bit4=1 for 33MHz
     mov     al, 0x62

@@ -141,11 +141,25 @@ void ram_test_and_setup_2MB() {
     }
 }
 
+static void kbd_wait_write() {
+	// check if write-buffer is full
+    while (inb(KBD_STATUS_PORT) & KBD_STATUS_IBF) {
+        __asm__ __volatile__("nop");
+    }
+}
+
+static void kbd_wait_read() {
+    // check if buffer is filled
+    while (!(inb(KBD_STATUS_PORT) & KBD_STATUS_OBF)) {
+        __asm__ __volatile__("nop");
+    }
+}
+
 bool kbd_init() {
     // selftest of the controller (optional)
 	bool kbd_ok = false;
     outb(KBD_STATUS_PORT, 0xAA);
-    while (!(inb(KBD_STATUS_PORT) & KBD_STAT_OBF));
+    while (!(inb(KBD_STATUS_PORT) & KBD_STATUS_OBF));
     if (inb(KBD_DATA_PORT) == 0x55) {
         kbd_ok = true;
     }
@@ -155,6 +169,15 @@ bool kbd_init() {
 
     // Keyboard Interface aktivieren
     outb(KBD_STATUS_PORT, 0xAE);
+	
+	// enable numlock-LED for debug-purpose
+	kbd_wait_write(); // wait until write-buffer is ready
+	outb(KBD_DATA_PORT, 0xED); // send LED command
+	kbd_wait_read(); // wait for ACK
+	if (inb(KBD_DATA_PORT) == 0xFA) {
+		kbd_wait_write();
+		outb(KBD_DATA_PORT, KBD_LED_NUMLOCK);
+	}
 	
 	return kbd_ok;
 }
@@ -298,17 +321,17 @@ void bios_main() {
 		uart_print(" missing...\n");
 	}
 	
-    uart_print("Initializing PCMCIA / CF-Card...\n");
-	pcmcia_init();
-	
 	uart_print("Initializing timer...\n");
 	timer_init();
+
+    //uart_print("Initializing PCMCIA / CF-Card...\n");
+	//pcmcia_init();
 
     uart_print("Enabling interrupts...\n");
 	__asm__ volatile ("sti");
 
-    uart_print("Booting from CF-Card...\n");
-	boot_dos();
+    //uart_print("Booting from CF-Card...\n");
+	//boot_dos();
 
     while(1) {
 	}; 
