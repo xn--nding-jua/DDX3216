@@ -86,37 +86,54 @@ __attribute__((interrupt)) void c_int09_handler(struct interrupt_frame *frame) {
 // INT 10h: Video-interrupt
 __attribute__((interrupt)) void c_int10_handler(struct interrupt_frame *frame) {
 	uint16_t old_ds;
-    uint8_t ah, al;
+    uint16_t current_ax;
+    uint16_t current_dx;
 
     // read registers first
-    __asm__ volatile (
-        "movb %%ah, %0\n"
-        "movb %%al, %1\n"
-        : "=r"(ah), "=r"(al)
-        :
-        :
-    );
+    __asm__ __volatile__("movw %%ax, %0" : "=r"(current_ax));
+    uint8_t ah = (uint8_t)(current_ax >> 8);
+    uint8_t al = (uint8_t)(current_ax & 0xFF);
+    __asm__ __volatile__("movw %%dx, %0" : "=r"(current_dx));
 
 	// store DS and reset it to 0
 	__asm__ volatile("movw %%ds, %0" : "=r"(old_ds));
 	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
     
     switch (ah) {
-        case 0x0E: // Video - Write Character in TTY Mode
-            // simply redirect character to TTY
-            if (al == '\n') uart_putc('\r'); // DOS often uses only \n, but UART needs \r\n
+        case 0x0E: // write character
+            // write char to display and handle control-characters like newline, carriage return, backspace, etc. internally
+            lcd_putc(al, 0x07);
+            
+            // output ASCII-character to UART (including control-characters like newline, etc.)
             uart_putc(al);
             break;
 
+        case 0x02: // set cursor position
+            cursorPosition.row = (current_dx >> 8) & 0xFF; // DH = Row
+            cursorPosition.col = current_dx & 0xFF;        // DL = Column
+
+            // update hardware cursor position
+            uint16_t offset = ((cursorPosition.row * (LCD_WIDTH / 8)) + cursorPosition.col) * 2;
+            write_sc300_lcd_cfg(LCD_VID_IDX_CURSOR_ADDR_UPPER, (offset >> 9) & 0xFF); // upper 7 bits of offset (divide by 512)
+            write_sc300_lcd_cfg(LCD_VID_IDX_CURSOR_ADDR_LOWER, (offset >> 1) & 0xFF); // lower 8 bits of offset (divide by 2)
+            break;
+
+        case 0x03: // get cursor position
+            // return cursor position in DX (DH = Row, DL = Column)
+            uint16_t return_dx = (cursorPosition.row << 8) | cursorPosition.col;
+            __asm__ __volatile__("movw %0, %%dx" : : "r"(return_dx) : "dx");
+
+            break;
+
         case 0x0F: // get Current Video Mode
-			// fake a 80x25 textmode to DOS
-            // AH = Columns (80), AL = Video Mode (03h), BH = Page (0)
-            __asm__ volatile (
-                "movb $80, %%ah\n"
-                "movb $0x03, %%al\n"
-                "movb $0x00, %%bh"
-                ::: "ax", "bx"
-            );
+			// fake a 30x8 textmode to DOS
+            // AH = Columns (30), AL = Video Mode (03h), BH = Page (0)
+            // number of rows is set in BDA and not returned via INT10h, because DOS will ignore the returned value anyway and would always assume 25 rows
+            uint16_t return_ax = (30 << 8) | 0x03;
+            uint16_t return_bx = 0x0000; // BH = 0
+            __asm__ __volatile__("movw %0, %%ax" : : "r"(return_ax) : "ax");
+            __asm__ __volatile__("movw %0, %%bx" : : "r"(return_bx) : "bx");
+
             break;
 
         default:

@@ -12,7 +12,9 @@
 void lcd_init();
 void lcd_clear();
 void lcd_clear_test();
-void lcd_putchar(int row, int col, char c, uint8_t attribute);
+void lcd_scroll_up();
+void lcd_putc_pos(int row, int col, char c, uint8_t attribute);
+void lcd_putc(char c, uint8_t attribute);
 void lcd_print_string(int row, int col, const char *str, uint8_t attribute);
 
 #endif

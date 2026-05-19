@@ -11,6 +11,8 @@ __asm__(".code16gcc\n"); // we are using -m16 compiler-switch so this line is re
 
 #include "bios.h"
 
+struct sCursorPosition cursorPosition; // keep track of the current cursor position for lcd_putc()
+
 // **********************************************************
 // service functions
 // **********************************************************
@@ -48,8 +50,9 @@ void setup_bda() {
 	// BDA is within our STACK_SEG so we can access it with 16-bit pointers directly
 	
 	// create DOS-compatibility by updating BDA
-	*(volatile uint8_t*)BDA_VIDEO_INFO = 0x03; // current video mode (80x25 Text)
-	*(volatile uint16_t*)BDA_VIDEO_COLUMS = 80;   // number of columns
+	*(volatile uint8_t*)BDA_VIDEO_MODE = 0x03; // current video mode (80x25 Text)
+	*(volatile uint16_t*)BDA_VIDEO_COLUMS = 30;   // number of columns
+	*(volatile uint16_t*)BDA_VIDEO_ROWS = 8-1;   // number of rows
 
 	// set address of COM1 (external UART)
     *(volatile uint16_t*)BDA_COM1_BASE = UART_BASE; // COM1 = 0x1000
@@ -58,7 +61,7 @@ void setup_bda() {
 	//                                     FEDCBA9876543210
 	*(volatile uint16_t*)BDA_EQUIPMENT_WORD = 0b0000001000010000; // 1 COM-port / CGA-graphics
 	
-	*(volatile uint16_t*)BDA_MEM_SIZE = 640; // enter common 640kB of free conventional RAM
+	*(volatile uint16_t*)BDA_MEM_SIZE = 640; // memory-size in kB
 }
 
 int test_ram_range(uint16_t start_seg, uint16_t end_seg) {

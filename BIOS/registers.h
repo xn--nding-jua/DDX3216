@@ -1,13 +1,15 @@
 #define CFG_ADDR                0x22
 #define CFG_DATA                0x23
-#define ROM_SEG                 0xF000
+#define ROM_SEG                 0xF000 // external ROM is mapped to this segment (/ROMCS)
+#define VRAM_SEG                0xB800 // external SRAM is mapped to this segment
 
-// BIOS Data Area (see https://www.lowlevel.eu/wiki/BIOS_Data_Area)
+// BIOS Data Area (see https://www.lowlevel.eu/wiki/BIOS_Data_Area and https://github.com/sergev/tiltti/blob/main/docs/BIOS_Data_Area.md)
 #define BDA_COM1_BASE			0x0400
 #define BDA_EQUIPMENT_WORD		0x0410
 #define BDA_MEM_SIZE			0x0413
-#define BDA_VIDEO_INFO			0x0449
+#define BDA_VIDEO_MODE			0x0449
 #define BDA_VIDEO_COLUMS		0x044A
+#define BDA_VIDEO_ROWS          0x0484
 #define BDA_TIMER_COUNTER 		((volatile uint32_t*)0x046C)
 
 #define BDA_KBD_HEAD        	((volatile uint16_t*)0x041A) // Kopf (nächstes zu lesendes Zeichen)
@@ -65,6 +67,7 @@
 #define LCD_VID_IDX_VER_TOTAL_ADJ        0x05
 #define LCD_VID_IDX_VER_DISP             0x06
 #define LCD_VID_IDX_VER_SYNC_POS         0x07
+#define LCD_VID_IDX_INTERLACED_MODE      0x08
 #define LCD_VID_IDX_MAX_SCANLINE         0x09
 #define LCD_VID_IDX_CURSOR_START         0x0A
 #define LCD_VID_IDX_CURSOR_END           0x0B
@@ -75,7 +78,7 @@
 
 #define LCD_ENH_IDX_SOFTW_SWITCH_EN      0x12
 #define LCD_ENH_IDX_SOFTW_SWITCH_DIS     0x13
-#define LCD_ENH_IDX_SCREEN_CTRL_REST     0x18
+#define LCD_ENH_IDX_SCREEN_CTRL_RESTORE  0x18
 #define LCD_ENH_IDX_SCREEN_CONTROL_2     0x19
 #define LCD_ENH_IDX_SCREEN_ADJ_LOWER     0x1A
 #define LCD_ENH_IDX_SCREEN_ADJ_UPPER     0x1B
@@ -115,8 +118,3 @@
 #define KBD_LED_SCROLLLOCK      0x01
 #define KBD_LED_NUMLOCK         0x02
 #define KBD_LED_CAPSLOCK        0x04
-
-#define VRAM_SEG                0xB800 // directly after boot-sector
-#define LCD_COLUMNS_BYTES       30
-#define LCD_ROWS                64
-#define VRAM_SIZE               (LCD_COLUMNS_BYTES * LCD_ROWS * 2)  // 1920 x 2
