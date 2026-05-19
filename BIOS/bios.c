@@ -305,7 +305,7 @@ void boot_dos() {
 // main function
 // **********************************************************
 
-void bios_main() {
+__attribute__((noreturn)) void bios_main() {
 	// disable the watchdog
 	wdt_disable();
 	
@@ -353,5 +353,6 @@ void bios_main() {
 	//boot_dos();
 
     while(1) {
+        __asm__("hlt");
 	}; 
 }

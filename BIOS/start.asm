@@ -312,9 +312,9 @@ copy_romdata:
     mov si, __data_start        ; 16-bit offset in ROM-Segment
     mov di, 0x0500              ; destination in RAM
     mov cx, __data_size
-    jcxz .skip_data             ; if no data to copy -> skip this part
+    jcxz skip_data             ; if no data to copy -> skip this part
     rep movsb                   ; copy .data and .rodata into RAM
-.skip_data:
+skip_data:
     ; clear data in BSS to zero
     mov ax, STACK_SEG
     mov ds, ax
@@ -322,10 +322,10 @@ copy_romdata:
     mov di, __bss_start
     mov cx, __bss_end
     sub cx, di                  ; calc number of bytes
-    jcxz .skip_bss               ; no data in bss
+    jcxz skip_bss               ; no data in bss
     xor al, al
     rep stosb                   ; write zeros
-.skip_bss:
+skip_bss:
 
     ; initialize the stack
     mov     ax, STACK_SEG
@@ -335,10 +335,11 @@ copy_romdata:
     mov     sp, STACK_TOP		; set stack-pointer to desired 0x7C00
 
     ; enable "Un"real mode to allow flat-access to full 32-bit memory
-    jmp activate_unreal_mode
+    jmp     activate_unreal_mode
 
+start_c_code:
     ; call the main-c-function of the BIOS
-    call    bios_main           ; defined in main.c
+    jmp     bios_main           ; defined in main.c
 
     ; we should never come back to here
 
@@ -403,7 +404,8 @@ activate_unreal_mode:
     mov cr0, eax
 
     ;sti                         ; enable interrupts again
-    ret
+    
+    jmp start_c_code
 	
 ; a minimum GDT for change into "Un"real-mode
 align 4
