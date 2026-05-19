@@ -11,11 +11,11 @@
 ; general memory-map of SC300
 ; start     end     | size       | description
 ; == conventional memory ===================================================
-; 0x00000 - 0x003FF | 1 kB       | Real Mode IVT (Interrupt-Vector Table)
-; 0x00400 - 0x004FF | 256 bytes  | BDA (BIOS Data Area)
-; 0x00500 - 0x07BFF | 29.7kB     | Conventional Memory (free RAM)
-; 0x07C00 - 0x07DFF | 512 bytes  | OS Boot-Sector
-; 0x07E00 - 0x7FFFF | 32kB       | Conventional memory (free RAM)
+; 0x00000 - 0x003FF | 1 kB       | Real Mode IVT (Interrupt-Vector Table)  \
+; 0x00400 - 0x004FF | 256 bytes  | BDA (BIOS Data Area)                    |
+; 0x00500 - 0x07BFF | 29.7kB     | Conventional Memory (free RAM)          |--> 0x00000 ... 0x0FFFF = first 64kB Segment where we can use regular pointers as DS is at 0x0000
+; 0x07C00 - 0x07DFF | 512 bytes  | OS Boot-Sector                          |
+; 0x07E00 - 0x7FFFF | 32kB       | Conventional memory (free RAM)          /
 ; 0x80000 - 0x9FFFF | 128 kB     | EBDA (Extended BIOS Data Area)
 ; -- high memory -----------------------------------------------------------
 ; 0xA0000 - 0xAFFFF | 64 kB      | optional BIOS

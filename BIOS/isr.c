@@ -102,34 +102,33 @@ __attribute__((interrupt)) void c_int10_handler(struct interrupt_frame *frame) {
     switch (ah) {
         case 0x0E: // write character
             // write char to display and handle control-characters like newline, carriage return, backspace, etc. internally
-            lcd_putc(al, 0x07);
+            lcd_putc(al, 0x07); // light gray on black
             
             // output ASCII-character to UART (including control-characters like newline, etc.)
             uart_putc(al);
             break;
 
         case 0x02: // set cursor position
-            cursorPosition.row = (current_dx >> 8) & 0xFF; // DH = Row
-            cursorPosition.col = current_dx & 0xFF;        // DL = Column
+            bda->cursor_position[0].row = (current_dx >> 8) & 0xFF; // DH = Row
+            bda->cursor_position[0].col = current_dx & 0xFF;        // DL = Column
 
             // update hardware cursor position
-            uint16_t offset = ((cursorPosition.row * (LCD_WIDTH / 8)) + cursorPosition.col) * 2;
+            uint16_t offset = ((bda->cursor_position[0].row * (LCD_WIDTH / 8)) + bda->cursor_position[0].col) * 2;
             write_sc300_lcd_cfg(LCD_VID_IDX_CURSOR_ADDR_UPPER, (offset >> 9) & 0xFF); // upper 7 bits of offset (divide by 512)
             write_sc300_lcd_cfg(LCD_VID_IDX_CURSOR_ADDR_LOWER, (offset >> 1) & 0xFF); // lower 8 bits of offset (divide by 2)
             break;
 
         case 0x03: // get cursor position
             // return cursor position in DX (DH = Row, DL = Column)
-            uint16_t return_dx = (cursorPosition.row << 8) | cursorPosition.col;
+            uint16_t return_dx = (bda->cursor_position[0].row << 8) | bda->cursor_position[0].col;
             __asm__ __volatile__("movw %0, %%dx" : : "r"(return_dx) : "dx");
 
             break;
 
         case 0x0F: // get Current Video Mode
-			// fake a 30x8 textmode to DOS
-            // AH = Columns (30), AL = Video Mode (03h), BH = Page (0)
+            // AH = Columns (30), AL = Video Mode (00h), BH = Page (0)
             // number of rows is set in BDA and not returned via INT10h, because DOS will ignore the returned value anyway and would always assume 25 rows
-            uint16_t return_ax = (30 << 8) | 0x03;
+            uint16_t return_ax = (30 << 8) | 0x00; // 40x25 char in grayscale-text mode
             uint16_t return_bx = 0x0000; // BH = 0
             __asm__ __volatile__("movw %0, %%ax" : : "r"(return_ax) : "ax");
             __asm__ __volatile__("movw %0, %%bx" : : "r"(return_bx) : "bx");
@@ -183,7 +182,7 @@ __attribute__((interrupt)) void c_int12_handler(struct interrupt_frame *frame) {
 	__asm__ volatile("movw %0, %%ds" : : "r"(old_ds));
 }
 
-// disk-interrupt
+// INT13h: disk-interrupt
 __attribute__((interrupt)) void c_int13_handler(struct interrupt_frame *frame) {
     uint16_t old_ds;
     uint8_t  ah, al, ch, cl, dh, dl;
@@ -293,9 +292,9 @@ __attribute__((interrupt)) void c_int13_handler(struct interrupt_frame *frame) {
         // ------------------------------------------------------
         // AH=08h: Get Drive Parameters
         // ------------------------------------------------------
-        uint8_t max_heads   = CF_HEADS - 1;
-        uint8_t max_sectors = CF_SECTORS;
-        uint16_t max_cyls   = CF_CYLINDERS - 1;
+        uint8_t max_heads   = CF_HEADS - 1;     // TODO: max_heads = bootsector->bpb.num_heads; // <- DS will be changed so we have to store this somewhere else for later use in INT13h AH=02h
+        uint8_t max_sectors = CF_SECTORS;       // TODO: max_sectors = bootsector->bpb.sectors_per_track; // <- DS will be changed so we have to store this somewhere else for later use in INT13h AH=02h
+        uint16_t max_cyls   = CF_CYLINDERS - 1; // TODO: max_cyls = bootsector->bpb.total_sectors / (bootsector->bpb.num_heads * bootsector->bpb.sectors_per_track) - 1;
 
         uint8_t cl_val = (max_sectors & 0x3F) |
                          (uint8_t)((max_cyls >> 2) & 0xC0);

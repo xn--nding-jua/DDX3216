@@ -93,15 +93,15 @@ void lcd_scroll_up() {
     for (int c = 0; c < (LCD_WIDTH / 8); c++) {
         uint16_t offset = ((LCD_HEIGHT / 8 - 1) * (LCD_WIDTH / 8) * 2) + (c * 2);
         writeFarByte(VRAM_SEG, offset, ' ');
-        writeFarByte(VRAM_SEG, offset + 1, 0x07);
+        writeFarByte(VRAM_SEG, offset + 1, 0x07); // light gray on black
     }
 
 	// update internal cursor position
-	cursorPosition.row = (LCD_HEIGHT / 8) - 1;
-	cursorPosition.col = 0;
+	bda->cursor_position[0].row = (LCD_HEIGHT / 8) - 1;
+	bda->cursor_position[0].col = 0;
 
 	// update hardware cursor position
-	uint16_t offset = ((cursorPosition.row * (LCD_WIDTH / 8)) + cursorPosition.col) * 2;
+	uint16_t offset = ((bda->cursor_position[0].row * (LCD_WIDTH / 8)) + bda->cursor_position[0].col) * 2;
 	write_sc300_lcd_cfg(LCD_VID_IDX_CURSOR_ADDR_UPPER, (offset >> 9) & 0xFF); // upper 7 bits of offset (divide by 512)
 	write_sc300_lcd_cfg(LCD_VID_IDX_CURSOR_ADDR_LOWER, (offset >> 1) & 0xFF); // lower 8 bits of offset (divide by 2)
 }
@@ -130,23 +130,23 @@ void lcd_putc(char c, uint8_t attribute) {
 
 	switch (c) {
 		case '\n': // newline
-			cursorPosition.col = 0;
-			cursorPosition.row++;
+			bda->cursor_position[0].col = 0;
+			bda->cursor_position[0].row++;
 
-			if (cursorPosition.row == (LCD_HEIGHT / 8)) {
+			if (bda->cursor_position[0].row == (LCD_HEIGHT / 8)) {
 				// reset to top of screen when we reach the end of the screen
 				lcd_scroll_up();
 			}
 			break;
 		case '\r': // carriage return
-			cursorPosition.col = 0;
+			bda->cursor_position[0].col = 0;
 			break;
 		case '\b': // backspace
 			// delete char at current position
-			if (cursorPosition.col > 0) {
-				cursorPosition.col--;
+			if (bda->cursor_position[0].col > 0) {
+				bda->cursor_position[0].col--;
 			}
-			offset = ((cursorPosition.row * (LCD_WIDTH / 8)) + cursorPosition.col) * 2;
+			offset = ((bda->cursor_position[0].row * (LCD_WIDTH / 8)) + bda->cursor_position[0].col) * 2;
 			writeFarByte(VRAM_SEG, offset, ' '); // character-byte (8-bit ASCII-chars)
 			writeFarByte(VRAM_SEG, offset + 1, attribute); // attribute-byte
 			break;
@@ -154,23 +154,23 @@ void lcd_putc(char c, uint8_t attribute) {
 			// output character to LCD
 
 			// increment internal cursor position for new character
-			if (cursorPosition.col < (LCD_WIDTH / 8) - 1) {
-				cursorPosition.col++;
+			if (bda->cursor_position[0].col < (LCD_WIDTH / 8) - 1) {
+				bda->cursor_position[0].col++;
 			}else{
-				cursorPosition.col = 0;
-				cursorPosition.row++;
+				bda->cursor_position[0].col = 0;
+				bda->cursor_position[0].row++;
 			}
-			if (cursorPosition.row == (LCD_HEIGHT / 8)) {
+			if (bda->cursor_position[0].row == (LCD_HEIGHT / 8)) {
 				lcd_scroll_up();
 			}
-			offset = ((cursorPosition.row * (LCD_WIDTH / 8)) + cursorPosition.col) * 2;
+			offset = ((bda->cursor_position[0].row * (LCD_WIDTH / 8)) + bda->cursor_position[0].col) * 2;
 			writeFarByte(VRAM_SEG, offset, c); // character-byte (8-bit ASCII-chars)
 			writeFarByte(VRAM_SEG, offset + 1, attribute); // attribute-byte
 			break;
 	}
 
 	// update hardware cursor position
-	offset = ((cursorPosition.row * (LCD_WIDTH / 8)) + cursorPosition.col) * 2;
+	offset = ((bda->cursor_position[0].row * (LCD_WIDTH / 8)) + bda->cursor_position[0].col) * 2;
 	write_sc300_lcd_cfg(LCD_VID_IDX_CURSOR_ADDR_UPPER, (offset >> 9) & 0xFF); // upper 7 bits of offset (divide by 512)
 	write_sc300_lcd_cfg(LCD_VID_IDX_CURSOR_ADDR_LOWER, (offset >> 1) & 0xFF); // lower 8 bits of offset (divide by 2)
 }

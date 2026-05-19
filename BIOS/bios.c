@@ -11,7 +11,9 @@ __asm__(".code16gcc\n"); // we are using -m16 compiler-switch so this line is re
 
 #include "bios.h"
 
-struct sCursorPosition cursorPosition; // keep track of the current cursor position for lcd_putc()
+volatile struct ivt_entry *const ivt = (volatile struct ivt_entry *)0x0000;
+volatile struct bios_data_area *const bda = (volatile struct bios_data_area *)0x0400;
+volatile struct boot_sector *const bootsector = (volatile struct boot_sector *)0x7C00;
 
 // **********************************************************
 // service functions
@@ -23,45 +25,63 @@ void io_delay() {
 }
 
 void setup_ivt() {
-	// dummy_callbacks for all interrupts
-	for (uint16_t i = 0; i < 256; i++) {
-		writeFarWord(0x0000, (i * 4), (uint16_t)(uintptr_t)c_int_dummy_handler);
-		writeFarWord(0x0000, (i * 4) + 2, ROM_SEG); // keep ROM-Segment
-	}
+    // dummy_callbacks for all interrupts
+    for (uint16_t i = 0; i < 256; i++) {
+        ivt[i].offset = (uint16_t)(uintptr_t)c_int_dummy_handler;
+        ivt[i].segment = ROM_SEG; // keep ROM-Segment
+    }
 
-	// register callback-handlers for specific interrupts
+  	// register callback-handlers for specific interrupts
 	// the following code will produce warnings during compilation, but
 	// the warning is the proof of using the 16-bit "iret" after the ISR
-	writeFarWord(0x0000, (0x08 * 4), (uint16_t)(uintptr_t)c_int08_handler); // double-cast to mitigate warning about 32/16-bit pointer
-	writeFarWord(0x0000, (0x09 * 4), (uint16_t)(uintptr_t)c_int09_handler); // double-cast to mitigate warning about 32/16-bit pointer
-	writeFarWord(0x0000, (0x10 * 4), (uint16_t)(uintptr_t)c_int10_handler); // double-cast to mitigate warning about 32/16-bit pointer
-	writeFarWord(0x0000, (0x11 * 4), (uint16_t)(uintptr_t)c_int11_handler); // double-cast to mitigate warning about 32/16-bit pointer
-	writeFarWord(0x0000, (0x12 * 4), (uint16_t)(uintptr_t)c_int12_handler); // double-cast to mitigate warning about 32/16-bit pointer
-	writeFarWord(0x0000, (0x13 * 4), (uint16_t)(uintptr_t)c_int13_handler); // double-cast to mitigate warning about 32/16-bit pointer
-	writeFarWord(0x0000, (0x14 * 4), (uint16_t)(uintptr_t)c_int14_handler); // double-cast to mitigate warning about 32/16-bit pointer
-	writeFarWord(0x0000, (0x15 * 4), (uint16_t)(uintptr_t)c_int15_handler); // double-cast to mitigate warning about 32/16-bit pointer
-	writeFarWord(0x0000, (0x16 * 4), (uint16_t)(uintptr_t)c_int16_handler); // double-cast to mitigate warning about 32/16-bit pointer
-	//writeFarWord(0x0000, (0x0C * 4), (uint16_t)(uintptr_t)c_int0c_handler); // double-cast to mitigate warning about 32/16-bit pointer
-	writeFarWord(0x0000, (0x1A * 4), (uint16_t)(uintptr_t)c_int1a_handler); // double-cast to mitigate warning about 32/16-bit pointer
-	writeFarWord(0x0000, (0x1C * 4), (uint16_t)(uintptr_t)c_int1c_handler); // double-cast to mitigate warning about 32/16-bit pointer
+    ivt[0x08].offset = (uint16_t)(uintptr_t)c_int08_handler; // double-cast to mitigate warning about 32/16-bit pointer
+    ivt[0x09].offset = (uint16_t)(uintptr_t)c_int09_handler; // double-cast to mitigate warning about 32/16-bit pointer
+    ivt[0x10].offset = (uint16_t)(uintptr_t)c_int10_handler; // double-cast to mitigate warning about 32/16-bit pointer
+    ivt[0x11].offset = (uint16_t)(uintptr_t)c_int11_handler; // double-cast to mitigate warning about 32/16-bit pointer
+    ivt[0x12].offset = (uint16_t)(uintptr_t)c_int12_handler; // double-cast to mitigate warning about 32/16-bit pointer
+    ivt[0x13].offset = (uint16_t)(uintptr_t)c_int13_handler; // double-cast to mitigate warning about 32/16-bit pointer
+    ivt[0x14].offset = (uint16_t)(uintptr_t)c_int14_handler; // double-cast to mitigate warning about 32/16-bit pointer
+    ivt[0x15].offset = (uint16_t)(uintptr_t)c_int15_handler; // double-cast to mitigate warning about 32/16-bit pointer
+    ivt[0x16].offset = (uint16_t)(uintptr_t)c_int16_handler; // double-cast to mitigate warning about 32/16-bit pointer
+    //ivt[0x0C].offset = (uint16_t)(uintptr_t)c_int0c_handler; // double-cast to mitigate warning about 32/16-bit pointer
+    ivt[0x1A].offset = (uint16_t)(uintptr_t)c_int1a_handler; // double-cast to mitigate warning about 32/16-bit pointer
+    ivt[0x1C].offset = (uint16_t)(uintptr_t)c_int1c_handler; // double-cast to mitigate warning about 32/16-bit pointer
 }
 
 void setup_bda() {
 	// BDA is within our STACK_SEG so we can access it with 16-bit pointers directly
 	
-	// create DOS-compatibility by updating BDA
-	*(volatile uint8_t*)BDA_VIDEO_MODE = 0x03; // current video mode (80x25 Text)
-	*(volatile uint16_t*)BDA_VIDEO_COLUMS = 30;   // number of columns
-	*(volatile uint16_t*)BDA_VIDEO_ROWS = 8-1;   // number of rows
+    bda->com_ports[0] = UART_BASE; // COM1 = 0x1000 = external UART at I/O Port 0x1000
+    bda->com_ports[1] = 0x0000; // COM2 = not available
+    bda->com_ports[2] = 0x0000; // COM3 = not available
+    bda->com_ports[3] = 0x0000; // COM4 = not available
 
-	// set address of COM1 (external UART)
-    *(volatile uint16_t*)BDA_COM1_BASE = UART_BASE; // COM1 = 0x1000
+    bda->lpt_ports[0] = 0x0000; // LPT1 = not available
+    bda->lpt_ports[1] = 0x0000; // LPT2 = not available
+    bda->lpt_ports[2] = 0x0000; // LPT3 = not available
+
+    bda->ebda_base_address = 0x0000; // EBDA-Address (not used)
 
 	// set Equipment Word within BDA to tell DOS that we have an UART and a CGA-graphic
 	//                                     FEDCBA9876543210
-	*(volatile uint16_t*)BDA_EQUIPMENT_WORD = 0b0000001000010000; // 1 COM-port / CGA-graphics
-	
-	*(volatile uint16_t*)BDA_MEM_SIZE = 640; // memory-size in kB
+    bda->equipment_word = 0b0000001000010000; // 1 COM-port / CGA-graphics
+    bda->base_memory_kb = 640; // base memory size in kB (standard: 640 kB)
+    bda->kbd_status_flags1 = 0x00; // Keyboard-Status-Flags (e.g. Numlock/Capslock active, etc.)
+    bda->kbd_status_flags2 = 0x00; // Keyboard-Status-Flags (e.g. Numlock/Capslock active, etc.)
+
+    // create DOS-compatibility by updating BDA
+    bda->video_mode = 0x00; // current video mode (40x25 grayscale-text, but we are using only 30x8)
+    bda->video_columns = 30; // number of columns
+    bda->video_page_size = 512; // (LCD_WIDTH / 8) * (LCD_HEIGHT / 8) * 2 = 480 -> rounded to 512 // size of one video page in bytes (virtual CGA resolution)
+    bda->video_page_start = 0x0000; // start offset of page relative to video memory
+    bda->cursor_position[0].row = 0; // initial cursor position (row)
+    bda->cursor_position[0].col = 0; // initial cursor position (column)
+    bda->cursor_type = 0x0607; // cursor type (start/end scanline)
+    bda->active_video_page = 0; // active video page index
+    bda->crtc_port_address = LCD_CGA_IDX_ADDR; // I/O Port of Videochip (CGA = 0x3D4)
+    bda->video_rows = (LCD_HEIGHT / 8) - 1; //  number of rows - 1
+    bda->character_points = 8; // bytes per character (font height)
+    bda->ext_memory_kb = 1024; // extended memory size in kB above 1MB (for INT15h)
 }
 
 int test_ram_range(uint16_t start_seg, uint16_t end_seg) {
@@ -266,8 +286,7 @@ void boot_dos() {
     }
 
     // check boot-signature at the end of the MBR
-    uint16_t *sig = (uint16_t*)0x7DFE;
-    if (*sig != 0xAA55) {
+    if (bootsector->signature != 0xAA55) {
         uart_print("No Boot Signature found!\n");
         return;
     }
@@ -315,7 +334,7 @@ void bios_main() {
     uart_print("Initializing LCD...\n");
     lcd_init();
     //lcd_clear_test();
-	lcd_print_string(0, 0, "AMD Elan SC300 BIOS Initialized!", 0x07);
+	lcd_print_string(0, 0, "AMD Elan SC300 BIOS Initialized!", 0x07); // light gray on black
 	
 	uart_print("Initializing keyboard...");
 	if (kbd_init()) {
