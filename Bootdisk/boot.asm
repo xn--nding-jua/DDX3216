@@ -19,6 +19,14 @@ global boot
 
 ; this function is called by BIOS
 boot:
+	cli                ; no interrupts until stack is OK
+	
+    mov ax, 0x07C0     ; place stack behind the bootloader
+    mov ss, ax
+    mov sp, 0x07C0     ; set stackpointer
+
+	sti                ; enable interrupts
+
     mov si, message    ; point SI register to message
     mov ah, 0x0e       ; set higher bits to the display character command
 .loop:
@@ -28,10 +36,6 @@ boot:
     int 0x10           ; trigger video services interrupt
     jmp .loop          ; loop again
 .start_c_code:
-    mov ax, 0x07C0     ; place stack behind the bootloader
-    mov ss, ax
-    mov sp, 0x4000     ; set stackpointer
-
 	mov ah, 0x02       ; call BIOS-Function: "read sector"
     mov al, 0x02       ; number of sectors (here: 2 -> 2 * 512 Byte = 1024 Byte)
     mov ch, 0x00       ; cylinder 0
