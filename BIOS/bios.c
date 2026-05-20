@@ -301,6 +301,35 @@ void boot_dos() {
     );
 }
 
+// this is a test-function to fill 8-Bit Shift Register IC73 to control some LEDs
+void setLEDs() {
+	// LEDs are controlled through a bunch of logic ICs
+	// first the control-signals are fed into IC5A and IC6A
+	// IC5A controls signals VULTCH, LSSELR, UCSELR and SPTESR
+	// IC6A controls signals VUSELW, LSSELW, UCSELW, LSLTCH, FLSET1, FLSET0
+	//
+	// The Addressbits SA12..15 are used on the IO-bus, resulting in an address-space
+	// between 0x1000 and 0xF000. 0x3000 will enable VUSELW on writing and VULTCH on reading the IO bus
+
+	// LEDs 1 and  9 of Channel 1-4 are controlled at address 0x3000 bit 0
+	// ...
+	// LEDs 8 and 16 of Channel 1-4 are controlled at address 0x3000 bit 7
+	//
+	// four more shift-registers are connected to the 9th bit of the previous shift-register
+
+	// turn on/off all 5 stages of shift-register
+	for (uint8_t i = 0; i < (8 * 5); i++) {
+		// odd LEDs are connected to GND
+		// even LEDs are connected to VCC
+		// the value 0b00000001 will set the leds of 5 shift-registers to a pattern on/off/on/off/...
+		// the other 7 shift-register lanes will be inverted
+		outb(0x3000, 0b00000001); // output data to databus D0...D7 (will set SRCLK=0 and RCLK=1)
+		inb(0x3000); // dummy-read from IO-bus (will set SRCLK=1 and RCLK=0)
+	}
+	// final dummy-write to set SRCLK=0 and RCLK=1
+	outb(0x3000, 0b00000000);
+}
+
 // **********************************************************
 // main function
 // **********************************************************
@@ -308,6 +337,9 @@ void boot_dos() {
 __attribute__((noreturn)) void bios_main() {
 	// disable the watchdog
 	wdt_disable();
+	
+	// turn 8 LEDs on
+	setLEDs();
 	
     uart_init(38400);
 	//pirq_init();
