@@ -1,3 +1,12 @@
+/*
+	Main-program for the AMD SC300 within the Behringer DDX3216
+	(c) 2026 Chris Noeding, christian@noeding-online.de
+	https://chrisdevblog.com
+
+	This C-Code is placed right after the bootsector during linking
+	and the main-function is called by the bootloader-code
+*/
+
 #include <stdint.h>
 
 #define COM1 0x3F8

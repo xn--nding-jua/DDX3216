@@ -1,3 +1,14 @@
+; Bootsector for the AMD SC300 within the Behringer DDX3216
+; (c) 2026 Chris Noeding, christian@noeding-online.de
+; https://chrisdevblog.com
+;
+; This assembler-code fits into the first 512 bytes
+; of a disk-image (first sector = bootsector). It outputs
+; a small "Hello World" and copies the next 2 sectors
+; via BIOS INT13h function into the RAM and jumps to
+; the C-Main-Function located in sector 2
+;
+
 SECTION .text
 
 USE16                  ; same as "BITS 16"
