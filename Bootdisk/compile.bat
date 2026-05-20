@@ -16,12 +16,12 @@ echo Done
 echo .
 
 echo Link assembler-part and c-part together
-C:\Programme2\i686-elf-tools-windows\bin\i686-elf-ld.exe -m elf_i386 -T bootsector.ld obj\boot.o obj\main.o -o obj\bootsector.elf
+C:\Programme2\i686-elf-tools-windows\bin\i686-elf-ld.exe -m elf_i386 -T bootdisk.ld obj\boot.o obj\main.o -o obj\bootdisk.elf
 echo Done
 echo .
 
-echo Create 512 Byte Bootsector-file
-C:\Programme2\i686-elf-tools-windows\bin\i686-elf-objcopy.exe -O binary obj\bootsector.elf bootsector.bin
+echo Create 512 Byte bootdisk-file
+C:\Programme2\i686-elf-tools-windows\bin\i686-elf-objcopy.exe -O binary obj\bootdisk.elf bootdisk.bin
 echo Done
 echo .
 
