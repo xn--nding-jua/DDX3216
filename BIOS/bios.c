@@ -107,13 +107,22 @@ void setup_bda() {
     );
 }
 
+// in 16-bit RealMode we can only access RAM below 1MB
 int test_ram_range(uint16_t start_seg, uint16_t end_seg) {
     uint16_t test_pattern1 = 0x55AA;
     uint16_t test_pattern2 = 0xAA55;
+    char textbuffer[6];
+    uint32_t tested_kb = 0;
 
     // write pattern #1 and check it
-    for (uint32_t seg = start_seg; seg <= end_seg; seg += 0x1000) { // Springe in 64KB Schritten
-        for (uint32_t off = 0; off < 0xFFFF; off += 2) {
+    for (uint32_t seg = start_seg; seg <= end_seg; seg += 0x1000) { 
+        tested_kb += 64;
+        uint16_to_dec(tested_kb, textbuffer); 
+        lcd_print_string_ram(1, 11, textbuffer, 0x07);
+
+        // the full loop would take quite long, so we are testing only
+        // every 1024th byte per segment
+        for (uint32_t off = 0; off < 0xFFFF; off += 64) {
             writeFarWord(seg, off, test_pattern1);
             if (readFarWord(seg, off) != test_pattern1) {
                 return 0; // error in RAM
@@ -122,8 +131,15 @@ int test_ram_range(uint16_t start_seg, uint16_t end_seg) {
     }
 
     // write pattern #2 and check it again
+    tested_kb = 0; // reset counter
     for (uint32_t seg = start_seg; seg <= end_seg; seg += 0x1000) {
-        for (uint32_t off = 0; off < 0xFFFF; off += 2) {
+        tested_kb += 64;
+        uint16_to_dec(tested_kb, textbuffer);
+        lcd_print_string_ram(1, 11, textbuffer, 0x07);
+
+        // the full loop would take quite long, so we are testing only
+        // every 1024th byte per segment
+        for (uint32_t off = 0; off < 0xFFFF; off += 64) {
             writeFarWord(seg, off, test_pattern2);
             if (readFarWord(seg, off) != test_pattern2) {
                 return 0; // error in RAM
@@ -135,11 +151,12 @@ int test_ram_range(uint16_t start_seg, uint16_t end_seg) {
 }
 
 void ram_test_and_setup() {
-	// we have 2MB of RAM installed, but in Real Mode we can test only within the first megabyte
+	// we have 2MB of RAM installed, but can test only the lower 640kB due to 16-bit
+    // RealMode limitations, but this is sufficient for DOS and our LCD framebuffer
 
-    // this will test RAM-segments 0x07C0 (bootsector) to 0x07E0 = 32x 64kB-Segmente = 2MB DRAM
-    if (test_ram_range(0x07C0, 0x07C0 + 32)) {
-        lcd_print_string(1, 11, "OK", 0x07);
+    // this will test RAM-segments 0x07C0 (bootsector) to 0x9FFF = the end of conventional memory (640 kB)
+    if (test_ram_range(0x07C0, 0x9000)) {
+        lcd_print_string(1, 11, "OK    ", 0x07); // delete the last 3 chars from memory-test as well
     } else {
         lcd_print_string(1, 11, "ERROR!", 0x07);
         while(1) { __asm__("hlt"); }
@@ -154,10 +171,10 @@ static void kbd_wait_write() {
 }
 
 static void kbd_wait_ready(void) {
-    // Clock Low halten für mind. 1 Takt, dann freigeben
+    // hold clock low for at least one clock-cycle
     uint8_t ctrl = inb(KBD_CTRL_PORT);
     outb(KBD_CTRL_PORT, ctrl | KBD_CTRL_CLK_LOW);
-    // kurze Verzögerung
+    // small delay
     for (volatile int i = 0; i < 100; i++);
     outb(KBD_CTRL_PORT, ctrl & ~KBD_CTRL_CLK_LOW);
 }
@@ -335,32 +352,36 @@ __attribute__((noreturn)) void bios_main() {
     //lcd_print_string(1, 0, "RAM-Test...", 0x07);
 	//ram_test_and_setup(); // this function halts the CPU on any RAM-error
 
-    lcd_print_string(1, 0, "Init PIC and IVT...", 0x07);
+    lcd_print_string(2, 0, "Init PIC and IVT...", 0x07);
     pic_init();
 	setup_ivt();
 
-    lcd_print_string(2, 0, "Init UART...", 0x07);
+    lcd_print_string(3, 0, "Init UART...", 0x07);
     uart_init(9600);
     //pirq_init();
 	//uart_interrupt_enable();
 
-    lcd_print_string(3, 0, "Init keyboard...", 0x07);
+    lcd_print_string(4, 0, "Init keyboard...", 0x07);
 	kbd_init();
 	
-	lcd_print_string(4, 0, "Init timer...", 0x07);
+	lcd_print_string(5, 0, "Init timer...", 0x07);
 	timer_init();
 
-	//lcd_print_string(5, 0, "Init PCMCIA / CF-Card...", 0x07);
+	//lcd_print_string(6, 0, "Init PCMCIA / CF-Card...", 0x07);
 	//pcmcia_init();
 
+    // enable interrupts
 	__asm__ volatile ("sti");
     setLEDs();
 
+    // try to load DOS from CF-Card and boot it
     lcd_print_string(7, 0, "Ready.", 0x07);
     //lcd_print_string(7, 0, "Booting from CF-Card...", 0x07);
 	//boot_dos();
 
     while(1) {
-        __asm__("hlt");
-	}; 
+        //__asm__("nop");
+
+        //__asm__("hlt");
+    }
 }

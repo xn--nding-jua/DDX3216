@@ -3,6 +3,8 @@
 #define BASE_SEG                0x0000
 #define ROM_SEG                 0xF000 // external ROM is mapped to this segment (/ROMCS)
 #define VRAM_SEG                0xB800 // external SRAM is mapped to this segment
+#define STACK_SEG               BASE_SEG
+#define STACK_TOP               0x7C00
 
 // BIOS Data Area (see https://www.lowlevel.eu/wiki/BIOS_Data_Area and https://github.com/sergev/tiltti/blob/main/docs/BIOS_Data_Area.md)
 #define BDA_COM1_BASE			0x0400
@@ -113,15 +115,3 @@
 // Timer 0 Ports (8254 kompatibel)
 #define TIMER0_DATA             0x40
 #define TIMER_CTRL              0x43
-
-#define KBD_DATA_PORT           0x60
-#define KBD_CTRL_PORT           0x61
-#define KBD_STATUS_PORT         0x64
-#define KBD_STATUS_OBF          0x01 // Output Buffer Full
-#define KBD_STATUS_IBF          0x02 // Input Buffer Full
-#define KBD_LED_SCROLLLOCK      0x01
-#define KBD_LED_NUMLOCK         0x02
-#define KBD_LED_CAPSLOCK        0x04
-#define KBD_CTRL_CLK_LOW        (1 << 6)
-#define KBD_CTRL_CLEAR          (1 << 7)
-#define SC300_XTKBDEN           (1 << 3) // Bit 3: XT Keyboard Enable

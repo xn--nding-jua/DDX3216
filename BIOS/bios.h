@@ -19,6 +19,7 @@
 #include "timer.h"
 #include "isr.h"
 #include "helper.h"
+#include "keyboard.h"
 
 #define LCD_BPP                 1      // bits per pixel (1 for text mode, 4 for graphics mode)
 #define LCD_WIDTH               240    // real LCD resolution of the DDX3216

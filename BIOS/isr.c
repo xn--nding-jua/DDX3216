@@ -24,6 +24,8 @@ __attribute__((interrupt)) void c_int08_handler(struct interrupt_frame *frame) {
 	__asm__ volatile("movw %%ds, %0" : "=r"(old_ds));
 	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
 
+    //lcd_putc('T', 0x07);
+
 	// increment BIOS-Timer-Counter in BDA
     (*BDA_TIMER_COUNTER)++;
 
@@ -41,40 +43,126 @@ __attribute__((interrupt)) void c_int08_handler(struct interrupt_frame *frame) {
 }
 
 // INT 09h: keyboard-interrupt
+static uint8_t  g_scancode    = 0;
+static char     g_textbuf[3]  = {0, 0, 0};
+static uint8_t  g_ctrl;
 __attribute__((interrupt)) void c_int09_handler(struct interrupt_frame *frame) {
-	uint16_t old_ds;
-    uint8_t scancode;
+    uint16_t old_ds;
 
     // store DS and reset it to 0
 	__asm__ volatile("movw %%ds, %0" : "=r"(old_ds));
 	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
 
-	scancode = inb(KBD_DATA_PORT);
+    char textbuffer[3];
+
+    // read scancode from keyboard-controller
+	uint8_t scancode = inb(KBD_DATA_PORT);
 
     // clear shift-register and IRQ in keyboard-controller
     uint8_t ctrl = inb(KBD_CTRL_PORT);
     outb(KBD_CTRL_PORT, ctrl | KBD_CTRL_CLEAR);
     outb(KBD_CTRL_PORT, ctrl & ~KBD_CTRL_CLEAR);
 
-    lcd_putc(scancode, 0x07);
+    uint8_t set1_code = 0;
+    bool    is_break  = false;
+    switch (kbd_state) {
+        case KBD_STATE_IDLE:
+            if (scancode == SC2_EXTENDED) {
+                kbd_state = KBD_STATE_EXTENDED;
+                goto send_eoi;
+            }
+            if (scancode == SC2_BREAK) {
+                kbd_state = KBD_STATE_BREAK;
+                goto send_eoi;
+            }
+            // regular make-code (key pressed)
+            set1_code = set2_to_set1[scancode];
+            is_break  = false;
+            break;
 
-/*
-    // Break-Codes (key released) are ignored here
-    if (!(scancode & 0x80)) {
-        uint16_t tail = *BDA_KBD_TAIL;
-        uint16_t next_tail = tail + 2;
-        if (next_tail >= BDA_KBD_BUF_END) next_tail = BDA_KBD_BUF_START;
+        case KBD_STATE_EXTENDED:
+            if (scancode == SC2_BREAK) {
+                kbd_state = KBD_STATE_EXT_BREAK;
+                goto send_eoi;
+            }
+            // extended make-code (key pressed)
+            set1_code = set2_ext_to_set1[scancode];
+            is_break  = false;
+            kbd_state = KBD_STATE_IDLE;
+            break;
 
-        // if buffer is not full (Tail + 2 != Head)
-        if (next_tail != *BDA_KBD_HEAD) {
-            // store scancode (high) and ASCII (low)
-            uint16_t *ptr = (uint16_t*)(uintptr_t)(tail);
-            *ptr = (uint16_t)((scancode << 8) | ascii);
-            *BDA_KBD_TAIL = next_tail;
+        case KBD_STATE_BREAK:
+            // regular break-code (key released)
+            set1_code = set2_to_set1[scancode];
+            is_break  = true;
+            kbd_state = KBD_STATE_IDLE;
+            break;
+
+        case KBD_STATE_EXT_BREAK:
+            // Extended Break-Code (key released)
+            set1_code = set2_ext_to_set1[scancode];
+            is_break  = true;
+            kbd_state = KBD_STATE_IDLE;
+            break;
+    }
+
+    // manage modifier-key
+    if (set1_code) {
+        switch (set1_code) {
+            case 0x2A:  // Left Shift
+            case 0x36:  // Right Shift
+                shift_pressed = !is_break;
+                goto send_eoi;
+
+            case 0x1D:  // Ctrl
+                ctrl_pressed = !is_break;
+                goto send_eoi;
+
+            case 0x38:  // Alt
+                alt_pressed = !is_break;
+                goto send_eoi;
+
+            case 0x3A:  // Caps Lock (only on Make)
+                if (!is_break) caps_lock = !caps_lock;
+                goto send_eoi;
+        }
+
+        // only convert make-codes to ASCII and put them on the LCD, break-codes are ignored for ASCII output
+        if (!is_break) {
+            char ascii = set1_to_ascii(set1_code, shift_pressed, caps_lock);
+            if (ascii) {
+                // DEBUG: Display ASCII-character on LCD
+                lcd_putc(ascii, 0x07);
+
+                // store scancode and ASCII-character in keyboard-buffer in BDA, if there is space (2 bytes per entry: high byte = scancode, low byte = ASCII)
+                uint16_t tail = *BDA_KBD_TAIL;
+                uint16_t next_tail = tail + 2;
+                if (next_tail >= BDA_KBD_BUF_END) next_tail = BDA_KBD_BUF_START;
+
+                // if buffer is not full (Tail + 2 != Head)
+                if (next_tail != *BDA_KBD_HEAD) {
+                    // store scancode (high) and ASCII (low)
+                    uint16_t *ptr = (uint16_t*)(uintptr_t)(tail);
+                    *ptr = (uint16_t)((scancode << 8) | ascii);
+                    *BDA_KBD_TAIL = next_tail;
+                }
+
+            }
         }
     }
-*/
 
+    // DEBUG Display Scancodes on LCD
+    if (!(scancode & 0x80)) {
+        lcd_print_string(7, 0, "key pressed  0x", 0x07);
+    } else {
+        lcd_print_string(7, 0, "key released 0x", 0x07);
+    }
+    uint8_to_hex(scancode, textbuffer);
+    lcd_putc_pos(7, 15, textbuffer[0], 0x07);
+    lcd_putc_pos(7, 16, textbuffer[1], 0x07);
+    // DEBUG END
+
+send_eoi:
     // send EOI to PIC, to allow more interrupts
     outb(0x20, 0x20);
 

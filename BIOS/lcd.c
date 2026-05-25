@@ -241,7 +241,7 @@ void lcd_install_character(uint8_t c, uint8_t row, uint8_t value) {
 
 void lcd_install_font() {
 	uint16_t vram_offset_base = 0x7800;
-	for (uint8_t c = ' '; c < '~'; c++) {
+	for (uint16_t c = 0; c < 256; c++) {
 		uint16_t char_vram_offset = vram_offset_base + (c * 8);
 		
 		for (uint8_t row = 0; row < 8; row++) {
@@ -249,4 +249,24 @@ void lcd_install_font() {
 			writeFarByte(VRAM_SEG, char_vram_offset + row, row_data);
 		}
 	}
+}
+
+void lcd_draw_double_box(uint8_t row, uint8_t col, uint8_t w, uint8_t h) {
+    // corners
+    lcd_putc_pos(row,     col,     0xC9, 0x07); // ╔
+    lcd_putc_pos(row,     col+w-1, 0xBB, 0x07); // ╗
+    lcd_putc_pos(row+h-1, col,     0xC8, 0x07); // ╚
+    lcd_putc_pos(row+h-1, col+w-1, 0xBC, 0x07); // ╝
+
+    // horizontal lines
+    for (uint8_t i = 1; i < w-1; i++) {
+        lcd_putc_pos(row, col+i,     0xCD, 0x07); // ═
+        lcd_putc_pos(row+h-1, col+i, 0xCD, 0x07); // ═
+    }
+
+    // vertical lines
+    for (uint8_t i = 1; i < h-1; i++) {
+        lcd_putc_pos(row+i, col,     0xBA, 0x07); // ║
+        lcd_putc_pos(row+i, col+w-1, 0xBA, 0x07); // ║
+    }
 }

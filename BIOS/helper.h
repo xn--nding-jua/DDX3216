@@ -6,5 +6,7 @@
 void delay_us(uint32_t microseconds);
 char* uint16_to_hex(uint16_t val, char* buf);
 char* uint16_to_dec(uint16_t val, char* buf);
+char* uint8_to_hex(uint8_t val, char* buf);
+char* uint8_to_dec(uint8_t val, char* buf);
 
 #endif

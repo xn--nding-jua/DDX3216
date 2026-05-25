@@ -19,5 +19,6 @@ void lcd_putc(char c, uint8_t attribute);
 void lcd_print_string(int row, int col, const char *str, uint8_t attribute);
 void lcd_print_string_ram(int row, int col, const char *str, uint8_t attribute);
 void lcd_install_font();
+void lcd_draw_double_box(uint8_t x, uint8_t y, uint8_t w, uint8_t h);
 
 #endif
