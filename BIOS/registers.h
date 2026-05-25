@@ -1,5 +1,6 @@
 #define CFG_ADDR                0x22
 #define CFG_DATA                0x23
+#define BASE_SEG                0x0000
 #define ROM_SEG                 0xF000 // external ROM is mapped to this segment (/ROMCS)
 #define VRAM_SEG                0xB800 // external SRAM is mapped to this segment
 
@@ -8,6 +9,8 @@
 #define BDA_EQUIPMENT_WORD		0x0410
 #define BDA_MEM_SIZE			0x0413
 #define BDA_VIDEO_MODE			0x0449
+#define BDA_CURSOR_POS_COL      0x0450
+#define BDA_CURSOR_POS_ROW      0x0451
 #define BDA_VIDEO_COLUMS		0x044A
 #define BDA_VIDEO_ROWS          0x0484
 #define BDA_TIMER_COUNTER 		((volatile uint32_t*)0x046C)
@@ -112,9 +115,13 @@
 #define TIMER_CTRL              0x43
 
 #define KBD_DATA_PORT           0x60
+#define KBD_CTRL_PORT           0x61
 #define KBD_STATUS_PORT         0x64
 #define KBD_STATUS_OBF          0x01 // Output Buffer Full
 #define KBD_STATUS_IBF          0x02 // Input Buffer Full
 #define KBD_LED_SCROLLLOCK      0x01
 #define KBD_LED_NUMLOCK         0x02
 #define KBD_LED_CAPSLOCK        0x04
+#define KBD_CTRL_CLK_LOW        (1 << 6)
+#define KBD_CTRL_CLEAR          (1 << 7)
+#define SC300_XTKBDEN           (1 << 3) // Bit 3: XT Keyboard Enable

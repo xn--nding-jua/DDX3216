@@ -21,7 +21,7 @@ echo Done
 echo .
 
 echo Link assembler-part and c-part together
-C:\Programme2\i686-elf-tools-windows\bin\i686-elf-ld.exe -m elf_i386 --no-check-sections -T bios.ld obj\start.o obj\bios.o obj\uart.o obj\lcd.o obj\disk.o obj\timer.o obj\isr.o -o obj\bios.elf
+C:\Programme2\i686-elf-tools-windows\bin\i686-elf-ld.exe -m elf_i386 --no-check-sections -T bios.ld obj\start.o obj\bios.o obj\uart.o obj\lcd.o obj\disk.o obj\timer.o obj\isr.o obj\helper.o -o obj\bios.elf
 echo Done
 echo .
 
@@ -29,5 +29,3 @@ echo Create 64kB ROM-file
 C:\Programme2\i686-elf-tools-windows\bin\i686-elf-objcopy.exe -O binary obj\bios.elf bios.bin
 echo Done
 echo .
-
-pause

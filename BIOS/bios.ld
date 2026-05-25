@@ -35,13 +35,13 @@ MEMORY {
 
 SECTIONS {
 	/* Bare-Metal Assembler and C-Code at the very beginning of the ROM */
-    .text16 : {
+    .text : {
         __text_start = .;
-        KEEP(*(.text16))
-        *(.text16.*)
-        *(.text)
+        KEEP(*(.text))
         *(.text.*)
-        . = ALIGN(4);
+        *(.rodata)
+        *(.rodata.*)
+        . = ALIGN(1);
         __text_end = .;
     } > ROM
 
@@ -52,19 +52,11 @@ SECTIONS {
         __data_start = .;
         *(.data)
         *(.data.*)
-        . = ALIGN(4);
+        . = ALIGN(1);
         __data_end = .;
     } > RAM AT> ROM /* this produces an overlap-error in the linker, but we will disable this check */
 
-    .rodata : {
-        __rodata_start = .;
-        *(.rodata)
-        *(.rodata.*)
-        . = ALIGN(4);
-        __rodata_end = .;
-    } > RAM AT> ROM /* this produces an overlap-error in the linker, but we will disable this check */
-
-    __data_size = __rodata_end - __data_start;
+    __data_size = __data_end - __data_start;
 
     /* uninitialized data (zeroed at runtime, not in ROM) */
     .bss (NOLOAD) : {
@@ -76,7 +68,7 @@ SECTIONS {
         __bss_end = .;
     } > RAM
 
-	/* Reset-Vector */
+	/* Reset-Vector at very end of the ROM-image */
     .reset 0xFFF0 : {
         KEEP(*(.reset))
     } > ROM

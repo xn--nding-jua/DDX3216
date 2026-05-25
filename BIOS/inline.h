@@ -1,5 +1,5 @@
-#ifndef HELPER_H_
-#define HELPER_H_
+#ifndef INLINE_H_
+#define INLINE_H_
 
 #include "registers.h"
 
@@ -74,9 +74,9 @@ static inline uint8_t read_sc300_rtc_cfg(uint16_t reg) {
 static inline uint8_t readRomByte(uint16_t rom_offset) {
     uint8_t val;
     __asm__ __volatile__(
-        "movb %%cs:(%1), %0"  // Segment-Override: force CS instead of DS!
-        : "=q"(val)
-        : "r"(rom_offset)
+        "movb %%cs:(%1), %0"  // Liest das Byte über CS:[SI]
+        : "=q"(val)           // Ausgabe: val (in einem Byte-Register wie AL, BL, CL, DL)
+        : "S"(rom_offset)     // Eingabe: "S" zwingt GCC hart zu SI!
     );
     return val;
 }
@@ -84,9 +84,9 @@ static inline uint8_t readRomByte(uint16_t rom_offset) {
 static inline uint16_t readRomWord(uint16_t rom_offset) {
     uint16_t val;
     __asm__ __volatile__(
-        "movw %%cs:(%1), %0"  // Segment-Override: force CS instead of DS
-        : "=r"(val)
-        : "r"(rom_offset)
+        "movw %%cs:(%1), %0"  // Liest das Word über CS:[SI]
+        : "=r"(val)           // Ausgabe: val (16-Bit Register)
+        : "S"(rom_offset)     // Eingabe: Zwingt GCC zu SI
     );
     return val;
 }
@@ -95,20 +95,24 @@ static inline uint16_t readRomWord(uint16_t rom_offset) {
 // ==========================================================
 static inline void writeFarByte(uint16_t segment, uint16_t offset, uint8_t value) {
     __asm__ __volatile__(
-        "movw %0, %%es\n\t"
-        "movb %2, %%es:(%1)"
+        //"pushw %%es\n\t"        // Sichert das aktuelle ES
+        "movw %0, %%es\n\t"     // Lädt das Ziel-Segment (z.B. 0xB800)
+        "movb %2, %%es:(%1)\n\t" // Schreibt das Byte an ES:[BX]
+        //"popw %%es"             // Stellt ES wieder her
         :
-        : "r"(segment), "b"(offset), "r"(value)
+        : "rm"(segment), "b"(offset), "qi"(value) // "b" zwingt GCC zu BX!
         : "memory"
     );
 }
 
 static inline void writeFarWord(uint16_t segment, uint16_t offset, uint16_t value) {
-	__asm__ __volatile__(
-        "movw %0, %%es\n\t"
-        "movw %2, %%es:(%1)"
+    __asm__ __volatile__(
+        //"pushw %%es\n\t"        // Sichert das aktuelle ES
+        "movw %0, %%es\n\t"     // Segment laden
+        "movw %2, %%es:(%1)\n\t" // Schreibt das Word an ES:[BX]
+        //"popw %%es"             // Stellt ES wieder her
         :
-        : "r"(segment), "b"(offset), "r"(value) // Auch hier "b" für BX verwenden
+        : "rm"(segment), "b"(offset), "ri"(value) // "b" zwingt GCC zu BX!
         : "memory"
     );
 }
@@ -154,68 +158,14 @@ static inline void copyFarBlock(uint16_t srcSegment, uint16_t srcOffset, void* d
 }
 
 
-// functions for accessing RAM space using flat-model of "Un"real mode
+// additional functions
 // ==========================================================
-static inline void writeFlatByte(uint32_t linear_address, uint8_t val) {
-    __asm__ __volatile__(
-        "movb %1, %%fs:(%0)"  // 'movb' steht für Move Byte (8-Bit)
+static inline void delay_1us(void) {
+    __asm__ __volatile__ (
+        "outb %%al, $0x80"
         :
-        : "r"(linear_address), "q"(val) // "q" zwingt GCC, ein byte-adressierbares Register (AL, BL, CL, DL) zu wählen
-        : "memory"
+        : "a"(0) // Schreibt einfach eine 0 an Port 0x80
     );
-}
-
-static inline void writeFlatWord(uint32_t linear_address, uint16_t val) {
-    // Schreibt ein 16-Bit Word an eine echte, flache 32-Bit-Adresse via FS
-    __asm__ __volatile__(
-        "movw %1, %%fs:(%0)"
-        :
-        : "r"(linear_address), "r"(val)
-        : "memory"
-    );
-}
-
-static inline void writeFlatDword(uint32_t linear_address, uint32_t val) {
-    __asm__ __volatile__(
-        "movl %1, %%fs:(%0)"  // 'movl' steht für Move Long (32-Bit)
-        :
-        : "r"(linear_address), "r"(val)
-        : "memory"
-    );
-}
-
-static inline uint8_t readFlatByte(uint32_t linear_address) {
-    uint8_t val;
-    __asm__ __volatile__(
-        "movb %%fs:(%1), %0"  // Holt 8 Bit in das Zielregister
-        : "=q"(val)           // "q" sorgt dafür, dass das Ziel ein Byte-Register ist
-        : "r"(linear_address)
-        : "memory"
-    );
-    return val;
-}
-
-static inline uint16_t readFlatWord(uint32_t linear_address) {
-    uint16_t val;
-    // Liest ein 16-Bit Word von einer echten, flachen 32-Bit-Adresse via FS
-    __asm__ __volatile__(
-        "movw %%fs:(%1), %0"
-        : "=r"(val)
-        : "r"(linear_address)
-        : "memory"
-    );
-    return val;
-}
-
-static inline uint32_t readFlatDword(uint32_t linear_address) {
-    uint32_t val;
-    __asm__ __volatile__(
-        "movl %%fs:(%1), %0"  // Holt 32 Bit auf einmal in ein Register
-        : "=r"(val)
-        : "r"(linear_address)
-        : "memory"
-    );
-    return val;
 }
 
 #endif

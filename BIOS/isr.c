@@ -10,14 +10,6 @@
 // Interrupt functions
 // **********************************************************
 
-// scancode-table
-const uint8_t scancode_to_ascii[] = {
-    0, 27, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', 8, // 0x00-0x0E
-    9, 'q', 'w', 'e', 'r', 't', 'z', 'u', 'i', 'o', 'p', '[', ']', 13,    // 0x0F-0x1C
-    0, 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', '`', 0,   // 0x1D-0x2B
-    '\\', 'y', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', 0            // 0x2C-0x36
-};
-
 void pirq_init() {
     // map PIRQ0 (external UART) to IRQ4
     outb(CFG_ADDR, 0x60); // Beispiel-Index für PIRQ0 Routing
@@ -52,17 +44,23 @@ __attribute__((interrupt)) void c_int08_handler(struct interrupt_frame *frame) {
 __attribute__((interrupt)) void c_int09_handler(struct interrupt_frame *frame) {
 	uint16_t old_ds;
     uint8_t scancode;
-    
-	// store DS and reset it to 0
+
+    // store DS and reset it to 0
 	__asm__ volatile("movw %%ds, %0" : "=r"(old_ds));
 	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
 
 	scancode = inb(KBD_DATA_PORT);
 
+    // clear shift-register and IRQ in keyboard-controller
+    uint8_t ctrl = inb(KBD_CTRL_PORT);
+    outb(KBD_CTRL_PORT, ctrl | KBD_CTRL_CLEAR);
+    outb(KBD_CTRL_PORT, ctrl & ~KBD_CTRL_CLEAR);
+
+    lcd_putc(scancode, 0x07);
+
+/*
     // Break-Codes (key released) are ignored here
     if (!(scancode & 0x80)) {
-        uint8_t ascii = (scancode < 0x37) ? scancode_to_ascii[scancode] : 0;
-        
         uint16_t tail = *BDA_KBD_TAIL;
         uint16_t next_tail = tail + 2;
         if (next_tail >= BDA_KBD_BUF_END) next_tail = BDA_KBD_BUF_START;
@@ -75,10 +73,11 @@ __attribute__((interrupt)) void c_int09_handler(struct interrupt_frame *frame) {
             *BDA_KBD_TAIL = next_tail;
         }
     }
+*/
 
     // send EOI to PIC, to allow more interrupts
     outb(0x20, 0x20);
-	
+
 	// restore DS
 	__asm__ volatile("movw %0, %%ds" : : "r"(old_ds));
 }
@@ -109,18 +108,18 @@ __attribute__((interrupt)) void c_int10_handler(struct interrupt_frame *frame) {
             break;
 
         case 0x02: // set cursor position
-            bda->cursor_position[0].row = (current_dx >> 8) & 0xFF; // DH = Row
-            bda->cursor_position[0].col = current_dx & 0xFF;        // DL = Column
+        	writeFarByte(BASE_SEG, BDA_CURSOR_POS_ROW, (current_dx >> 8) & 0xFF); // DH = Row
+        	writeFarByte(BASE_SEG, BDA_CURSOR_POS_COL, current_dx & 0xFF); // DL = Column
 
             // update hardware cursor position
-            uint16_t offset = ((bda->cursor_position[0].row * (LCD_WIDTH / 8)) + bda->cursor_position[0].col) * 2;
+            uint16_t offset = ((readFarByte(BASE_SEG, BDA_CURSOR_POS_ROW) * (LCD_WIDTH / 8)) + readFarByte(BASE_SEG, BDA_CURSOR_POS_COL)) * 2;
             write_sc300_lcd_cfg(LCD_VID_IDX_CURSOR_ADDR_UPPER, (offset >> 9) & 0xFF); // upper 7 bits of offset (divide by 512)
             write_sc300_lcd_cfg(LCD_VID_IDX_CURSOR_ADDR_LOWER, (offset >> 1) & 0xFF); // lower 8 bits of offset (divide by 2)
             break;
 
         case 0x03: // get cursor position
             // return cursor position in DX (DH = Row, DL = Column)
-            uint16_t return_dx = (bda->cursor_position[0].row << 8) | bda->cursor_position[0].col;
+            uint16_t return_dx = (readFarByte(BASE_SEG, BDA_CURSOR_POS_ROW) << 8) | readFarByte(BASE_SEG, BDA_CURSOR_POS_COL);
             __asm__ __volatile__("movw %0, %%dx" : : "r"(return_dx) : "dx");
 
             break;

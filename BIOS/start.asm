@@ -37,7 +37,7 @@
 ; 0xBC000 - 0xBCFFF | 4 kB   | Free
 ; 0xBD000 - 0xBDFFF | 4 kB   | Free
 ; 0xBE000 - 0xBEFFF | 4 kB   | Free
-; 0xBF000 - 0xBF7FF | 2 kB   | Free
+; 0xBF000 - 0xBF7FF | 2 kB   | Character fonts 2 (8x8)
 ; 0xBF800 - 0xBFFFF | 2 kB   | Character fonts 1 (8x8)
 ; 
 ; 
@@ -54,7 +54,6 @@
 ; as DOS-programs seems to use Segment-Wrap-Around-techniques
 ;
 
-SECTION .text
 USE16           ; same as "BITS 16"
 CPU 386         ; allow cpu-instructions up to 386
 
@@ -63,8 +62,6 @@ EXTERN __data_size
 EXTERN __bss_start
 EXTERN __bss_end
 EXTERN bios_main            ; main-function in C-Code
-
-global activate_unreal_mode
 
 ; segment-addresses
 ROM_SEG     EQU 0xF000
@@ -86,40 +83,35 @@ CFG_DATA    EQU 0x23
 SECTION .reset
 GLOBAL reset_vector
 reset_vector:
-	jmp 0xF000:start            ; far-jump to ROM_SEG (0x0F00) at offset 0x0000. (0xF000 will be shifted 4 bits to right!)
+    nop                         ; no-operation
+    cli                         ; disable interrupts
+    jmp start                   ; jump to beginning of the current segment (ROM_SEG)
+	;jmp ROM_SEG:start          ; far-jump to the beginning of the ROM-segment
 
     ; Padding to offset 0xFFFE
-    times (0x10 - ($ - $$) - 2) db 0xFF
+    times (0x10 - ($ - $$) - 8) db 0x00
 
     ; add optional ROM-Date
-    db  0x01, 0x01              ; Date: 01/01 (MM/DD)
+    db  '0', '5', '/', '2', '4', '/', '2', '6' ; Date: MM/DD/YY (MM/DD/YY)
 
 ; ========================================================
 ; Startup-Function
 ; ========================================================
-SECTION .text16
+SECTION .text
 GLOBAL start
 start:
-	; disable interrupts
-    cli
-	cld
-
     ; initialize all segment-registers
-    mov     ax, ROM_SEG
-    mov     ds, ax				; now DS directs to 0xF000
-    mov     es, ax
-    mov     ss, ax				; set stack-segment to ROM_SEG to prevent uncontrolled writes to uninitialized DRAM
-    mov     sp, 0xFE00          ; set stack to ROM-area temporary
-
+    mov ax, 0xFF00
+    mov ds, ax
+    
+    mov ax, 0x00F0
+    mov ss, ax
+    mov sp, 0x0100
+    
     ; ---------------------------------------------------------
     ; setup internal registers of the SC300 using
     ; port 22h for index and port 23h for data
     ; ---------------------------------------------------------
-
-    ; disable NMI (default-configuration)
-    mov     al, 0x80            ; NMI Disable
-    out     0x70, al
-    jmp     $+2                 ; I/O-Delay
 
     ; Elan SC300 mandatory configuration
     ; must be called after reset directly
@@ -259,16 +251,6 @@ sc300_init:
 
 
 
-    ; check if we come from an SMI (System Management Interrupt)
-    ; Version Register (Index 0x64), Bit 7 = RSMI
-    mov     al, 0x64
-    out     CFG_ADDR, al
-    in      al, CFG_DATA
-    test    al, 0x80
-    jnz     smi_handler         ; Wenn SMI, zum SMI-Handler
-
-
-
 	; initialize the DRAM
 dram_init:
 	; set DRAM-bank-size and type
@@ -334,9 +316,6 @@ skip_bss:
     mov     ss, ax				; redirect stack-segment to 0x0000
     mov     sp, STACK_TOP		; set stack-pointer to desired 0x7C00
 
-    ; enable "Un"real mode to allow flat-access to full 32-bit memory
-    jmp     activate_unreal_mode
-
 start_c_code:
     ; call the main-c-function of the BIOS
     jmp     bios_main           ; defined in main.c
@@ -346,75 +325,3 @@ start_c_code:
 halt:
     hlt                         ; CPU anhalten
     jmp     halt
-
-; ========================================================
-; SMI-Handler (will be called when RSMI-bit is set)
-; ========================================================
-smi_handler:
-    ; SMI-Status lesen
-    mov     al, 0x43            ; SMI Status Register
-    out     CFG_ADDR, al
-    in      al, CFG_DATA
-    ; Status sichern
-    mov     bl, al
-
-    ; PCMCIA Socket A Status schreiben um SMI zu quittieren
-    mov     al, 0xA2
-    out     CFG_ADDR, al
-    mov     al, 0xFF
-    out     CFG_DATA, al
-
-    ; NMI/SMI Control Register lesen
-    mov     al, 0xA5
-    out     CFG_ADDR, al
-    in      al, CFG_DATA
-
-    ; NMI/SMI Control schreiben (PMU-Zustand freigeben)
-    mov     al, 0xA5
-    out     CFG_ADDR, al
-    mov     al, 0x00
-    out     CFG_DATA, al
-
-    ; Zurück zum normalen Boot
-    jmp     start
-
-; ========================================================
-; activate "Un"real-mode for extended RAM-test above 1MB
-; ========================================================
-activate_unreal_mode:
-    ;cli                        ; disable interrupts
-
-    lgdt [gdt_ptr]              ; load GDT
-
-    mov eax, cr0
-    or al, 1                    ; set protected mode bit
-    mov cr0, eax
-
-    jmp +2                      ; flash CPU-Pipeline
-
-    mov ax, 0x08                ; 0x08 directs to 4GB-entry in GDT
-    ;mov ds, ax                  ; set DS to 4GB limit <- don't use this if DOS is planned
-    ;mov es, ax                  ; set ES to 4GB limit <- don't use this if DOS is planned
-    ;mov ss, ax                  ; set SS to 4GB limit <- don't use this if DOS is planned
-    mov fs, ax                  ; set FS to 4GB limit <- this prevents the usage of EMM386!!!
-    mov gs, ax                  ; set GS to 4GB limit <- this prevents the usage of EMM386!!!
-
-    mov eax, cr0
-    and al, 0xFE                ; delete Protected Mode Bit and get back to real-mode
-    mov cr0, eax
-
-    ;sti                         ; enable interrupts again
-    
-    jmp start_c_code
-	
-; a minimum GDT for change into "Un"real-mode
-align 4
-gdt_start:
-    dq 0x0000000000000000       ; null-descriptor (requested by CPU)
-    ; 4GB Data-Segment: Base=0, Limit=0xFFFFF, G=1 (Page-Granularity -> 4GB), D/B=1, W=1, P=1
-    dq 0x00CF92000000FFFF       
-gdt_end:
-
-gdt_ptr:
-    dw gdt_end - gdt_start - 1  ; GDT Limit
-    dd gdt_start                ; GDT Base (physical Address)

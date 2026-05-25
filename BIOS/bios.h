@@ -94,8 +94,4 @@ struct __attribute__((packed)) boot_sector {
     uint16_t                    signature;       // Must be 0xAA55
 };
 
-extern volatile struct ivt_entry *const ivt;
-extern volatile struct bios_data_area *const bda;
-extern volatile struct boot_sector *const bootsector;
-
 #endif

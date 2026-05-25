@@ -5,14 +5,16 @@
 #include "uart.h"
 
 void uart_init(uint16_t baudrate) {
-	uint16_t divisor = (UART_CLK / (16 * baudrate));
-    outb(UART_LCR, 0x80); //  enable access to divisor latches by setting DLAB-bit
-	
+    // enable AFDT# to output 14.336 MHz-clock 
+    write_sc300_cfg(0xBA, 0b00001000);
+
 	// set baudrate by setting divisor
+    outb(UART_LCR, 0x80); //  enable access to divisor latches by setting DLAB-bit
+	uint16_t divisor = (UART_CLK / (16 * baudrate));
     outb(UART_DLL, (uint8_t)(divisor & 0xFF));
     outb(UART_DLM, (uint8_t)((divisor >> 8) & 0xFF));
 	
-    outb(UART_LCR, 0x03); // set 8N1 mode and reset DLAB-bit
+    outb(UART_LCR, 0x03); // reset DLAB-bit and set 8N1 mode
     outb(UART_FCR, 0x07); // enable FIFO and clear them
 	outb(UART_MCR, 0x03); // set DTR and RTS within modem control register
 }

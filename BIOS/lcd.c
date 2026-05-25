@@ -54,12 +54,14 @@ void lcd_init() {
 	write_sc300_lcd_cfg(LCD_ENH_IDX_SCREEN_CONTROL_2,  0b00000000); // enable display-controller (default)
 	write_sc300_lcd_cfg(LCD_ENH_IDX_SCREEN_CONTROL_1,  0b00100000); // dot doubling disabled
 
-	write_sc300_cfg(LCD_CGA_MODE_CTRL, 0b00111001); // blinking enabled / 1-bpp graphics / video enabled / colorburst enabled / textmode / normal-width char (8 pixels)
-	write_sc300_cfg(LCD_CGA_CLR_SEL, 0x00); // default
+	outb(LCD_CGA_MODE_CTRL, 0b00111101); // blinking enabled / 1-bpp graphics / video enabled / colorburst enabled / textmode / normal-width char (8 pixels)
+	outb(LCD_CGA_CLR_SEL, 0x00); // default
 
 	// disable enhanced registers
 	outb(LCD_CGA_IDX_ADDR, LCD_ENH_IDX_SOFTW_SWITCH_DIS);
 	inb(LCD_CGA_IDX_DATA); // read without I/O-cycle in between
+
+	lcd_install_font();
 }
 
 void lcd_clear() {
@@ -97,11 +99,11 @@ void lcd_scroll_up() {
     }
 
 	// update internal cursor position
-	bda->cursor_position[0].row = (LCD_HEIGHT / 8) - 1;
-	bda->cursor_position[0].col = 0;
+	writeFarByte(BASE_SEG, BDA_CURSOR_POS_ROW, (LCD_HEIGHT / 8) - 1);
+	writeFarByte(BASE_SEG, BDA_CURSOR_POS_COL, 0);
 
 	// update hardware cursor position
-	uint16_t offset = ((bda->cursor_position[0].row * (LCD_WIDTH / 8)) + bda->cursor_position[0].col) * 2;
+	uint16_t offset = ((readFarByte(BASE_SEG, BDA_CURSOR_POS_ROW) * (LCD_WIDTH / 8)) + readFarByte(BASE_SEG, BDA_CURSOR_POS_COL)) * 2;
 	write_sc300_lcd_cfg(LCD_VID_IDX_CURSOR_ADDR_UPPER, (offset >> 9) & 0xFF); // upper 7 bits of offset (divide by 512)
 	write_sc300_lcd_cfg(LCD_VID_IDX_CURSOR_ADDR_LOWER, (offset >> 1) & 0xFF); // lower 8 bits of offset (divide by 2)
 }
@@ -116,6 +118,9 @@ void lcd_putc_pos(int row, int col, char c, uint8_t attribute) {
     writeFarByte(VRAM_SEG, offset,     c); // character-byte (8-bit ASCII-chars)
     writeFarByte(VRAM_SEG, offset + 1, attribute); // attribute-byte
 	
+	writeFarByte(BASE_SEG, BDA_CURSOR_POS_ROW, row);
+	writeFarByte(BASE_SEG, BDA_CURSOR_POS_COL, col);
+
 	/*
 	Attribute Byte:
 	bit 7     -> Blink
@@ -130,23 +135,23 @@ void lcd_putc(char c, uint8_t attribute) {
 
 	switch (c) {
 		case '\n': // newline
-			bda->cursor_position[0].col = 0;
-			bda->cursor_position[0].row++;
+			writeFarByte(BASE_SEG, BDA_CURSOR_POS_ROW, readFarByte(BASE_SEG, BDA_CURSOR_POS_ROW) + 1); // increment row
+			writeFarByte(BASE_SEG, BDA_CURSOR_POS_COL, 0); // reset column
 
-			if (bda->cursor_position[0].row == (LCD_HEIGHT / 8)) {
+			if (readFarByte(BASE_SEG, BDA_CURSOR_POS_ROW) == (LCD_HEIGHT / 8)) {
 				// reset to top of screen when we reach the end of the screen
 				lcd_scroll_up();
 			}
 			break;
 		case '\r': // carriage return
-			bda->cursor_position[0].col = 0;
+			writeFarByte(BASE_SEG, BDA_CURSOR_POS_COL, 0);
 			break;
 		case '\b': // backspace
 			// delete char at current position
-			if (bda->cursor_position[0].col > 0) {
-				bda->cursor_position[0].col--;
+			if (readFarByte(BASE_SEG, BDA_CURSOR_POS_COL) > 0) {
+				writeFarByte(BASE_SEG, BDA_CURSOR_POS_COL, readFarByte(BASE_SEG, BDA_CURSOR_POS_COL) - 1);
 			}
-			offset = ((bda->cursor_position[0].row * (LCD_WIDTH / 8)) + bda->cursor_position[0].col) * 2;
+			offset = ((readFarByte(BASE_SEG, BDA_CURSOR_POS_ROW) * (LCD_WIDTH / 8)) + readFarByte(BASE_SEG, BDA_CURSOR_POS_COL)) * 2;
 			writeFarByte(VRAM_SEG, offset, ' '); // character-byte (8-bit ASCII-chars)
 			writeFarByte(VRAM_SEG, offset + 1, attribute); // attribute-byte
 			break;
@@ -154,40 +159,94 @@ void lcd_putc(char c, uint8_t attribute) {
 			// output character to LCD
 
 			// increment internal cursor position for new character
-			if (bda->cursor_position[0].col < (LCD_WIDTH / 8) - 1) {
-				bda->cursor_position[0].col++;
+			if (readFarByte(BASE_SEG, BDA_CURSOR_POS_COL) < (LCD_WIDTH / 8) - 1) {
+				writeFarByte(BASE_SEG, BDA_CURSOR_POS_COL, readFarByte(BASE_SEG, BDA_CURSOR_POS_COL) + 1);
 			}else{
-				bda->cursor_position[0].col = 0;
-				bda->cursor_position[0].row++;
+				writeFarByte(BASE_SEG, BDA_CURSOR_POS_COL, 0);
+				writeFarByte(BASE_SEG, BDA_CURSOR_POS_ROW, readFarByte(BASE_SEG, BDA_CURSOR_POS_ROW) + 1);
 			}
-			if (bda->cursor_position[0].row == (LCD_HEIGHT / 8)) {
+			if (readFarByte(BASE_SEG, BDA_CURSOR_POS_ROW) == (LCD_HEIGHT / 8)) {
 				lcd_scroll_up();
 			}
-			offset = ((bda->cursor_position[0].row * (LCD_WIDTH / 8)) + bda->cursor_position[0].col) * 2;
+			offset = ((readFarByte(BASE_SEG, BDA_CURSOR_POS_ROW) * (LCD_WIDTH / 8)) + readFarByte(BASE_SEG, BDA_CURSOR_POS_COL)) * 2;
 			writeFarByte(VRAM_SEG, offset, c); // character-byte (8-bit ASCII-chars)
 			writeFarByte(VRAM_SEG, offset + 1, attribute); // attribute-byte
 			break;
 	}
 
 	// update hardware cursor position
-	offset = ((bda->cursor_position[0].row * (LCD_WIDTH / 8)) + bda->cursor_position[0].col) * 2;
+	//uint16_t char_addr = (bda->cursor_position[0].row * (LCD_WIDTH / 8)) + bda->cursor_position[0].col;
+	//write_sc300_lcd_cfg(LCD_VID_IDX_CURSOR_ADDR_UPPER, (char_addr >> 8) & 0xFF);
+	//write_sc300_lcd_cfg(LCD_VID_IDX_CURSOR_ADDR_LOWER,  char_addr & 0xFF);
+
+	offset = ((readFarByte(BASE_SEG, BDA_CURSOR_POS_ROW) * (LCD_WIDTH / 8)) + readFarByte(BASE_SEG, BDA_CURSOR_POS_COL)) * 2;
 	write_sc300_lcd_cfg(LCD_VID_IDX_CURSOR_ADDR_UPPER, (offset >> 9) & 0xFF); // upper 7 bits of offset (divide by 512)
 	write_sc300_lcd_cfg(LCD_VID_IDX_CURSOR_ADDR_LOWER, (offset >> 1) & 0xFF); // lower 8 bits of offset (divide by 2)
 }
 
 // output whole string on LCD
 void lcd_print_string(int row, int col, const char *str, uint8_t attribute) {
-	int current_col = col;
-    
-    while (*str) {
-        lcd_putc_pos(row, current_col, *str, attribute);
+	// Strings are placed in ROM so we have to take care of different memory-segments
+	// so we take the relative offset and use the readRomByte function
+
+    int current_col = col;
+    uint16_t rom_offset = (uint16_t)(uintptr_t)str;
+
+	writeFarByte(BASE_SEG, BDA_CURSOR_POS_COL, col);
+	writeFarByte(BASE_SEG, BDA_CURSOR_POS_ROW, row);
+
+    while (1) {
+        char c = (char)readRomByte(rom_offset);
         
-        str++;
+        if (c == '\0') {
+            break;
+        }
+
+        lcd_putc_pos(row, current_col, c, attribute);
+
+		// get next character
+        rom_offset++;
         current_col++;
         
+        // automatic line break
         if (current_col >= (LCD_WIDTH / 8)) {
             current_col = 0;
             row++;
         }
+
+		writeFarByte(BASE_SEG, BDA_CURSOR_POS_COL, current_col);
+		writeFarByte(BASE_SEG, BDA_CURSOR_POS_ROW, row);
     }
+}
+
+void lcd_print_string_ram(int row, int col, const char *str, uint8_t attribute) {
+    int current_col = col;
+    while (*str) {
+        lcd_putc_pos(row, current_col, *str, attribute);
+        str++;
+        current_col++;
+        if (current_col >= (LCD_WIDTH / 8)) {
+            current_col = 0;
+            row++;
+        }
+
+		writeFarByte(BASE_SEG, BDA_CURSOR_POS_COL, current_col);
+		writeFarByte(BASE_SEG, BDA_CURSOR_POS_ROW, row);
+	}
+}
+
+void lcd_install_character(uint8_t c, uint8_t row, uint8_t value) {
+	writeFarByte(VRAM_SEG, 0x7800 + (c * 8) + row, value);
+}
+
+void lcd_install_font() {
+	uint16_t vram_offset_base = 0x7800;
+	for (uint8_t c = ' '; c < '~'; c++) {
+		uint16_t char_vram_offset = vram_offset_base + (c * 8);
+		
+		for (uint8_t row = 0; row < 8; row++) {
+			uint8_t row_data = readRomByte((uint16_t)(uintptr_t)&bios_font_8x8[c][row]);
+			writeFarByte(VRAM_SEG, char_vram_offset + row, row_data);
+		}
+	}
 }
