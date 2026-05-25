@@ -11,10 +11,9 @@ void delay_us(uint32_t microseconds) {
 }
 
 char* uint16_to_hex(uint16_t val, char* buf) {
-    const char hex_chars[] = "0123456789ABCDEF";
     buf[4] = '\0';
     for (int i = 3; i >= 0; i--) {
-        buf[i] = hex_chars[val & 0x0F];
+        buf[i] = readRomByte((uint16_t)(uintptr_t)&hex_chars[val & 0x0F]);
         val >>= 4;
     }
     return buf;
@@ -30,10 +29,9 @@ char* uint16_to_dec(uint16_t val, char* buf) {
 }
 
 char* uint8_to_hex(uint8_t val, char* buf) {
-    const char hex_chars[] = "0123456789ABCDEF";
     buf[2] = '\0';
     for (int i = 1; i >= 0; i--) {
-        buf[i] = hex_chars[val & 0x0F];
+        buf[i] = readRomByte((uint16_t)(uintptr_t)&hex_chars[val & 0x0F]);
         val >>= 4;
     }
     return buf;

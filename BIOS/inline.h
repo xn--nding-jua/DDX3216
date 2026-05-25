@@ -168,4 +168,10 @@ static inline void delay_1us(void) {
     );
 }
 
+static inline void delay_1ms(void) {
+    for (int i = 0; i < 1000; i++) {
+        delay_1us();
+    }
+}
+
 #endif

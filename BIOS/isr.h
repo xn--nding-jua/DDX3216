@@ -9,6 +9,8 @@
 
 #include "bios.h"
 
+extern volatile uint8_t g_kbd_scancode;
+
 struct interrupt_frame {
     uint16_t ip;
     uint16_t cs;

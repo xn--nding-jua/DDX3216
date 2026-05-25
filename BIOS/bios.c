@@ -21,7 +21,6 @@ void io_delay() {
 }
 
 void setup_ivt() {
-
     volatile struct ivt_entry* ivt = (volatile struct ivt_entry*)0x0000;
     // set DS to segment 0x0000 temporarily to write to IVT with absolute addresses
     __asm__ __volatile__(
@@ -379,9 +378,44 @@ __attribute__((noreturn)) void bios_main() {
     //lcd_print_string(7, 0, "Booting from CF-Card...", 0x07);
 	//boot_dos();
 
+    uint8_t c = 'A';
     while(1) {
-        //__asm__("nop");
+        // show a sign of life
+        lcd_putc_pos(0, 0, c, 0x07);
+        c++;
+        if (c > 'z') c = 'A';
 
-        //__asm__("hlt");
+        // check BIOS Keyboard-Ringbuffer
+
+        char textbuffer[3];
+        uint8_to_hex(g_kbd_scancode, textbuffer);
+        lcd_putc_pos(6, 0, textbuffer[0], 0x07);
+        lcd_putc_pos(6, 1, textbuffer[1], 0x07);
+
+
+        /*
+        if (*BDA_KBD_HEAD != *BDA_KBD_TAIL) {
+            uint16_t* ptr = (uint16_t*)(uintptr_t)(*BDA_KBD_HEAD);
+            uint8_t scancode = (*ptr) >> 8;
+            char ascii = (*ptr) & 0xFF;
+
+            // display scancode and ASCII-character on LCD
+            lcd_print_string(7, 0, "Scancode: 0x", 0x07);
+            char textbuffer[3];
+            uint8_to_hex(scancode, textbuffer);
+            lcd_putc_pos(7, 15, textbuffer[0], 0x07);
+            lcd_putc_pos(7, 16, textbuffer[1], 0x07);
+
+            lcd_print_string(7, 18, "ASCII: ", 0x07);
+            lcd_putc_pos(7, 25, ascii ? ascii : '.', 0x07);
+
+            // move head forward
+            uint16_t next_head = *BDA_KBD_HEAD + 2;
+            if (next_head >= BDA_KBD_BUF_END) next_head = BDA_KBD_BUF_START;
+            *BDA_KBD_HEAD = next_head;
+        }
+        */
+
+        delay_1ms();
     }
 }

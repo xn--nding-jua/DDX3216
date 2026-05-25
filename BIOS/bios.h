@@ -26,6 +26,8 @@
 #define LCD_HEIGHT              64     // real vertical resolution of the LCD panel
 #define VRAM_SIZE               ((LCD_WIDTH * LCD_BPP / 8) * (LCD_HEIGHT / 8) * 2)
 
+static const char hex_chars[] = "0123456789ABCDEF";
+
 struct __attribute__((packed)) ivt_entry {
     uint16_t offset;
     uint16_t segment;

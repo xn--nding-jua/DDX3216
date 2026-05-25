@@ -6,6 +6,8 @@
 
 #include "isr.h"
 
+uint16_t g_old_ds;
+
 // **********************************************************
 // Interrupt functions
 // **********************************************************
@@ -18,10 +20,8 @@ void pirq_init() {
 
 // INT 08h: timer-interrupt
 __attribute__((interrupt)) void c_int08_handler(struct interrupt_frame *frame) {
-	uint16_t old_ds;
-
 	// store DS and reset it to 0
-	__asm__ volatile("movw %%ds, %0" : "=r"(old_ds));
+	__asm__ volatile("movw %%ds, %0" : "=r"(g_old_ds));
 	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
 
     //lcd_putc('T', 0x07);
@@ -39,140 +39,125 @@ __attribute__((interrupt)) void c_int08_handler(struct interrupt_frame *frame) {
     outb(0x20, 0x20);
 	
 	// restore DS
-	__asm__ volatile("movw %0, %%ds" : : "r"(old_ds));
+	__asm__ volatile("movw %0, %%ds" : : "r"(g_old_ds));
 }
 
 // INT 09h: keyboard-interrupt
-static uint8_t  g_scancode    = 0;
-static char     g_textbuf[3]  = {0, 0, 0};
-static uint8_t  g_ctrl;
-__attribute__((interrupt)) void c_int09_handler(struct interrupt_frame *frame) {
-    uint16_t old_ds;
+volatile uint8_t g_kbd_scancode;
+static volatile uint8_t g_kbd_set1_code;
+static volatile bool g_kbd_is_break;
+static volatile char g_kbd_ascii;
+static volatile uint16_t g_kbd_tail;
+static volatile uint16_t g_kbd_next_tail;
+static volatile uint16_t* g_kbd_ptr;
 
+__attribute__((interrupt)) void c_int09_handler(struct interrupt_frame *frame) {
     // store DS and reset it to 0
-	__asm__ volatile("movw %%ds, %0" : "=r"(old_ds));
+	__asm__ volatile("movw %%ds, %0" : "=r"(g_old_ds));
 	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
 
-    char textbuffer[3];
-
     // read scancode from keyboard-controller
-	uint8_t scancode = inb(KBD_DATA_PORT);
+	g_kbd_scancode = inb(KBD_DATA_PORT);
 
     // clear shift-register and IRQ in keyboard-controller
-    uint8_t ctrl = inb(KBD_CTRL_PORT);
-    outb(KBD_CTRL_PORT, ctrl | KBD_CTRL_CLEAR);
-    outb(KBD_CTRL_PORT, ctrl & ~KBD_CTRL_CLEAR);
+    outb(KBD_CTRL_PORT, inb(KBD_CTRL_PORT) | KBD_CTRL_CLEAR);
+    outb(KBD_CTRL_PORT, inb(KBD_CTRL_PORT) & ~KBD_CTRL_CLEAR);
 
-    uint8_t set1_code = 0;
-    bool    is_break  = false;
     switch (kbd_state) {
         case KBD_STATE_IDLE:
-            if (scancode == SC2_EXTENDED) {
+            if (g_kbd_scancode == SC2_EXTENDED) {
                 kbd_state = KBD_STATE_EXTENDED;
                 goto send_eoi;
             }
-            if (scancode == SC2_BREAK) {
+            if (g_kbd_scancode == SC2_BREAK) {
                 kbd_state = KBD_STATE_BREAK;
                 goto send_eoi;
             }
             // regular make-code (key pressed)
-            set1_code = set2_to_set1[scancode];
-            is_break  = false;
+            //g_kbd_set1_code = set2_to_set1[g_kbd_scancode];
+            g_kbd_set1_code = readRomByte((uint16_t)(uintptr_t)&set2_to_set1[g_kbd_scancode]);
+            g_kbd_is_break  = false;
             break;
 
         case KBD_STATE_EXTENDED:
-            if (scancode == SC2_BREAK) {
+            if (g_kbd_scancode == SC2_BREAK) {
                 kbd_state = KBD_STATE_EXT_BREAK;
                 goto send_eoi;
             }
             // extended make-code (key pressed)
-            set1_code = set2_ext_to_set1[scancode];
-            is_break  = false;
+            //g_kbd_set1_code = set2_ext_to_set1[g_kbd_scancode];
+            g_kbd_set1_code = readRomByte((uint16_t)(uintptr_t)&set2_ext_to_set1[g_kbd_scancode]);
+            g_kbd_is_break  = false;
             kbd_state = KBD_STATE_IDLE;
             break;
 
         case KBD_STATE_BREAK:
             // regular break-code (key released)
-            set1_code = set2_to_set1[scancode];
-            is_break  = true;
+            //g_kbd_set1_code = set2_to_set1[g_kbd_scancode];
+            g_kbd_set1_code = readRomByte((uint16_t)(uintptr_t)&set2_to_set1[g_kbd_scancode]);
+            g_kbd_is_break  = true;
             kbd_state = KBD_STATE_IDLE;
             break;
 
         case KBD_STATE_EXT_BREAK:
             // Extended Break-Code (key released)
-            set1_code = set2_ext_to_set1[scancode];
-            is_break  = true;
+            //g_kbd_set1_code = set2_ext_to_set1[g_kbd_scancode];
+            g_kbd_set1_code = readRomByte((uint16_t)(uintptr_t)&set2_ext_to_set1[g_kbd_scancode]);
+            g_kbd_is_break  = true;
             kbd_state = KBD_STATE_IDLE;
             break;
     }
 
     // manage modifier-key
-    if (set1_code) {
-        switch (set1_code) {
+    if (g_kbd_set1_code) {
+        switch (g_kbd_set1_code) {
             case 0x2A:  // Left Shift
             case 0x36:  // Right Shift
-                shift_pressed = !is_break;
+                shift_pressed = !g_kbd_is_break;
                 goto send_eoi;
 
             case 0x1D:  // Ctrl
-                ctrl_pressed = !is_break;
+                ctrl_pressed = !g_kbd_is_break;
                 goto send_eoi;
 
             case 0x38:  // Alt
-                alt_pressed = !is_break;
+                alt_pressed = !g_kbd_is_break;
                 goto send_eoi;
 
             case 0x3A:  // Caps Lock (only on Make)
-                if (!is_break) caps_lock = !caps_lock;
+                if (!g_kbd_is_break) caps_lock = !caps_lock;
                 goto send_eoi;
         }
 
         // only convert make-codes to ASCII and put them on the LCD, break-codes are ignored for ASCII output
-        if (!is_break) {
-            char ascii = set1_to_ascii(set1_code, shift_pressed, caps_lock);
-            if (ascii) {
-                // DEBUG: Display ASCII-character on LCD
-                lcd_putc(ascii, 0x07);
-
+        if (!g_kbd_is_break) {
+            g_kbd_ascii = set1_to_ascii(g_kbd_set1_code, shift_pressed, caps_lock);
+            if (g_kbd_ascii) {
                 // store scancode and ASCII-character in keyboard-buffer in BDA, if there is space (2 bytes per entry: high byte = scancode, low byte = ASCII)
-                uint16_t tail = *BDA_KBD_TAIL;
-                uint16_t next_tail = tail + 2;
-                if (next_tail >= BDA_KBD_BUF_END) next_tail = BDA_KBD_BUF_START;
+                g_kbd_tail = *BDA_KBD_TAIL;
+                g_kbd_next_tail = g_kbd_tail + 2;
+                if (g_kbd_next_tail >= BDA_KBD_BUF_END) g_kbd_next_tail = BDA_KBD_BUF_START;
 
-                // if buffer is not full (Tail + 2 != Head)
-                if (next_tail != *BDA_KBD_HEAD) {
+                if (g_kbd_next_tail != *BDA_KBD_HEAD) {
                     // store scancode (high) and ASCII (low)
-                    uint16_t *ptr = (uint16_t*)(uintptr_t)(tail);
-                    *ptr = (uint16_t)((scancode << 8) | ascii);
-                    *BDA_KBD_TAIL = next_tail;
+                    g_kbd_ptr = (uint16_t*)(uintptr_t)(g_kbd_tail);
+                    *g_kbd_ptr = (uint16_t)((g_kbd_scancode << 8) | g_kbd_ascii);
+                    *BDA_KBD_TAIL = g_kbd_next_tail;
                 }
-
             }
         }
     }
 
-    // DEBUG Display Scancodes on LCD
-    if (!(scancode & 0x80)) {
-        lcd_print_string(7, 0, "key pressed  0x", 0x07);
-    } else {
-        lcd_print_string(7, 0, "key released 0x", 0x07);
-    }
-    uint8_to_hex(scancode, textbuffer);
-    lcd_putc_pos(7, 15, textbuffer[0], 0x07);
-    lcd_putc_pos(7, 16, textbuffer[1], 0x07);
-    // DEBUG END
-
 send_eoi:
-    // send EOI to PIC, to allow more interrupts
+    // send end of interrupt to port 0x20
     outb(0x20, 0x20);
-
+	
 	// restore DS
-	__asm__ volatile("movw %0, %%ds" : : "r"(old_ds));
+	__asm__ volatile("movw %0, %%ds" : : "r"(g_old_ds));
 }
 
 // INT 10h: Video-interrupt
 __attribute__((interrupt)) void c_int10_handler(struct interrupt_frame *frame) {
-	uint16_t old_ds;
     uint16_t current_ax;
     uint16_t current_dx;
 
@@ -183,7 +168,7 @@ __attribute__((interrupt)) void c_int10_handler(struct interrupt_frame *frame) {
     __asm__ __volatile__("movw %%dx, %0" : "=r"(current_dx));
 
 	// store DS and reset it to 0
-	__asm__ volatile("movw %%ds, %0" : "=r"(old_ds));
+	__asm__ volatile("movw %%ds, %0" : "=r"(g_old_ds));
 	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
     
     switch (ah) {
@@ -228,15 +213,13 @@ __attribute__((interrupt)) void c_int10_handler(struct interrupt_frame *frame) {
     }
 	
 	// restore DS
-	__asm__ volatile("movw %0, %%ds" : : "r"(old_ds));
+	__asm__ volatile("movw %0, %%ds" : : "r"(g_old_ds));
 }
 
 // INT 11h: Get Equipment List
 __attribute__((interrupt)) void c_int11_handler(struct interrupt_frame *frame) {
-	uint16_t old_ds;
-
 	// store DS and reset it to 0
-	__asm__ volatile("movw %%ds, %0" : "=r"(old_ds));
+	__asm__ volatile("movw %%ds, %0" : "=r"(g_old_ds));
 	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
 
     /*
@@ -251,27 +234,24 @@ __attribute__((interrupt)) void c_int11_handler(struct interrupt_frame *frame) {
     __asm__ volatile ("movw %0, %%ax" : : "r"(equipment)); // write result into AX-register of caller directly
 
     // restore DS
-	__asm__ volatile("movw %0, %%ds" : : "r"(old_ds));
+	__asm__ volatile("movw %0, %%ds" : : "r"(g_old_ds));
 }
 
 // INT 12h: Get Memory Size
 __attribute__((interrupt)) void c_int12_handler(struct interrupt_frame *frame) {
-	uint16_t old_ds;
-
 	// store DS and reset it to 0
-	__asm__ volatile("movw %%ds, %0" : "=r"(old_ds));
+	__asm__ volatile("movw %%ds, %0" : "=r"(g_old_ds));
 	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
 
 	uint16_t mem_kb = *(uint16_t*)BDA_MEM_SIZE;
     __asm__ volatile ("movw %0, %%ax" : : "r"(mem_kb)); // write result into AX-register of caller directly
 	
 	// restore DS
-	__asm__ volatile("movw %0, %%ds" : : "r"(old_ds));
+	__asm__ volatile("movw %0, %%ds" : : "r"(g_old_ds));
 }
 
 // INT13h: disk-interrupt
 __attribute__((interrupt)) void c_int13_handler(struct interrupt_frame *frame) {
-    uint16_t old_ds;
     uint8_t  ah, al, ch, cl, dh, dl;
     uint16_t target_bx, target_es;
 
@@ -289,7 +269,7 @@ __attribute__((interrupt)) void c_int13_handler(struct interrupt_frame *frame) {
     );
 
     // store DS and switch to RAM (0x0000)
-    __asm__ volatile ("movw %%ds, %0"                   : "=r"(old_ds));
+    __asm__ volatile ("movw %%ds, %0"                   : "=r"(g_old_ds));
     __asm__ volatile ("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
 
     // support only for drive 0x80
@@ -299,7 +279,7 @@ __attribute__((interrupt)) void c_int13_handler(struct interrupt_frame *frame) {
             "orw  $0x0001, 6(%%bp)"
             ::: "ax", "memory"
         );
-        __asm__ volatile ("movw %0, %%ds" : : "r"(old_ds));
+        __asm__ volatile ("movw %0, %%ds" : : "r"(g_old_ds));
         return;
     }
 
@@ -421,13 +401,11 @@ __attribute__((interrupt)) void c_int13_handler(struct interrupt_frame *frame) {
     }
 
     // ④ DS wiederherstellen
-    __asm__ volatile ("movw %0, %%ds" : : "r"(old_ds));
+    __asm__ volatile ("movw %0, %%ds" : : "r"(g_old_ds));
 }
 
 // uart-interrupt
 __attribute__((interrupt)) void c_int14_handler(struct interrupt_frame *frame) {
-	uint16_t old_ds;
-
     // AH contains the function-number (0=Init, 1=Transmit, 2=Receive, 3=State)
     // use inline-assembler as GCC-interrupts are more complex
 	uint8_t service;
@@ -441,7 +419,7 @@ __attribute__((interrupt)) void c_int14_handler(struct interrupt_frame *frame) {
     );
 
     // store DS and reset it to 0
-	__asm__ volatile("movw %%ds, %0" : "=r"(old_ds));
+	__asm__ volatile("movw %%ds, %0" : "=r"(g_old_ds));
 	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
 
 	switch (service) {
@@ -474,7 +452,7 @@ __attribute__((interrupt)) void c_int14_handler(struct interrupt_frame *frame) {
     }
 	
 	// restore DS
-	__asm__ volatile("movw %0, %%ds" : : "r"(old_ds));
+	__asm__ volatile("movw %0, %%ds" : : "r"(g_old_ds));
 }
 
 __attribute__((interrupt)) void c_int15_handler(struct interrupt_frame *frame) {
@@ -517,13 +495,12 @@ __attribute__((interrupt)) void c_int15_handler(struct interrupt_frame *frame) {
 
 // this interrupt is called by DOS to request next char from ringbuffer
 __attribute__((interrupt)) void c_int16_handler(struct interrupt_frame *frame) {
-	uint16_t old_ds;
     uint8_t ah;
 
     __asm__ volatile ("movb %%ah, %0" : "=r"(ah));
 
     // store DS and reset it to 0
-	__asm__ volatile("movw %%ds, %0" : "=r"(old_ds));
+	__asm__ volatile("movw %%ds, %0" : "=r"(g_old_ds));
 	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
 	
     if (ah == 0x00) { // read character (blocking)
@@ -554,15 +531,13 @@ __attribute__((interrupt)) void c_int16_handler(struct interrupt_frame *frame) {
     }
 	
 	// restore DS
-	__asm__ volatile("movw %0, %%ds" : : "r"(old_ds));
+	__asm__ volatile("movw %0, %%ds" : : "r"(g_old_ds));
 }
 
 // INT04 (PIRQ0 is mapped here)
 __attribute__((interrupt)) void c_int0c_handler(struct interrupt_frame *frame) {
-	uint16_t old_ds;
-	
 	// store DS and reset it to 0
-	__asm__ volatile("movw %%ds, %0" : "=r"(old_ds));
+	__asm__ volatile("movw %%ds, %0" : "=r"(g_old_ds));
 	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
 
 
@@ -608,18 +583,17 @@ __attribute__((interrupt)) void c_int0c_handler(struct interrupt_frame *frame) {
     outb(0x20, 0x20);
 
 	// restore DS
-	__asm__ volatile("movw %0, %%ds" : : "r"(old_ds));
+	__asm__ volatile("movw %0, %%ds" : : "r"(g_old_ds));
 }
 
 // INT 1Ah for RTC access
 __attribute__((interrupt)) void c_int1a_handler(struct interrupt_frame *frame) {
-	uint16_t old_ds;
 	uint8_t ah;
 
     __asm__ volatile ("movb %%ah, %0" : "=r"(ah));
 
     // store DS and reset it to 0
-	__asm__ volatile("movw %%ds, %0" : "=r"(old_ds));
+	__asm__ volatile("movw %%ds, %0" : "=r"(g_old_ds));
 	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
 	
     switch (ah) {
@@ -664,7 +638,7 @@ __attribute__((interrupt)) void c_int1a_handler(struct interrupt_frame *frame) {
     }
 
 	// restore DS
-    __asm__ volatile("movw %0, %%ds" : : "r"(old_ds));
+    __asm__ volatile("movw %0, %%ds" : : "r"(g_old_ds));
 }
 
 // software-interrupt

@@ -104,8 +104,13 @@ static char set1_to_ascii(uint8_t set1_code, bool shift, bool caps) {
     }
 
     if (set1_code < sizeof(set1_ascii_normal)) {
-        return use_shift ? set1_ascii_shift[set1_code]
-                         : set1_ascii_normal[set1_code];
+        if (use_shift) {
+            //return set1_ascii_shift[set1_code];
+            return (char)readRomByte((uint16_t)(uintptr_t)&set1_ascii_shift[set1_code]);
+        } else {
+            //return set1_ascii_normal[set1_code];
+            return (char)readRomByte((uint16_t)(uintptr_t)&set1_ascii_normal[set1_code]);
+        }
     }
     return 0;
 }
