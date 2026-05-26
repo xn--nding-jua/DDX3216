@@ -12,8 +12,10 @@
 void timer_init() {
     outb(TIMER_CTRL, 0x36); // 8254 Mode 3 (Square Wave Generator), Binary, Counter 0
     
-    // Teiler auf 0xFFFF setzen für ~18.2 Hz
-    outb(TIMER0_DATA, 0xFF); // Low Byte
+    // AT-compatible timer (8254) clocks at 1.19318 MHz
+    // but the SC300 timer clocks at 1.1892 MHz
+    // so we choose the divider to be 0xFF23 instead of 0xFFFF for ~18.207 Hz
+    outb(TIMER0_DATA, 0x23); // Low Byte
     outb(TIMER0_DATA, 0xFF); // High Byte
 }
 

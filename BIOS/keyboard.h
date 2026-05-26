@@ -11,6 +11,16 @@
 #define KBD_LED_NUMLOCK         0x02
 #define KBD_LED_CAPSLOCK        0x04
 
+// BDA 0x0417: Keyboard Status Flags 1
+#define KBD_FLAG_RSHIFT         0x01
+#define KBD_FLAG_LSHIFT         0x02
+#define KBD_FLAG_CTRL           0x04
+#define KBD_FLAG_ALT            0x08
+#define KBD_FLAG_SCROLLLOCK     0x10
+#define KBD_FLAG_NUMLOCK        0x20
+#define KBD_FLAG_CAPSLOCK       0x40
+#define KBD_FLAG_INSERT         0x80
+
 #define SC300_XTKBDEN           (1 << 3) // Bit 3: XT Keyboard Enable
 #define KBD_CTRL_CLK_LOW        (1 << 6)
 #define KBD_CTRL_CLEAR          (1 << 7)
@@ -41,8 +51,7 @@ typedef enum {
     KBD_STATE_BREAK,        // after 0xF0
     KBD_STATE_EXT_BREAK,    // after 0xE0 0xF0
 } kbd_state_t;
-
-static kbd_state_t kbd_state = KBD_STATE_IDLE;
+static volatile kbd_state_t kbd_state = KBD_STATE_IDLE;
 
 // Shift-Status
 static bool shift_pressed  = false;

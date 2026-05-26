@@ -86,8 +86,7 @@ void lcd_scroll_up() {
             uint16_t src_offset = (r * (LCD_WIDTH / 8) * 2) + (c * 2);
             uint16_t dst_offset = ((r - 1) * (LCD_WIDTH / 8) * 2) + (c * 2);
             
-            writeFarWord(VRAM_SEG, dst_offset, readFarByte(VRAM_SEG, src_offset)); // character-byte (8-bit ASCII-chars)
-            writeFarWord(VRAM_SEG, dst_offset + 1, readFarByte(VRAM_SEG, src_offset + 1)); // attribute-byte
+			writeFarWord(VRAM_SEG, dst_offset, readFarWord(VRAM_SEG, src_offset)); // character-byte + attribute-byte (16-bit)
         }
     }
 
@@ -157,8 +156,11 @@ void lcd_putc(char c, uint8_t attribute) {
 			break;
 		default:
 			// output character to LCD
+			offset = ((readFarByte(BASE_SEG, BDA_CURSOR_POS_ROW) * (LCD_WIDTH / 8)) + readFarByte(BASE_SEG, BDA_CURSOR_POS_COL)) * 2;
+			writeFarByte(VRAM_SEG, offset, c); // character-byte (8-bit ASCII-chars)
+			writeFarByte(VRAM_SEG, offset + 1, attribute); // attribute-byte
 
-			// increment internal cursor position for new character
+			// increment internal cursor position for next character
 			if (readFarByte(BASE_SEG, BDA_CURSOR_POS_COL) < (LCD_WIDTH / 8) - 1) {
 				writeFarByte(BASE_SEG, BDA_CURSOR_POS_COL, readFarByte(BASE_SEG, BDA_CURSOR_POS_COL) + 1);
 			}else{
@@ -168,9 +170,7 @@ void lcd_putc(char c, uint8_t attribute) {
 			if (readFarByte(BASE_SEG, BDA_CURSOR_POS_ROW) == (LCD_HEIGHT / 8)) {
 				lcd_scroll_up();
 			}
-			offset = ((readFarByte(BASE_SEG, BDA_CURSOR_POS_ROW) * (LCD_WIDTH / 8)) + readFarByte(BASE_SEG, BDA_CURSOR_POS_COL)) * 2;
-			writeFarByte(VRAM_SEG, offset, c); // character-byte (8-bit ASCII-chars)
-			writeFarByte(VRAM_SEG, offset + 1, attribute); // attribute-byte
+
 			break;
 	}
 
@@ -188,10 +188,9 @@ void lcd_putc(char c, uint8_t attribute) {
 void lcd_print_string(int row, int col, const char *str, uint8_t attribute) {
 	// Strings are placed in ROM so we have to take care of different memory-segments
 	// so we take the relative offset and use the readRomByte function
-
-    int current_col = col;
     uint16_t rom_offset = (uint16_t)(uintptr_t)str;
 
+    int current_col = col;
 	writeFarByte(BASE_SEG, BDA_CURSOR_POS_COL, col);
 	writeFarByte(BASE_SEG, BDA_CURSOR_POS_ROW, row);
 

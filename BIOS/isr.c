@@ -18,7 +18,24 @@ void pirq_init() {
     outb(CFG_DATA, 0x04); // Map auf IRQ 4
 }
 
+/*
 // INT 08h: timer-interrupt
+void c_int08_handler(void) {
+    lcd_putc('T', 0x07);
+    
+    // increment BIOS-Timer-Counter in BDA
+    (*BDA_TIMER_COUNTER)++;
+
+    // call INT 1Ch (User Timer Tick)
+    __asm__ volatile ("int $0x1C");
+
+    // restore DS after INT1Ch
+    __asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
+
+    // send end of interrupt to port 0x20
+    outb(0x20, 0x20);
+}
+*/
 __attribute__((interrupt)) void c_int08_handler(struct interrupt_frame *frame) {
 	// store DS and reset it to 0
 	__asm__ volatile("movw %%ds, %0" : "=r"(g_old_ds));
@@ -128,6 +145,13 @@ __attribute__((interrupt)) void c_int09_handler(struct interrupt_frame *frame) {
                 if (!g_kbd_is_break) caps_lock = !caps_lock;
                 goto send_eoi;
         }
+
+        uint8_t flags = 0;
+        if (shift_pressed) flags |= KBD_FLAG_RSHIFT;
+        if (ctrl_pressed)  flags |= KBD_FLAG_CTRL;
+        if (alt_pressed)   flags |= KBD_FLAG_ALT;
+        if (caps_lock)     flags |= KBD_FLAG_CAPSLOCK;
+        *(volatile uint8_t*)BDA_KBD_STATUS_FLAGS = flags;
 
         // only convert make-codes to ASCII and put them on the LCD, break-codes are ignored for ASCII output
         if (!g_kbd_is_break) {
@@ -283,124 +307,140 @@ __attribute__((interrupt)) void c_int13_handler(struct interrupt_frame *frame) {
         return;
     }
 
-    if (ah == 0x00) {
-        // ------------------------------------------------------
-        // AH=00h: Reset Disk System
-        // ------------------------------------------------------
-        outb(IDE_DEV_CTRL, 0x06);
-        for (volatile uint16_t i = 0; i < 10000; i++);
-        outb(IDE_DEV_CTRL, 0x02);
-        ide_wait_ready();
+    switch(ah) {
+        case 0x00:
+            // ------------------------------------------------------
+            // AH=00h: Reset Disk System
+            // ------------------------------------------------------
+            outb(IDE_DEV_CTRL, 0x06);
+            for (volatile uint16_t i = 0; i < 10000; i++);
+            outb(IDE_DEV_CTRL, 0x02);
+            ide_wait_ready();
 
-        __asm__ volatile (
-            "movb $0x00, %%ah\n"
-            "andw $0xFFFE, 6(%%bp)"
-            ::: "ax", "memory"
-        );
-    }
-    else if (ah == 0x02) {
-        // ------------------------------------------------------
-        // AH=02h: Read Sectors
-        // ------------------------------------------------------
-        uint8_t  sectors_to_read = al;
-        uint8_t  sector          = cl & 0x3F;
-        uint16_t cylinder        = ((uint16_t)(cl & 0xC0) << 2) | ch;
-        uint8_t  head            = dh;
-        uint32_t lba             = CHS_TO_LBA(cylinder, head, sector);
-        uint8_t  error           = 0;
-
-        for (uint8_t s = 0; s < sectors_to_read; s++) {
-            uint32_t cur_lba = lba + s;
-
-            if (!ide_wait_ready()) {
-                error = 0xAA;
-                break;
-            }
-
-            // send LBA command to disk
-            outb(IDE_SECT_COUNT, 1);
-            outb(IDE_LBA_LOW,   (uint8_t)( cur_lba        & 0xFF));
-            outb(IDE_LBA_MID,   (uint8_t)((cur_lba >>  8) & 0xFF));
-            outb(IDE_LBA_HIGH,  (uint8_t)((cur_lba >> 16) & 0xFF));
-            outb(IDE_DRIVE_HEAD, 0xE0 | (uint8_t)((cur_lba >> 24) & 0x0F));
-            outb(IDE_COMMAND, IDE_CMD_READ);
-
-            if (!ide_wait_drq()) {
-                error = 0xBB;
-                break;
-            }
-
-            // read 256 words -> write to ES:BX
-            for (uint16_t i = 0; i < 256; i++) {
-                uint16_t word = inw(IDE_DATA);
-                __asm__ volatile (
-                    "movw %0, %%es:(%%bx)"
-                    : : "r"(word), "b"(target_bx)
-                );
-                target_bx += 2;
-            }
-        }
-
-        if (error == 0) {
             __asm__ volatile (
                 "movb $0x00, %%ah\n"
                 "andw $0xFFFE, 6(%%bp)"
                 ::: "ax", "memory"
             );
-        } else {
+            break;
+        
+        case 0x02:
+            // ------------------------------------------------------
+            // AH=02h: Read Sectors
+            // ------------------------------------------------------
+            uint8_t  sectors_to_read = al;
+            uint8_t  sector          = cl & 0x3F;
+            uint16_t cylinder        = ((uint16_t)(cl & 0xC0) << 2) | ch;
+            uint8_t  head            = dh;
+            uint32_t lba             = CHS_TO_LBA(cylinder, head, sector);
+            uint8_t  error           = 0;
+
+            for (uint8_t s = 0; s < sectors_to_read; s++) {
+                uint32_t cur_lba = lba + s;
+
+                if (!ide_wait_ready()) {
+                    error = 0xAA;
+                    break;
+                }
+
+                // send LBA command to disk
+                outb(IDE_SECT_COUNT, 1);
+                outb(IDE_LBA_LOW,   (uint8_t)( cur_lba        & 0xFF));
+                outb(IDE_LBA_MID,   (uint8_t)((cur_lba >>  8) & 0xFF));
+                outb(IDE_LBA_HIGH,  (uint8_t)((cur_lba >> 16) & 0xFF));
+                outb(IDE_DRIVE_HEAD, 0xE0 | (uint8_t)((cur_lba >> 24) & 0x0F));
+                outb(IDE_COMMAND, IDE_CMD_READ);
+
+                if (!ide_wait_drq()) {
+                    error = 0xBB;
+                    break;
+                }
+
+                // read 256 words -> write to ES:BX
+                for (uint16_t i = 0; i < 256; i++) {
+                    uint16_t word = inw(IDE_DATA);
+                    __asm__ volatile (
+                        "movw %0, %%es:(%%bx)"
+                        : : "r"(word), "b"(target_bx)
+                    );
+                    target_bx += 2;
+                }
+            }
+
+            if (error == 0) {
+                __asm__ volatile (
+                    "movb $0x00, %%ah\n"
+                    "andw $0xFFFE, 6(%%bp)"
+                    ::: "ax", "memory"
+                );
+            } else {
+                __asm__ volatile (
+                    "movb %0, %%ah\n"
+                    "orw  $0x0001, 6(%%bp)"
+                    : : "r"(error) : "ax", "memory"
+                );
+            }            break;
+
+        case 0x08:
+            // ------------------------------------------------------
+            // AH=08h: Get Drive Parameters
+            // ------------------------------------------------------
+            uint8_t max_heads   = CF_HEADS - 1;     // TODO: max_heads = bootsector->bpb.num_heads; // <- DS will be changed so we have to store this somewhere else for later use in INT13h AH=02h
+            uint8_t max_sectors = CF_SECTORS;       // TODO: max_sectors = bootsector->bpb.sectors_per_track; // <- DS will be changed so we have to store this somewhere else for later use in INT13h AH=02h
+            uint16_t max_cyls   = CF_CYLINDERS - 1; // TODO: max_cyls = bootsector->bpb.total_sectors / (bootsector->bpb.num_heads * bootsector->bpb.sectors_per_track) - 1;
+
+            uint8_t cl_val = (max_sectors & 0x3F) |
+                            (uint8_t)((max_cyls >> 2) & 0xC0);
+            uint8_t ch_val = (uint8_t)(max_cyls & 0xFF);
+
             __asm__ volatile (
-                "movb %0, %%ah\n"
-                "orw  $0x0001, 6(%%bp)"
-                : : "r"(error) : "ax", "memory"
+                "movb $0x00, %%ah\n"
+                "movb $0x01, %%bl\n"
+                "movb %0,    %%ch\n"
+                "movb %1,    %%cl\n"
+                "movb %2,    %%dh\n"
+                "movb $0x01, %%dl\n"
+                "andw $0xFFFE, 6(%%bp)"
+                : : "m"(ch_val), "m"(cl_val), "m"(max_heads)
+                : "ax", "bx", "cx", "dx", "memory"
             );
-        }
-    }
-    else if (ah == 0x08) {
-        // ------------------------------------------------------
-        // AH=08h: Get Drive Parameters
-        // ------------------------------------------------------
-        uint8_t max_heads   = CF_HEADS - 1;     // TODO: max_heads = bootsector->bpb.num_heads; // <- DS will be changed so we have to store this somewhere else for later use in INT13h AH=02h
-        uint8_t max_sectors = CF_SECTORS;       // TODO: max_sectors = bootsector->bpb.sectors_per_track; // <- DS will be changed so we have to store this somewhere else for later use in INT13h AH=02h
-        uint16_t max_cyls   = CF_CYLINDERS - 1; // TODO: max_cyls = bootsector->bpb.total_sectors / (bootsector->bpb.num_heads * bootsector->bpb.sectors_per_track) - 1;
+            break;
 
-        uint8_t cl_val = (max_sectors & 0x3F) |
-                         (uint8_t)((max_cyls >> 2) & 0xC0);
-        uint8_t ch_val = (uint8_t)(max_cyls & 0xFF);
+        case 0x15:
+            // ------------------------------------------------------
+            // AH=15h: Get Disk Type
+            // ------------------------------------------------------
+            __asm__ volatile (
+                "movb $0x03, %%ah\n"
+                "andw $0xFFFE, 6(%%bp)"
+                ::: "ax", "memory"
+            );
+            break;
 
-        __asm__ volatile (
-            "movb $0x00, %%ah\n"
-            "movb $0x01, %%bl\n"
-            "movb %0,    %%ch\n"
-            "movb %1,    %%cl\n"
-            "movb %2,    %%dh\n"
-            "movb $0x01, %%dl\n"
-            "andw $0xFFFE, 6(%%bp)"
-            : : "m"(ch_val), "m"(cl_val), "m"(max_heads)
-            : "ax", "bx", "cx", "dx", "memory"
-        );
-    }
-    else if (ah == 0x15) {
-        // ------------------------------------------------------
-        // AH=15h: Get Disk Type
-        // ------------------------------------------------------
-        __asm__ volatile (
-            "movb $0x03, %%ah\n"
-            "andw $0xFFFE, 6(%%bp)"
-            ::: "ax", "memory"
-        );
-    }
-    else {
-        // ------------------------------------------------------
-        // Unbekannte Funktion
-        // ------------------------------------------------------
-        __asm__ volatile (
-            "movb $0x01, %%ah\n"
-            "orw  $0x0001, 6(%%bp)"
-            ::: "ax", "memory"
-        );
+        case 0x41:
+            // ------------------------------------------------------
+            // AH=41h: Check Extensions Present
+            // ------------------------------------------------------
+            __asm__ volatile (
+                "movb $0x00, %%ah\n"
+                "andw $0xFFFE, 6(%%bp)"
+                ::: "ax", "memory"
+            );
+            break;
+
+        default:
+            // ------------------------------------------------------
+            // unknown function
+            // ------------------------------------------------------
+            __asm__ volatile (
+                "movb $0x01, %%ah\n"
+                "orw  $0x0001, 6(%%bp)"
+                ::: "ax", "memory"
+            );
+            break;
     }
 
-    // ④ DS wiederherstellen
+    // restore DS
     __asm__ volatile ("movw %0, %%ds" : : "r"(g_old_ds));
 }
 
@@ -464,6 +504,19 @@ __attribute__((interrupt)) void c_int15_handler(struct interrupt_frame *frame) {
     uint8_t ah = (uint8_t)(current_ax >> 8);
 
     switch (ah) {
+        case 0x24:  // A20 Gate Control
+            {
+                uint8_t al = current_ax & 0xFF;
+                if (al == 0x01) {
+                    a20_enable();
+                    frame->flags &= ~0x0001;
+                } else if (al == 0x00) {
+                    a20_disable();
+                    frame->flags &= ~0x0001;
+                }
+            }
+            break;
+
         case 0x88: {
             // request enhanced memory (return 1024 KB in AX)
             uint16_t return_value = 1024;
@@ -476,20 +529,20 @@ __attribute__((interrupt)) void c_int15_handler(struct interrupt_frame *frame) {
             );
             
             frame->flags &= ~0x0001; // send success by deleting CarryFlag
-            return;
+            break;
         }
 
         case 0x87:
             // function 0x87: block-move (send success)
             __asm__ __volatile__("xorw %%ax, %%ax" : : : "ax");
             frame->flags &= ~0x0001; // send success by deleting CarryFlag
-            return;
+            break;
 
         default:
             // unknown function -> send error (AH = 0x86, Carry Flag = 1)
             __asm__ __volatile__("movw $0x8600, %%ax" : : : "ax");
             frame->flags |= 0x0001; // Set Carry Flag
-            return;
+            break;
     }
 }
 
@@ -505,7 +558,7 @@ __attribute__((interrupt)) void c_int16_handler(struct interrupt_frame *frame) {
 	
     if (ah == 0x00) { // read character (blocking)
         while (*BDA_KBD_HEAD == *BDA_KBD_TAIL) {
-            __asm__ volatile ("sti; hlt; cli"); // halt CPU until next interrupt
+            __asm__ volatile ("sti\n hlt\n cli"); // halt CPU until next interrupt
         }
         
         uint16_t head = *BDA_KBD_HEAD;
@@ -534,12 +587,33 @@ __attribute__((interrupt)) void c_int16_handler(struct interrupt_frame *frame) {
 	__asm__ volatile("movw %0, %%ds" : : "r"(g_old_ds));
 }
 
+__attribute__((interrupt)) void c_int19_handler(struct interrupt_frame *frame) {
+	// store DS and reset it to 0
+	__asm__ volatile("movw %%ds, %0" : "=r"(g_old_ds));
+	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
+
+    // disable interrupts
+    __asm__ volatile("cli");
+    
+    // reset stack
+    __asm__ volatile(
+        "mov $0x0000, %%ax\n"
+        "mov %%ax, %%ss\n"
+        "mov $0x7C00, %%sp\n"
+        ::: "ax"
+    );
+    
+    // reboot from CF-card
+    boot_dos();
+    
+    while(1) { __asm__("hlt"); }
+}
+
 // INT04 (PIRQ0 is mapped here)
 __attribute__((interrupt)) void c_int0c_handler(struct interrupt_frame *frame) {
 	// store DS and reset it to 0
 	__asm__ volatile("movw %%ds, %0" : "=r"(g_old_ds));
 	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
-
 
 	while (!(inb(UART_IIR) & IIR_PENDING)) {
         uint8_t reason = inb(UART_IIR) & IIR_REASON;

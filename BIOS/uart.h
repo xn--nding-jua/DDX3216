@@ -6,6 +6,7 @@
 void uart_init(uint16_t baudrate);
 void uart_putc(char c);
 void uart_print(const char* str);
+void uart_print_ram(const char* str);
 void uart_interrupt_enable();
 
 #endif

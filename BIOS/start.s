@@ -16,6 +16,7 @@
 ; 0x00500 - 0x07BFF | 29.7kB     | Conventional Memory (free RAM)          |--> 0x00000 ... 0x0FFFF = first 64kB Segment where we can use regular pointers as DS is at 0x0000
 ; 0x07C00 - 0x07DFF | 512 bytes  | OS Boot-Sector                          |
 ; 0x07E00 - 0x7FFFF | 32kB       | Conventional memory (free RAM)          /
+; --------------------------------------------------------------------------
 ; 0x80000 - 0x9FFFF | 128 kB     | EBDA (Extended BIOS Data Area)
 ; -- high memory -----------------------------------------------------------
 ; 0xA0000 - 0xAFFFF | 64 kB      | optional BIOS
@@ -57,8 +58,6 @@
 USE16           ; same as "BITS 16"
 CPU 386         ; allow cpu-instructions up to 386
 
-EXTERN __data_start
-EXTERN __data_size
 EXTERN __bss_start
 EXTERN __bss_end
 EXTERN bios_main            ; main-function in C-Code
@@ -66,7 +65,7 @@ EXTERN bios_main            ; main-function in C-Code
 ; segment-addresses
 ROM_SEG     EQU 0xF000
 STACK_SEG   EQU 0x0000
-STACK_TOP   EQU 0x7C00      ; stack grows downwards (below boot-sector)
+STACK_TOP   EQU 0x7C00      ; stack grows downwards (below boot-sector, first push is on 0x7BFE)
 
 ; configuration-ports
 CFG_ADDR    EQU 0x22
@@ -282,39 +281,34 @@ dram_init:
     mov     al, 0x32		; from original DDX3216-EPROM
     out     0x23, al
 
+dram_init_delay:
+    mov     cx, 200         ; set loop-counter (200x ~1us)
+.dram_wait_loop:
+    mov     al, 0xAA
+    out     0x80, al        ; output 0xAA to port 0x80 (takes around 1us)
+    dec     cx
+    jnz     .dram_wait_loop ; loop until counter is zero
 
 
-copy_romdata:
-    ; copy initialized data from ROM to RAM
-    mov ax, ROM_SEG
-    mov ds, ax                  ; DS source = ROM
-    mov ax, STACK_SEG
-    mov es, ax                  ; ES destination = RAM
 
-    mov si, __data_start        ; 16-bit offset in ROM-Segment
-    mov di, 0x0500              ; destination in RAM
-    mov cx, __data_size
-    jcxz skip_data             ; if no data to copy -> skip this part
-    rep movsb                   ; copy .data and .rodata into RAM
-skip_data:
+clear_bss:
     ; clear data in BSS to zero
-    mov ax, STACK_SEG
-    mov ds, ax
+    mov     ax, STACK_SEG
+    mov     ds, ax
 
-    mov di, __bss_start
-    mov cx, __bss_end
-    sub cx, di                  ; calc number of bytes
-    jcxz skip_bss               ; no data in bss
-    xor al, al
-    rep stosb                   ; write zeros
+    mov     di, __bss_start
+    mov     cx, __bss_end
+    sub     cx, di              ; calc number of bytes
+    jcxz    skip_bss            ; no data in bss
+    xor     al, al
+    rep     stosb               ; write zeros
 skip_bss:
-
     ; initialize the stack
     mov     ax, STACK_SEG
     mov     ds, ax              ; keep DS at RAM (0x0000)
     mov     es, ax
     mov     ss, ax				; redirect stack-segment to 0x0000
-    mov     sp, STACK_TOP		; set stack-pointer to desired 0x7C00
+    mov     sp, STACK_TOP		; set stack-pointer to desired 0x7BFF
 
 start_c_code:
     ; call the main-c-function of the BIOS
@@ -325,3 +319,25 @@ start_c_code:
 halt:
     hlt                         ; CPU anhalten
     jmp     halt
+
+
+; macro for calling individual interrupt-functions
+%macro ISR_ENTRY 1          ; %1 = name of C-function
+    push ds
+    push ax
+
+    ; set DS to 0x0000
+    xor  ax, ax
+    mov  ds, ax             ; DS = 0x0000
+    pop  ax
+
+    call %1                 ; call C-function
+
+    pop  ds
+
+    iret
+%endmacro
+
+;GLOBAL isr_int08
+;EXTERN c_int08_handler
+;isr_int08:  ISR_ENTRY c_int08_handler

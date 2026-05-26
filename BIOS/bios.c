@@ -15,11 +15,6 @@ __asm__(".code16gcc\n"); // we are using -m16 compiler-switch so this line is re
 // service functions
 // **********************************************************
 
-void io_delay() {
-	// a simple I/O-access to a "safe" port takes around 1 microsecond
-    outb(0x80, 0x00);
-}
-
 void setup_ivt() {
     volatile struct ivt_entry* ivt = (volatile struct ivt_entry*)0x0000;
     // set DS to segment 0x0000 temporarily to write to IVT with absolute addresses
@@ -39,6 +34,7 @@ void setup_ivt() {
 	// the following code will produce warnings during compilation, but
 	// the warning is the proof of using the 16-bit "iret" after the ISR
     ivt[0x08].offset = (uint16_t)(uintptr_t)c_int08_handler; // double-cast to mitigate warning about 32/16-bit pointer
+    //ivt[0x08].offset = (uint16_t)(uintptr_t)isr_int08;
     ivt[0x09].offset = (uint16_t)(uintptr_t)c_int09_handler; // double-cast to mitigate warning about 32/16-bit pointer
     ivt[0x10].offset = (uint16_t)(uintptr_t)c_int10_handler; // double-cast to mitigate warning about 32/16-bit pointer
     ivt[0x11].offset = (uint16_t)(uintptr_t)c_int11_handler; // double-cast to mitigate warning about 32/16-bit pointer
@@ -47,9 +43,11 @@ void setup_ivt() {
     ivt[0x14].offset = (uint16_t)(uintptr_t)c_int14_handler; // double-cast to mitigate warning about 32/16-bit pointer
     ivt[0x15].offset = (uint16_t)(uintptr_t)c_int15_handler; // double-cast to mitigate warning about 32/16-bit pointer
     ivt[0x16].offset = (uint16_t)(uintptr_t)c_int16_handler; // double-cast to mitigate warning about 32/16-bit pointer
+    ivt[0x19].offset = (uint16_t)(uintptr_t)c_int19_handler; // double-cast to mitigate warning about 32/16-bit pointer
     //ivt[0x0C].offset = (uint16_t)(uintptr_t)c_int0c_handler; // double-cast to mitigate warning about 32/16-bit pointer
     ivt[0x1A].offset = (uint16_t)(uintptr_t)c_int1a_handler; // double-cast to mitigate warning about 32/16-bit pointer
     ivt[0x1C].offset = (uint16_t)(uintptr_t)c_int1c_handler; // double-cast to mitigate warning about 32/16-bit pointer
+    ivt[0x41].offset = (uint16_t)(uintptr_t)&hd0_params; // direct to disk-parameters in ROM for INT 41h
 
     // reset DS to original value
     __asm__ __volatile__(
@@ -241,6 +239,17 @@ void a20_enable() {
     }
 }
 
+void a20_disable() {
+    // disable gate A20
+    uint8_t val = inb(0x92);
+    
+    if (val & 0x02) {
+        val &= ~0x02;    // disable A20
+        val &= ~0x01;    // bit 0 is responsible for fast-reset - keep it 0
+        outb(0x92, val);
+    }
+}
+
 void wdt_disable() {
 	write_sc300_cfg(0xCB, 0x00);
 }
@@ -251,6 +260,12 @@ void boot_dos() {
     
     // load MBR via INT 13h (AH=02)
     while (retries-- > 0) {
+        if (ide_read_bootsector()) {
+            status = 0; // success
+            break;
+        }
+
+        /*
         __asm__ volatile (
             "pushw %%es\n"
             "xorw %%ax, %%ax\n"
@@ -281,6 +296,7 @@ void boot_dos() {
             "int $0x13\n"
             ::: "ax", "dx"
         );
+        */
     }
 
     if (status != 0) {
@@ -337,12 +353,17 @@ void setLEDs() {
 // **********************************************************
 // main function
 // **********************************************************
-
 __attribute__((noreturn)) void bios_main() {
+    if (*(volatile uint16_t*)BDA_SOFT_RESET_FLAGS == 0x1234) {
+        // warm-boot
+    }else{
+        // cold-boot
+    }
+
 	// disable the watchdog
 	wdt_disable();
+    delay_1ms();
 	a20_enable();
-	setup_bda();
 
     lcd_init();
     lcd_clear();
@@ -354,18 +375,20 @@ __attribute__((noreturn)) void bios_main() {
     lcd_print_string(2, 0, "Init PIC and IVT...", 0x07);
     pic_init();
 	setup_ivt();
+	setup_bda();
 
     lcd_print_string(3, 0, "Init UART...", 0x07);
     uart_init(9600);
     //pirq_init();
 	//uart_interrupt_enable();
+	uart_print("AMD Elan SC300 BIOS v0.01\n");
 
-    lcd_print_string(4, 0, "Init keyboard...", 0x07);
-	kbd_init();
-	
-	lcd_print_string(5, 0, "Init timer...", 0x07);
+	lcd_print_string(4, 0, "Init timer...", 0x07);
 	timer_init();
 
+    lcd_print_string(5, 0, "Init keyboard...", 0x07);
+	kbd_init();
+	
 	//lcd_print_string(6, 0, "Init PCMCIA / CF-Card...", 0x07);
 	//pcmcia_init();
 

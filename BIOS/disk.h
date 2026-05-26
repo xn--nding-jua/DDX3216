@@ -9,6 +9,24 @@
 
 #include "bios.h"
 
+// PCMCIA registers
+#define PCMCIA_CARESET              (1 << 2)
+
+#define PCMCIA_WIN_A1_LOW_START     0x00
+#define PCMCIA_WIN_A1_LOW_END       0x01
+#define PCMCIA_WIN_A1_UPPER         0x02
+#define PCMCIA_WIN_A2_LOW_START     0x03
+#define PCMCIA_WIN_A2_LOW_END       0x04
+#define PCMCIA_WIN_A2_UPPER         0x05
+#define PCMCIA_CARD_IEQ_REDIRECT    0x06
+#define MMS_MEMORY_WAIT_STATE_CTRL2 0x50
+#define IO_WAIT_STATE_CTRL          0x61
+
+#define PCMCIA_DATA_WIDTH           0x0A
+#define PCMCIA_CARD_RESET           0xB4
+#define PCMCIA_MEM_WINDOW		    0x3000
+#define IDE_BASE				    0x01F0
+
 // IDE Register-Adressen
 #define IDE_DATA        0x1F0   // Data Register (16-Bit)
 #define IDE_ERROR       0x1F1   // Error Register (read)
@@ -49,5 +67,23 @@
 void pcmcia_init();
 bool ide_wait_ready();
 bool ide_wait_drq(void);
+bool ide_read_bootsector();
+
+struct __attribute__((packed)) disk_param_table {
+    uint16_t cylinders;
+    uint8_t  heads;
+    uint16_t reserved1;
+    uint16_t reserved2;
+    uint8_t  sectors_per_track;
+    uint16_t reserved3;
+    uint8_t  drive_type;
+};
+
+static const struct disk_param_table hd0_params = {
+    .cylinders       = CF_CYLINDERS,
+    .heads           = CF_HEADS,
+    .sectors_per_track = CF_SECTORS,
+    .drive_type      = 0x00,
+};
 
 #endif

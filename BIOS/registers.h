@@ -4,15 +4,17 @@
 #define ROM_SEG                 0xF000 // external ROM is mapped to this segment (/ROMCS)
 #define VRAM_SEG                0xB800 // external SRAM is mapped to this segment
 #define STACK_SEG               BASE_SEG
-#define STACK_TOP               0x7C00
+#define STACK_TOP               0x7C00 // stack grows downwards (below boot-sector, first push is on 0x7BFE)
 
 // BIOS Data Area (see https://www.lowlevel.eu/wiki/BIOS_Data_Area and https://github.com/sergev/tiltti/blob/main/docs/BIOS_Data_Area.md)
 #define BDA_COM1_BASE			0x0400
 #define BDA_EQUIPMENT_WORD		0x0410
 #define BDA_MEM_SIZE			0x0413
+#define BDA_KBD_STATUS_FLAGS	0x0417
 #define BDA_VIDEO_MODE			0x0449
 #define BDA_CURSOR_POS_COL      0x0450
 #define BDA_CURSOR_POS_ROW      0x0451
+#define BDA_SOFT_RESET_FLAGS    0x0472
 #define BDA_VIDEO_COLUMS		0x044A
 #define BDA_VIDEO_ROWS          0x0484
 #define BDA_TIMER_COUNTER 		((volatile uint32_t*)0x046C)
@@ -49,6 +51,18 @@
 #define MIDI_LSR				(MIDI_BASE + 5) // Line Status Register
 #define MIDI_MSR				(MIDI_BASE + 6) // Modem Status Register
 #define MIDI_SCR				(MIDI_BASE + 7) // Scratchpad Register
+
+#define LPT_BASE				0x1010
+#define LPT_READ_DATA			(LPT_BASE + 0)
+#define LPT_READ_STATUS			(LPT_BASE + 1)
+#define LPT_READ_CONTROL		(LPT_BASE + 2)
+#define LPT_WRITE_DATA			(LPT_BASE + 0)
+#define LPT_WRITE_CONTROL		(LPT_BASE + 2)
+#define DDX3216_IRDA_CS			(1 << 1) // AFD#
+#define DDX3216_IRDA_EN			(1 << 0) // STB#
+#define DDX3216_IRDA_ON			(1 << 2) // INIT#
+#define DDX3216_RS232_EN		(1 << 3) // SLIN#
+#define DDX3216_SPDI			(1 << 6) // ACK#
 
 #define IIR_PENDING             0x01 // 0 = Interrupt steht an, 1 = kein Interrupt
 #define IIR_REASON              0x0E // Bits 1-3 enthalten den Grund
@@ -105,13 +119,12 @@
 #define RTC_REG_MONTH           0x08
 #define RTC_REG_YEAR            0x09
 
-#define PCMCIA_MEM_WINDOW		0x3000
-#define IDE_BASE				0x01F0
-
 // IDE Status Register Bits
 #define IDE_STATUS_BSY  		0x80
 #define IDE_STATUS_DRDY 		0x40
 
 // Timer 0 Ports (8254 kompatibel)
 #define TIMER0_DATA             0x40
+#define TIMER1_DATA             0x41
+#define TIMER2_DATA             0x42
 #define TIMER_CTRL              0x43

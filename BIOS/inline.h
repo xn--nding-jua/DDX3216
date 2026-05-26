@@ -95,10 +95,10 @@ static inline uint16_t readRomWord(uint16_t rom_offset) {
 // ==========================================================
 static inline void writeFarByte(uint16_t segment, uint16_t offset, uint8_t value) {
     __asm__ __volatile__(
-        //"pushw %%es\n\t"        // Sichert das aktuelle ES
-        "movw %0, %%es\n\t"     // Lädt das Ziel-Segment (z.B. 0xB800)
-        "movb %2, %%es:(%1)\n\t" // Schreibt das Byte an ES:[BX]
-        //"popw %%es"             // Stellt ES wieder her
+        "pushw %%es\n\t"         // store current ES
+        "movw %0, %%es\n\t"      // load desired segment into ES register
+        "movb %2, %%es:(%1)\n\t" // write Byte to ES:[BX]
+        "popw %%es"              // restore es
         :
         : "rm"(segment), "b"(offset), "qi"(value) // "b" zwingt GCC zu BX!
         : "memory"
@@ -107,10 +107,10 @@ static inline void writeFarByte(uint16_t segment, uint16_t offset, uint8_t value
 
 static inline void writeFarWord(uint16_t segment, uint16_t offset, uint16_t value) {
     __asm__ __volatile__(
-        //"pushw %%es\n\t"        // Sichert das aktuelle ES
-        "movw %0, %%es\n\t"     // Segment laden
-        "movw %2, %%es:(%1)\n\t" // Schreibt das Word an ES:[BX]
-        //"popw %%es"             // Stellt ES wieder her
+        "pushw %%es\n\t"         // store current ES
+        "movw %0, %%es\n\t"      // load segment into ES register
+        "movw %2, %%es:(%1)\n\t" // write Word to ES:[BX]
+        "popw %%es"              // restore es
         :
         : "rm"(segment), "b"(offset), "ri"(value) // "b" zwingt GCC zu BX!
         : "memory"
@@ -161,11 +161,7 @@ static inline void copyFarBlock(uint16_t srcSegment, uint16_t srcOffset, void* d
 // additional functions
 // ==========================================================
 static inline void delay_1us(void) {
-    __asm__ __volatile__ (
-        "outb %%al, $0x80"
-        :
-        : "a"(0) // Schreibt einfach eine 0 an Port 0x80
-    );
+    outb(0x80, 0x00);   // write 0x00 to port 0x80, which takes about 1 microsecond
 }
 
 static inline void delay_1ms(void) {

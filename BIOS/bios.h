@@ -26,6 +26,15 @@
 #define LCD_HEIGHT              64     // real vertical resolution of the LCD panel
 #define VRAM_SIZE               ((LCD_WIDTH * LCD_BPP / 8) * (LCD_HEIGHT / 8) * 2)
 
+
+// ISRs from Assembler-Part
+//extern void isr_int08(void);
+
+// function prototypes
+void boot_dos();
+void a20_enable();
+void a20_disable();
+
 static const char hex_chars[] = "0123456789ABCDEF";
 
 struct __attribute__((packed)) ivt_entry {

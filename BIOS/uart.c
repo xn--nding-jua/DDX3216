@@ -7,7 +7,8 @@
 void uart_init(uint16_t baudrate) {
     // enable AFDT# to output 14.336 MHz-clock 
     write_sc300_cfg(0xBA, 0b00001000);
-
+    delay_1ms();
+    
 	// set baudrate by setting divisor
     outb(UART_LCR, 0x80); //  enable access to divisor latches by setting DLAB-bit
 	uint16_t divisor = (UART_CLK / (16 * baudrate));
@@ -17,6 +18,9 @@ void uart_init(uint16_t baudrate) {
     outb(UART_LCR, 0x03); // reset DLAB-bit and set 8N1 mode
     outb(UART_FCR, 0x07); // enable FIFO and clear them
 	outb(UART_MCR, 0x03); // set DTR and RTS within modem control register
+	
+	// enable RS232 in/out by asserting SLIN#
+	outb(LPT_WRITE_CONTROL, DDX3216_RS232_EN);
 }
 
 void uart_putc(char c) {
@@ -25,11 +29,28 @@ void uart_putc(char c) {
 }
 
 void uart_print(const char* str) {
-    while (*str) {
-        if (*str == '\n') {
-            uart_putc('\r');
+	// Strings are placed in ROM so we have to take care of different memory-segments
+	// so we take the relative offset and use the readRomByte function
+    uint16_t rom_offset = (uint16_t)(uintptr_t)str;
+
+    while (1) {
+        char c = (char)readRomByte(rom_offset);
+        
+        if (c == '\0') {
+            break;
         }
-        uart_putc(*str++);
+
+        uart_putc(c);
+
+        // get next character
+        rom_offset++;
+    }
+}
+
+void uart_print_ram(const char* str) {
+    while (*str) {
+        uart_putc(*str);
+        str++;
     }
 }
 
