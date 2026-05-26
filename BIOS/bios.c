@@ -228,6 +228,29 @@ void pic_init() {
     outb(0xA1, 0xFF);   // Slave komplett sperren
 }
 
+void cpu_reset() {
+    __asm__ volatile ("cli");
+
+    // enable fast-reset by setting bit 0 of port 0x92
+    outb(0x92, 0x01);
+
+    // fallback: trigger a triple fault by loading an empty IDT and executing an invalid instruction
+    struct {
+        uint16_t limit;
+        uint32_t base;
+    } __attribute__((packed)) idtr = { 0, 0 };
+
+    __asm__ volatile (
+        "lidt %0    \n\t"
+        "int $0     \n\t"
+        "hlt        \n\t"
+        : : "m"(idtr)
+    );
+
+    // this should never be reached
+    for(;;) {}
+}
+
 void a20_enable() {
 	// enable gate A20
     uint8_t val = inb(0x92);
@@ -258,45 +281,13 @@ void boot_dos() {
     uint8_t status = 0xFF;
     uint8_t retries = 3;
     
-    // load MBR via INT 13h (AH=02)
     while (retries-- > 0) {
         if (ide_read_bootsector()) {
             status = 0; // success
             break;
         }
-
-        /*
-        __asm__ volatile (
-            "pushw %%es\n"
-            "xorw %%ax, %%ax\n"
-            "movw %%ax, %%es\n"
-            "movb $0x02, %%ah\n"
-            "movb $0x01, %%al\n"
-            "movb $0x00, %%ch\n"
-            "movb $0x01, %%cl\n"
-            "movb $0x00, %%dh\n"
-            "movb $0x80, %%dl\n"
-            "movw $0x7C00, %%bx\n"
-            "int $0x13\n"
-            "movb %%ah, %0\n"
-            "popw %%es\n"
-            : "=rm"(status)
-            :
-            : "ax", "bx", "cx", "dx", "memory"
-        );
-
-        if (status == 0) break;
-
-        uart_print("Disk read error, retrying...\n");
-
-        // INT 13h AH=00: Reset drive before retry
-        __asm__ volatile (
-            "movb $0x00, %%ah\n"
-            "movb $0x80, %%dl\n"
-            "int $0x13\n"
-            ::: "ax", "dx"
-        );
-        */
+        uart_print("Disk read failed, retrying...\n");
+        delay_1ms();
     }
 
     if (status != 0) {
@@ -389,17 +380,18 @@ __attribute__((noreturn)) void bios_main() {
     lcd_print_string(5, 0, "Init keyboard...", 0x07);
 	kbd_init();
 	
-	//lcd_print_string(6, 0, "Init PCMCIA / CF-Card...", 0x07);
-	//pcmcia_init();
-
     // enable interrupts
 	__asm__ volatile ("sti");
     setLEDs();
 
-    // try to load DOS from CF-Card and boot it
-    lcd_print_string(7, 0, "Ready.", 0x07);
-    //lcd_print_string(7, 0, "Booting from CF-Card...", 0x07);
-	//boot_dos();
+	lcd_print_string(6, 0, "Init PCMCIA / CF-Card...", 0x07);
+	if (pcmcia_init()) {
+        // try to load DOS from CF-Card and boot it
+        lcd_print_string(7, 0, "Booting from CF-Card...", 0x07);
+        boot_dos();
+	}else{
+        lcd_print_string(7, 0, "Failed to initialize CF-Card.", 0x07);
+    }
 
     uint8_t c = 'A';
     while(1) {
@@ -414,7 +406,6 @@ __attribute__((noreturn)) void bios_main() {
         uint8_to_hex(g_kbd_scancode, textbuffer);
         lcd_putc_pos(6, 0, textbuffer[0], 0x07);
         lcd_putc_pos(6, 1, textbuffer[1], 0x07);
-
 
         /*
         if (*BDA_KBD_HEAD != *BDA_KBD_TAIL) {
@@ -438,6 +429,14 @@ __attribute__((noreturn)) void bios_main() {
             *BDA_KBD_HEAD = next_head;
         }
         */
+
+        // poll UART for new characters
+        if (inb(UART_LSR) & 0x01) {
+            char uart_c = inb(UART_RBR);
+            uart_putc(uart_c); // echo back to sender
+
+            cpu_reset();
+        }
 
         delay_1ms();
     }

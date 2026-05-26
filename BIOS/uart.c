@@ -16,7 +16,9 @@ void uart_init(uint16_t baudrate) {
     outb(UART_DLM, (uint8_t)((divisor >> 8) & 0xFF));
 	
     outb(UART_LCR, 0x03); // reset DLAB-bit and set 8N1 mode
-    outb(UART_FCR, 0x07); // enable FIFO and clear them
+    outb(UART_IER, 0x00); // disable all interrupts
+    //outb(UART_FCR, 0x07); // enable FIFO and clear them
+    outb(UART_FCR, 0x00); // disable FIFO
 	outb(UART_MCR, 0x03); // set DTR and RTS within modem control register
 	
 	// enable RS232 in/out by asserting SLIN#

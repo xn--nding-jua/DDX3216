@@ -28,7 +28,7 @@ CF-Karte verhält sich wie eine IDE-Festplatte:
 └─────────────────┴───────────────────────────────────┘
 */
 
-void pcmcia_init() {
+bool pcmcia_init() {
 	// PCMCIA-card is connected via 10-bit address-bus and 8-bit data-bus
 	// more signals connected to SC300:
 	// MCELA# -> CE1#               Card Enable Even byte
@@ -51,10 +51,17 @@ void pcmcia_init() {
     write_sc300_cfg(PCMCIA_CARD_RESET, b4 & ~PCMCIA_CARESET);   // reset bit 2
 
     // CF-card needs about 50ms to initialize after reset, so wait a bit
-    for (volatile uint32_t i = 0; i < 500000; i++);
+    for (volatile uint32_t i = 0; i < 50000; i++);
 
-    // enable 8-bit mode for PCMCIA
-    write_sc300_cfg(PCMCIA_DATA_WIDTH,          0x00);    // Alles 8-Bit
+    uart_print("PCMCIA/CF: Configuring Cardslot\n");
+
+    // enable 16-bit mode for PCMCIA using two 8-bit cycles (see page 5-18 in programming reference manual)
+    // IOIS16# is tied to HIGH, so we are using 8-bit access
+    // with two bytes per word: two 8-bit cycles are generated to the CARD using MCELA#
+    // see page 5-18 in Progremming Reference Manual
+    // so following two lines are both valid as both will translate 16-bit value to two 8-bit cycles on the CARD:
+    //write_sc300_cfg(PCMCIA_DATA_WIDTH,          0b10101111); // pure 8-bit-access
+    write_sc300_cfg(PCMCIA_DATA_WIDTH,          0x00); // pure 8-bit-access
 
     // configure PCMCIA window A1 to I/O window 0x1F0-0x1F7
     write_sc300_cfg(PCMCIA_WIN_A1_LOW_START,    0xF0);
@@ -66,57 +73,80 @@ void pcmcia_init() {
     write_sc300_cfg(PCMCIA_WIN_A2_UPPER,        0x03); // for both upper and lower
 
     // set I/O Card IRQ Redirection
-    write_sc300_cfg(PCMCIA_CARD_IEQ_REDIRECT,   0x07); // ICAIOEN=1, ICAIOWIN2=1, ICAIOWIN1=1
+    write_sc300_cfg(PCMCIA_CARD_IRQ_REDIRECT,   0b0000111); // enable REGA# and MCELA# on I/O access
+
+    // configure VPPA-pin (here only bits 9...2 are set)
+    write_sc300_cfg(PCMCIA_VPPA_ADDRESS, 0b11101000); // set VPPA to 0x3A0
+    outb(0x03A0, 0x01); // enable VPPA for CF-card. DataBit 0 will control the power
+
+    // configure REGA#-pin (here only bits 9...2 are set)
+    write_sc300_cfg(PCMCIA_REGA_ADDRESS, 0b11101001); // set REGA# to 0x3A4
+    outb(0x03A4, 0x00); // enable REGA# for CF-card. DataBit 0 will control the pin inverted
 
     // configure wait-states
-    uint8_t ws2 = read_sc300_cfg(MMS_MEMORY_WAIT_STATE_CTRL2);
-    ws2 |= (1 << 5);    // CARDWSEN = 1
-    ws2 |= (1 << 4);    // CARDWS1  = 1
+    //uint8_t ws2 = read_sc300_cfg(MMS_MEMORY_WAIT_STATE_CTRL2);
+    //ws2 |= (1 << 5);    // CARDWSEN = 1
+    //ws2 |= (1 << 4);    // CARDWS1  = 1
     //ws2 |= (1 << 3);    // CARDWS0  = 1
-    write_sc300_cfg(MMS_MEMORY_WAIT_STATE_CTRL2, ws2);    
+    //write_sc300_cfg(MMS_MEMORY_WAIT_STATE_CTRL2, ws2);
+    write_sc300_cfg(MMS_MEMORY_WAIT_STATE_CTRL2, 0b00100000); // set to 4 waitstates
 
     // configure I/O wait-states
-    uint8_t iows = read_sc300_cfg(IO_WAIT_STATE_CTRL);
-    iows |=  (1 << 3);  // HDWS1 = 1
+    //uint8_t iows = read_sc300_cfg(IO_WAIT_STATE_CTRL);
+    //iows |=  (1 << 3);  // HDWS1 = 1
     //iows |=  (1 << 2);  // HDWS0 = 1
-    write_sc300_cfg(IO_WAIT_STATE_CTRL, iows);
+    //write_sc300_cfg(IO_WAIT_STATE_CTRL, iows);
+    write_sc300_cfg(IO_WAIT_STATE_CTRL, 0b00000000); // keep default waitstates (5 waitstates)
 
+    // check if card is present (see page 5-68 in programming reference manual)
+    //uart_print("Socket A-Status:");
+    //uart_putc(read_sc300_cfg(PCMCIA_SOCKET_A_STATUS));
+
+    uart_print("PCMCIA/CF: Card soft reset\n");
     // CF-Card software-reset via IDE-Register
     outb(IDE_DEV_CTRL, 0x06);   // SRST=1, nIEN=1
     for (volatile uint16_t i = 0; i < 10000; i++);
     outb(IDE_DEV_CTRL, 0x02);   // SRST=0, nIEN=1 (IRQ stays disabled)
     for (volatile uint16_t i = 0; i < 10000; i++);
 
+    // select drive 0 (master)
+    outb(IDE_DRIVE_HEAD, 0xA0);
+    for (volatile uint32_t i = 0; i < 10000; i++);
+
     // wait for CF-card
+    uart_print("PCMCIA/CF: Wait for card...");
     if (!ide_wait_ready()) {
-        uart_print("PCMCIA/CF: Timeout!\n");
-        return;
+        uart_print("Timeout!\n");
+        return false;
     }
 
-    uart_print("PCMCIA/CF: Init OK\n");
+    uart_print("OK\n");
+    return true;
 }
 
 bool ide_wait_ready() {
-    // Erst 400ns warten (4 dummy reads des Alt-Status)
+    // some dummy reads to wait for the drive to process the previous command and set BSY=0
     inb(IDE_ALT_STATUS);
     inb(IDE_ALT_STATUS);
     inb(IDE_ALT_STATUS);
     inb(IDE_ALT_STATUS);
 
-    // Timeout ~1 Sekunde bei 33MHz
-    for (uint32_t timeout = 1000000; timeout > 0; timeout--) {
+    for (uint32_t timeout = 10000; timeout > 0; timeout--) {
         uint8_t status = inb(IDE_ALT_STATUS);
 
         if (status & IDE_SR_ERR) {
-            uart_print("IDE Error!\n");
+            uart_print("Error!\n");
             return false;
         }
         if (!(status & IDE_SR_BSY) && (status & IDE_SR_DRDY)) {
-            return true;    // Bereit
+            return true; // ready
         }
+
+        // small delay between polls
+        for (volatile uint32_t d = 0; d < 10; d++);
     }
 
-    uart_print("IDE Timeout!\n");
+    uart_print("Timeout!\n");
     return false;
 }
 

@@ -25,6 +25,8 @@
 #define KBD_CTRL_CLK_LOW        (1 << 6)
 #define KBD_CTRL_CLEAR          (1 << 7)
 
+#define KBD_CMD_RESET           0xFE
+
 // set 2 Scancodes for special keys
 #define SC2_EXTENDED    0xE0    // Extended Key Prefix
 #define SC2_BREAK       0xF0    // Break Code Prefix

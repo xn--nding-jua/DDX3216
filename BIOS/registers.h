@@ -27,6 +27,7 @@
 #define UART_BASE				0x1000
 #define UART_CLK				14336000        // external UART is connected to CLK14OUT of SC300
 #define UART_THR				(UART_BASE + 0) // Transmit Holding Register
+#define UART_RBR				(UART_BASE + 0) // Receive Buffer Register
 #define UART_DLL				(UART_BASE + 0) // Divisor Latch Low
 #define UART_DLM				(UART_BASE + 1) // Divisor Latch High
 #define UART_IER				(UART_BASE + 1) // Interrupt Enable Register
