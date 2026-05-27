@@ -18,45 +18,15 @@ void pirq_init() {
     outb(CFG_DATA, 0x04); // Map auf IRQ 4
 }
 
-/*
-// INT 08h: timer-interrupt
-void c_int08_handler(void) {
-    lcd_putc('T', 0x07);
-    
+__attribute__((externally_visible, regparm(1))) void c_int08_handler(struct interrupt_registers *regs) {
+    //uart_putc('T');
+    //lcd_putc('T', 0x07);
+
     // increment BIOS-Timer-Counter in BDA
     (*BDA_TIMER_COUNTER)++;
 
     // call INT 1Ch (User Timer Tick)
-    __asm__ volatile ("int $0x1C");
-
-    // restore DS after INT1Ch
-    __asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
-
-    // send end of interrupt to port 0x20
-    outb(0x20, 0x20);
-}
-*/
-__attribute__((interrupt)) void c_int08_handler(struct interrupt_frame *frame) {
-	// store DS and reset it to 0
-	__asm__ volatile("movw %%ds, %0" : "=r"(g_old_ds));
-	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
-
-    //lcd_putc('T', 0x07);
-
-	// increment BIOS-Timer-Counter in BDA
-    (*BDA_TIMER_COUNTER)++;
-
-	// call INT 1Ch (User Timer Tick)
-    __asm__ volatile ("int $0x1C");
-
-    // restore DS after INT1Ch
-    __asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
-
-    // send end of interrupt to port 0x20
-    outb(0x20, 0x20);
-	
-	// restore DS
-	__asm__ volatile("movw %0, %%ds" : : "r"(g_old_ds));
+    //__asm__ volatile ("int $0x1C");
 }
 
 // INT 09h: keyboard-interrupt
@@ -68,10 +38,10 @@ static volatile uint16_t g_kbd_tail;
 static volatile uint16_t g_kbd_next_tail;
 static volatile uint16_t* g_kbd_ptr;
 
-__attribute__((interrupt)) void c_int09_handler(struct interrupt_frame *frame) {
-    // store DS and reset it to 0
-	__asm__ volatile("movw %%ds, %0" : "=r"(g_old_ds));
-	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
+__attribute__((externally_visible, regparm(1))) void c_int09_handler(struct interrupt_registers *regs) {
+    uart_putc('I');
+    uart_putc('0');
+    uart_putc('9');
 
     // read scancode from keyboard-controller
 	g_kbd_scancode = inb(KBD_DATA_PORT);
@@ -84,11 +54,11 @@ __attribute__((interrupt)) void c_int09_handler(struct interrupt_frame *frame) {
         case KBD_STATE_IDLE:
             if (g_kbd_scancode == SC2_EXTENDED) {
                 kbd_state = KBD_STATE_EXTENDED;
-                goto send_eoi;
+                goto eoi_int09;
             }
             if (g_kbd_scancode == SC2_BREAK) {
                 kbd_state = KBD_STATE_BREAK;
-                goto send_eoi;
+                goto eoi_int09;
             }
             // regular make-code (key pressed)
             //g_kbd_set1_code = set2_to_set1[g_kbd_scancode];
@@ -99,7 +69,7 @@ __attribute__((interrupt)) void c_int09_handler(struct interrupt_frame *frame) {
         case KBD_STATE_EXTENDED:
             if (g_kbd_scancode == SC2_BREAK) {
                 kbd_state = KBD_STATE_EXT_BREAK;
-                goto send_eoi;
+                goto eoi_int09;
             }
             // extended make-code (key pressed)
             //g_kbd_set1_code = set2_ext_to_set1[g_kbd_scancode];
@@ -131,19 +101,19 @@ __attribute__((interrupt)) void c_int09_handler(struct interrupt_frame *frame) {
             case 0x2A:  // Left Shift
             case 0x36:  // Right Shift
                 shift_pressed = !g_kbd_is_break;
-                goto send_eoi;
+                goto eoi_int09;
 
             case 0x1D:  // Ctrl
                 ctrl_pressed = !g_kbd_is_break;
-                goto send_eoi;
+                goto eoi_int09;
 
             case 0x38:  // Alt
                 alt_pressed = !g_kbd_is_break;
-                goto send_eoi;
+                goto eoi_int09;
 
             case 0x3A:  // Caps Lock (only on Make)
                 if (!g_kbd_is_break) caps_lock = !caps_lock;
-                goto send_eoi;
+                goto eoi_int09;
         }
 
         uint8_t flags = 0;
@@ -172,36 +142,15 @@ __attribute__((interrupt)) void c_int09_handler(struct interrupt_frame *frame) {
         }
     }
 
-send_eoi:
-    // send end of interrupt to port 0x20
-    outb(0x20, 0x20);
-	
-	// restore DS
-	__asm__ volatile("movw %0, %%ds" : : "r"(g_old_ds));
+    eoi_int09:
 }
 
 // INT 10h: Video-interrupt
-__attribute__((interrupt)) void c_int10_handler(struct interrupt_frame *frame) {
-    lcd_putc('I', 0x07);
-    lcd_putc('N', 0x07);
-    lcd_putc('T', 0x07);
-    lcd_putc('1', 0x07);
-    lcd_putc('0', 0x07);
-    lcd_putc('h', 0x07);
-
-    uint16_t current_ax;
-    uint16_t current_dx;
-
+__attribute__((externally_visible, regparm(1))) void c_int10_handler(struct interrupt_registers *regs) {
     // read registers first
-    __asm__ __volatile__("movw %%ax, %0" : "=r"(current_ax));
-    uint8_t ah = (uint8_t)(current_ax >> 8);
-    uint8_t al = (uint8_t)(current_ax & 0xFF);
-    __asm__ __volatile__("movw %%dx, %0" : "=r"(current_dx));
+    uint8_t ah = (uint8_t)(regs->ax >> 8);
+    uint8_t al = (uint8_t)(regs->ax & 0xFF);
 
-	// store DS and reset it to 0
-	__asm__ volatile("movw %%ds, %0" : "=r"(g_old_ds));
-	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
-    
     switch (ah) {
         case 0x0E: // write character
             // write char to display and handle control-characters like newline, carriage return, backspace, etc. internally
@@ -212,8 +161,8 @@ __attribute__((interrupt)) void c_int10_handler(struct interrupt_frame *frame) {
             break;
 
         case 0x02: // set cursor position
-        	writeFarByte(BASE_SEG, BDA_CURSOR_POS_ROW, (current_dx >> 8) & 0xFF); // DH = Row
-        	writeFarByte(BASE_SEG, BDA_CURSOR_POS_COL, current_dx & 0xFF); // DL = Column
+        	writeFarByte(BASE_SEG, BDA_CURSOR_POS_ROW, (regs->dx >> 8) & 0xFF); // DH = Row
+        	writeFarByte(BASE_SEG, BDA_CURSOR_POS_COL, regs->dx & 0xFF); // DL = Column
 
             // update hardware cursor position
             uint16_t offset = ((readFarByte(BASE_SEG, BDA_CURSOR_POS_ROW) * (LCD_WIDTH / 8)) + readFarByte(BASE_SEG, BDA_CURSOR_POS_COL)) * 2;
@@ -223,66 +172,220 @@ __attribute__((interrupt)) void c_int10_handler(struct interrupt_frame *frame) {
 
         case 0x03: // get cursor position
             // return cursor position in DX (DH = Row, DL = Column)
-            uint16_t return_dx = (readFarByte(BASE_SEG, BDA_CURSOR_POS_ROW) << 8) | readFarByte(BASE_SEG, BDA_CURSOR_POS_COL);
-            __asm__ __volatile__("movw %0, %%dx" : : "r"(return_dx) : "dx");
-
+            regs->dx = (readFarByte(BASE_SEG, BDA_CURSOR_POS_ROW) << 8) | readFarByte(BASE_SEG, BDA_CURSOR_POS_COL);
             break;
 
         case 0x0F: // get Current Video Mode
             // AH = Columns (30), AL = Video Mode (00h), BH = Page (0)
             // number of rows is set in BDA and not returned via INT10h, because DOS will ignore the returned value anyway and would always assume 25 rows
-            uint16_t return_ax = (30 << 8) | 0x00; // 40x25 char in grayscale-text mode
-            uint16_t return_bx = 0x0000; // BH = 0
-            __asm__ __volatile__("movw %0, %%ax" : : "r"(return_ax) : "ax");
-            __asm__ __volatile__("movw %0, %%bx" : : "r"(return_bx) : "bx");
-
+            regs->ax = (30 << 8) | 0x00; // 40x25 char in grayscale-text mode
+            regs->bx = 0x0000; // BH = 0
             break;
 
         default:
             // simply ignore other video-functions like set cursor, etc.
             break;
     }
-	
-	// restore DS
-	__asm__ volatile("movw %0, %%ds" : : "r"(g_old_ds));
 }
 
 // INT 11h: Get Equipment List
-__attribute__((interrupt)) void c_int11_handler(struct interrupt_frame *frame) {
-	// store DS and reset it to 0
-	__asm__ volatile("movw %%ds, %0" : "=r"(g_old_ds));
-	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
+__attribute__((externally_visible, regparm(1))) void c_int11_handler(struct interrupt_registers *regs) {
+    uart_putc('I');
+    uart_putc('1');
+    uart_putc('1');
 
-    /*
-       Bitmask for Equipment Word:
-       Bit 0: Floppy drive? (0 = No)
-       Bit 1: Math-Coprozessor (0 = No)
-       Bit 4-5: Video-Mode (00 = EGA/VGA/LCD, 10 = Color 80x25)
-       Bit 9-11: Number of serial interfaces (001 = One)
-       Bit 14-15: Number of printers (00 = No)
-    */
-	uint16_t equipment = *(uint16_t*)BDA_EQUIPMENT_WORD;
-    __asm__ volatile ("movw %0, %%ax" : : "r"(equipment)); // write result into AX-register of caller directly
-
-    // restore DS
-	__asm__ volatile("movw %0, %%ds" : : "r"(g_old_ds));
+    //   Bitmask for Equipment Word:
+    //   Bit 0: Floppy drive? (0 = No)
+    //   Bit 1: Math-Coprozessor (0 = No)
+    //   Bit 4-5: Video-Mode (00 = EGA/VGA/LCD, 10 = Color 80x25)
+    //   Bit 9-11: Number of serial interfaces (001 = One)
+    //   Bit 14-15: Number of printers (00 = No)
+    
+	regs->ax = *(uint16_t*)BDA_EQUIPMENT_WORD;
 }
 
 // INT 12h: Get Memory Size
-__attribute__((interrupt)) void c_int12_handler(struct interrupt_frame *frame) {
-	// store DS and reset it to 0
-	__asm__ volatile("movw %%ds, %0" : "=r"(g_old_ds));
-	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
+__attribute__((externally_visible, regparm(1))) void c_int12_handler(struct interrupt_registers *regs) {
+    uart_putc('I');
+    uart_putc('1');
+    uart_putc('2');
 
-	uint16_t mem_kb = *(uint16_t*)BDA_MEM_SIZE;
-    __asm__ volatile ("movw %0, %%ax" : : "r"(mem_kb)); // write result into AX-register of caller directly
-	
-	// restore DS
-	__asm__ volatile("movw %0, %%ds" : : "r"(g_old_ds));
+	regs->ax = *(uint16_t*)BDA_MEM_SIZE;
 }
 
 // INT13h: disk-interrupt
-__attribute__((interrupt)) void c_int13_handler(struct interrupt_frame *frame) {
+__attribute__((externally_visible, regparm(1))) void c_int13_handler(struct interrupt_registers *regs) {
+    uart_putc('I');
+    uart_putc('1');
+    uart_putc('3');
+
+    // Holen der echten Registerwerte, die der MBR übergeben hat
+    uint8_t ah = (uint8_t)(regs->ax >> 8);
+    uint8_t al = (uint8_t)(regs->ax & 0xFF);
+    uint8_t ch = (uint8_t)(regs->cx >> 8);
+    uint8_t cl = (uint8_t)(regs->cx & 0xFF);
+    uint8_t dh = (uint8_t)(regs->dx >> 8);
+    uint8_t dl = (uint8_t)(regs->dx & 0xFF);
+
+    uart_putc(ah);
+    uart_putc(al);
+    uart_putc(ch);
+    uart_putc(cl);
+    uart_putc(dh);
+    uart_putc(dl);
+
+    // Standardmäßig Erfolg annehmen (Carry Flag im Flags-Register löschen)
+    regs->flags &= ~0x0001; 
+
+    // DL = 0x80 ist die erste Festplatte. Wenn nicht 0x80 und nicht Reset (0x00) -> Fehler
+    if (dl != 0x80 && ah != 0x00) {
+        regs->ax = (0x01 << 8); // Invalid Command / Invalid Drive
+        regs->flags |= 0x0001;  // Set Carry Flag
+        return;
+    }
+
+    switch(ah) {
+        case 0x00: // Reset Disk
+            outb(IDE_DEV_CTRL, 0x06);
+            for (volatile uint16_t i = 0; i < 10000; i++);
+            outb(IDE_DEV_CTRL, 0x02);
+            ide_wait_ready();
+            regs->ax = 0x0000; // AH=00h (Success)
+            break;
+        
+        case 0x02: { // Read Sectors
+            uint8_t  sectors_to_read = al;
+            uint8_t  sector          = cl & 0x3F;
+            uint16_t cylinder        = ((uint16_t)(cl & 0xC0) << 2) | ch;
+            uint8_t  head            = dh;
+            uint32_t lba             = CHS_TO_LBA(cylinder, head, sector);
+            uint8_t  error           = 0;
+
+            uint16_t current_bx = regs->bx;
+            uint16_t target_es  = regs->es; // Das originale Ziel-Segment vom MBR/Syslinux
+
+            // Schleife über alle angeforderten Sektoren
+            for (uint8_t s = 0; s < sectors_to_read; s++) {
+                uint32_t cur_lba = lba + s;
+
+                // Warten, bis der IDE-Controller bereit für einen neuen Befehl ist
+                if (!ide_wait_ready()) { 
+                    error = 0xAA; // Zeitüberschreitung / Drive Not Ready
+                    break; 
+                }
+
+                // IDE-Register mit der berechneten LBA-Adresse füttern
+                outb(IDE_SECT_COUNT, 1);
+                outb(IDE_LBA_LOW,   (uint8_t)( cur_lba        & 0xFF));
+                outb(IDE_LBA_MID,   (uint8_t)((cur_lba >>  8) & 0xFF));
+                outb(IDE_LBA_HIGH,  (uint8_t)((cur_lba >> 16) & 0xFF));
+                outb(IDE_DRIVE_HEAD, 0xE0 | (uint8_t)((cur_lba >> 24) & 0x0F));
+                outb(IDE_COMMAND, IDE_CMD_READ);
+
+                // Warten, bis der Controller Daten im Puffer bereitgestellt hat (Data Request)
+                if (!ide_wait_drq()) { 
+                    error = 0xBB; // Read Error / DRQ Failure
+                    break; 
+                }
+
+                // we are in DS 0x0000 so we can make use of flat pointer
+                uint32_t linear_address = ((uint32_t)target_es << 4) + current_bx;
+                uint16_t *ram_ptr = (uint16_t *)(uintptr_t)linear_address;
+
+                // Einen Sektor wortweise einlesen (256 Wörter = 512 Bytes)
+                for (uint16_t i = 0; i < 256; i++) {
+                    // Direktes Einlesen aus dem IDE-Datenregister in den RAM
+                    *ram_ptr = inw(IDE_DATA);
+                    
+                    ram_ptr++;        // Pointer im C-Code um 2 Bytes vorschieben
+                    current_bx += 2;  // BX-Offset synchron halten
+                }
+            }
+            regs->bx = current_bx;
+
+            // Ergebnis an den Aufrufer melden via AX und Carry-Flag
+            if (error == 0) {
+                // Erfolg: AH = 00h (Success), AL = Anzahl tatsächlich gelesener Sektoren
+                regs->ax = (0x00 << 8) | (sectors_to_read & 0xFF); 
+                regs->flags &= ~0x0001; // Carry Flag löschen (Erfolg)
+            } else {
+                // Fehler aufgetreten
+                regs->ax = (error << 8);
+                regs->flags |= 0x0001;  // Carry Flag setzen (Fehler)
+            }
+            break;
+        }
+
+        case 0x08: { // Get Drive Parameters
+            // what kind of drive is requested?
+            uint8_t drive = (uint8_t)(regs->dx & 0xFF);
+
+            if (drive >= 0x80) {
+                // harddisk / CF-Card
+                uint8_t max_heads   = CF_HEADS - 1;     
+                uint8_t max_sectors = CF_SECTORS;       
+                uint16_t max_cyls   = CF_CYLINDERS - 1; 
+
+                regs->ax = 0x0000; // Success
+                regs->bx = 0x0003; // Drive type (01h = Floppy, 03h = HDD)
+                regs->cx = ((max_cyls & 0xFF) << 8) | (max_sectors & 0x3F) | (((max_cyls >> 8) & 0x03) << 6);
+                regs->dx = (max_heads << 8) | 0x01; // DH = max heads, DL = number of drives (1)
+
+                // set ES and DI to zero
+                regs->es = 0x0000;
+                regs->di = 0x0000;
+
+                regs->flags &= ~0x0001;
+            }else{
+                // floppy
+                regs->ax = (0x01 << 8); // AH = 01h (Invalid Command / Drive Not Ready)
+                regs->bx = 0x0000;
+                regs->cx = 0x0000;
+                regs->dx = 0x0000;      // <--- Sagt dem MBR: 0 Diskettenlaufwerke installiert!
+                regs->flags |= 0x0001;  // Set Carry Flag = Fehler!
+            }
+            /*
+            uint8_t max_heads   = CF_HEADS - 1;     
+            uint8_t max_sectors = CF_SECTORS;       
+            uint16_t max_cyls   = CF_CYLINDERS - 1; 
+
+            regs->ax = 0x0000; 
+            regs->bx = 0x0003; // Fixed Disk / HDD
+            
+            // CHS-Geometrie verpacken
+            regs->cx = ((max_cyls & 0xFF) << 8) | (max_sectors & 0x3F) | (((max_cyls >> 8) & 0x03) << 6);
+            
+            // WICHTIG: Wir spiegeln das abgefragte Laufwerk in DL zurück.
+            // Wenn Syslinux nach 0x00 gefragt hat, geben wir ihm 0x00 zurück, 
+            // aber mit den großen Geometriedaten der Festplatte!
+            regs->dx = (max_heads << 8) | dl; 
+            
+            regs->es = 0x0000;
+            regs->di = 0x0000;
+            regs->flags &= ~0x0001; // Erfolg signalisieren           
+            break;
+            */
+        }
+
+        case 0x15: // Get Disk Type
+            regs->ax = (0x03 << 8); // 03h = Fixed Disk (Festplatte/CF-Karte) mit CHS-Unterstützung
+            regs->flags &= ~0x0001; // Clear Carry Flag (Unterstützt)
+            break;
+
+        case 0x41: // Extensions Present (Weigern wir uns, da wir CHS emulieren)
+            regs->flags |= 0x0001; // Carry Set = Nicht unterstützt
+            regs->ax = 0x0100;     // AH = 01h (Invalid function)
+            break;
+
+        default:
+            regs->flags |= 0x0001; // Carry Set
+            regs->ax = (0x01 << 8);
+            break;
+    }
+}
+
+/*
+__attribute__((externally_visible, regparm(1))) void c_int13_handler(struct interrupt_registers *regs) {
     lcd_putc('I', 0x07);
     lcd_putc('N', 0x07);
     lcd_putc('T', 0x07);
@@ -457,9 +560,15 @@ __attribute__((interrupt)) void c_int13_handler(struct interrupt_frame *frame) {
     // restore DS
     __asm__ volatile ("movw %0, %%ds" : : "r"(g_old_ds));
 }
+*/
 
 // uart-interrupt
-__attribute__((interrupt)) void c_int14_handler(struct interrupt_frame *frame) {
+__attribute__((externally_visible, regparm(1))) void c_int14_handler(struct interrupt_registers *regs) {
+    uart_putc('I');
+    uart_putc('1');
+    uart_putc('4');
+
+/*
     // AH contains the function-number (0=Init, 1=Transmit, 2=Receive, 3=State)
     // use inline-assembler as GCC-interrupts are more complex
 	uint8_t service;
@@ -507,9 +616,15 @@ __attribute__((interrupt)) void c_int14_handler(struct interrupt_frame *frame) {
 	
 	// restore DS
 	__asm__ volatile("movw %0, %%ds" : : "r"(g_old_ds));
+*/
 }
 
-__attribute__((interrupt)) void c_int15_handler(struct interrupt_frame *frame) {
+__attribute__((externally_visible, regparm(1))) void c_int15_handler(struct interrupt_registers *regs) {
+    uart_putc('I');
+    uart_putc('1');
+    uart_putc('5');
+
+/*
     uint16_t current_sp;
     __asm__ __volatile__("movw %%sp, %0" : "=r"(current_sp));
 
@@ -523,10 +638,10 @@ __attribute__((interrupt)) void c_int15_handler(struct interrupt_frame *frame) {
                 uint8_t al = current_ax & 0xFF;
                 if (al == 0x01) {
                     a20_enable();
-                    frame->flags &= ~0x0001;
+                    regs->flags &= ~0x0001;
                 } else if (al == 0x00) {
                     a20_disable();
-                    frame->flags &= ~0x0001;
+                    regs->flags &= ~0x0001;
                 }
             }
             break;
@@ -542,26 +657,32 @@ __attribute__((interrupt)) void c_int15_handler(struct interrupt_frame *frame) {
                 : "ax"
             );
             
-            frame->flags &= ~0x0001; // send success by deleting CarryFlag
+            regs->flags &= ~0x0001; // send success by deleting CarryFlag
             break;
         }
 
         case 0x87:
             // function 0x87: block-move (send success)
             __asm__ __volatile__("xorw %%ax, %%ax" : : : "ax");
-            frame->flags &= ~0x0001; // send success by deleting CarryFlag
+            regs->flags &= ~0x0001; // send success by deleting CarryFlag
             break;
 
         default:
             // unknown function -> send error (AH = 0x86, Carry Flag = 1)
             __asm__ __volatile__("movw $0x8600, %%ax" : : : "ax");
-            frame->flags |= 0x0001; // Set Carry Flag
+            regs->flags |= 0x0001; // Set Carry Flag
             break;
     }
+*/
 }
 
 // this interrupt is called by DOS to request next char from ringbuffer
-__attribute__((interrupt)) void c_int16_handler(struct interrupt_frame *frame) {
+__attribute__((externally_visible, regparm(1))) void c_int16_handler(struct interrupt_registers *regs) {
+    uart_putc('I');
+    uart_putc('1');
+    uart_putc('6');
+
+/*
     uint8_t ah;
 
     __asm__ volatile ("movb %%ah, %0" : "=r"(ah));
@@ -599,9 +720,15 @@ __attribute__((interrupt)) void c_int16_handler(struct interrupt_frame *frame) {
 	
 	// restore DS
 	__asm__ volatile("movw %0, %%ds" : : "r"(g_old_ds));
+*/
 }
 
-__attribute__((interrupt)) void c_int19_handler(struct interrupt_frame *frame) {
+__attribute__((externally_visible, regparm(1))) void c_int19_handler(struct interrupt_registers *regs) {
+    uart_putc('I');
+    uart_putc('1');
+    uart_putc('9');
+
+/*
 	// store DS and reset it to 0
 	__asm__ volatile("movw %%ds, %0" : "=r"(g_old_ds));
 	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
@@ -621,10 +748,16 @@ __attribute__((interrupt)) void c_int19_handler(struct interrupt_frame *frame) {
     boot_dos();
     
     while(1) { __asm__("hlt"); }
+*/
 }
 
 // INT04 (PIRQ0 is mapped here)
-__attribute__((interrupt)) void c_int0c_handler(struct interrupt_frame *frame) {
+__attribute__((externally_visible, regparm(1))) void c_int0c_handler(struct interrupt_registers *regs) {
+    uart_putc('I');
+    uart_putc('0');
+    uart_putc('C');
+
+/*
 	// store DS and reset it to 0
 	__asm__ volatile("movw %%ds, %0" : "=r"(g_old_ds));
 	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
@@ -666,16 +799,18 @@ __attribute__((interrupt)) void c_int0c_handler(struct interrupt_frame *frame) {
         }
     }
 
-
-    // send EOI to PIC
-    outb(0x20, 0x20);
-
 	// restore DS
 	__asm__ volatile("movw %0, %%ds" : : "r"(g_old_ds));
+*/
 }
 
 // INT 1Ah for RTC access
-__attribute__((interrupt)) void c_int1a_handler(struct interrupt_frame *frame) {
+__attribute__((externally_visible, regparm(1))) void c_int1a_handler(struct interrupt_registers *regs) {
+    uart_putc('I');
+    uart_putc('1');
+    uart_putc('A');
+
+/*
 	uint8_t ah;
 
     __asm__ volatile ("movb %%ah, %0" : "=r"(ah));
@@ -727,13 +862,36 @@ __attribute__((interrupt)) void c_int1a_handler(struct interrupt_frame *frame) {
 
 	// restore DS
     __asm__ volatile("movw %0, %%ds" : : "r"(g_old_ds));
+*/
 }
 
 // software-interrupt
-__attribute__((interrupt)) void c_int1c_handler(struct interrupt_frame *frame) {
+__attribute__((externally_visible, regparm(1))) void c_int1c_handler(struct interrupt_registers *regs) {
+    uart_putc('I');
+    uart_putc('1');
+    uart_putc('C');
+
 	// placeholder for user-program
 }
 
-__attribute__((interrupt)) void c_int_dummy_handler(struct interrupt_frame *frame) {
-	// placeholder for user-program
+__attribute__((externally_visible, regparm(1))) void c_int_dummy_handler(struct interrupt_registers *regs) {
+/*
+    uart_putc('I');
+    uart_putc('?');
+    uart_putc('?');
+
+    uint8_t ah = (uint8_t)(regs->ax >> 8);
+    uint8_t al = (uint8_t)(regs->ax & 0xFF);
+    uint8_t ch = (uint8_t)(regs->cx >> 8);
+    uint8_t cl = (uint8_t)(regs->cx & 0xFF);
+    uint8_t dh = (uint8_t)(regs->dx >> 8);
+    uint8_t dl = (uint8_t)(regs->dx & 0xFF);
+
+    uart_putc(ah);
+    uart_putc(al);
+    uart_putc(ch);
+    uart_putc(cl);
+    uart_putc(dh);
+    uart_putc(dl);
+*/
 }

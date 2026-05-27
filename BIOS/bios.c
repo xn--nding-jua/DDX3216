@@ -33,20 +33,19 @@ void setup_ivt() {
   	// register callback-handlers for specific interrupts
 	// the following code will produce warnings during compilation, but
 	// the warning is the proof of using the 16-bit "iret" after the ISR
-    ivt[0x08].offset = (uint16_t)(uintptr_t)c_int08_handler; // double-cast to mitigate warning about 32/16-bit pointer
-    //ivt[0x08].offset = (uint16_t)(uintptr_t)isr_int08;
-    ivt[0x09].offset = (uint16_t)(uintptr_t)c_int09_handler; // double-cast to mitigate warning about 32/16-bit pointer
-    ivt[0x10].offset = (uint16_t)(uintptr_t)c_int10_handler; // double-cast to mitigate warning about 32/16-bit pointer
-    ivt[0x11].offset = (uint16_t)(uintptr_t)c_int11_handler; // double-cast to mitigate warning about 32/16-bit pointer
-    ivt[0x12].offset = (uint16_t)(uintptr_t)c_int12_handler; // double-cast to mitigate warning about 32/16-bit pointer
-    ivt[0x13].offset = (uint16_t)(uintptr_t)c_int13_handler; // double-cast to mitigate warning about 32/16-bit pointer
-    ivt[0x14].offset = (uint16_t)(uintptr_t)c_int14_handler; // double-cast to mitigate warning about 32/16-bit pointer
-    ivt[0x15].offset = (uint16_t)(uintptr_t)c_int15_handler; // double-cast to mitigate warning about 32/16-bit pointer
-    ivt[0x16].offset = (uint16_t)(uintptr_t)c_int16_handler; // double-cast to mitigate warning about 32/16-bit pointer
-    ivt[0x19].offset = (uint16_t)(uintptr_t)c_int19_handler; // double-cast to mitigate warning about 32/16-bit pointer
-    //ivt[0x0C].offset = (uint16_t)(uintptr_t)c_int0c_handler; // double-cast to mitigate warning about 32/16-bit pointer
-    ivt[0x1A].offset = (uint16_t)(uintptr_t)c_int1a_handler; // double-cast to mitigate warning about 32/16-bit pointer
-    ivt[0x1C].offset = (uint16_t)(uintptr_t)c_int1c_handler; // double-cast to mitigate warning about 32/16-bit pointer
+    ivt[0x08].offset = (uint16_t)(uintptr_t)isr_int08;
+    ivt[0x09].offset = (uint16_t)(uintptr_t)isr_int09;
+    ivt[0x10].offset = (uint16_t)(uintptr_t)isr_int10;
+    ivt[0x11].offset = (uint16_t)(uintptr_t)isr_int11;
+    ivt[0x12].offset = (uint16_t)(uintptr_t)isr_int12;
+    ivt[0x13].offset = (uint16_t)(uintptr_t)isr_int13;
+    ivt[0x14].offset = (uint16_t)(uintptr_t)isr_int14;
+    ivt[0x15].offset = (uint16_t)(uintptr_t)isr_int15;
+    ivt[0x16].offset = (uint16_t)(uintptr_t)isr_int16;
+    ivt[0x19].offset = (uint16_t)(uintptr_t)isr_int19;
+    ivt[0x0c].offset = (uint16_t)(uintptr_t)isr_int0c;
+    ivt[0x1a].offset = (uint16_t)(uintptr_t)isr_int1a;
+    ivt[0x1c].offset = (uint16_t)(uintptr_t)isr_int1c;
     ivt[0x41].offset = (uint16_t)(uintptr_t)&hd0_params; // direct to disk-parameters in ROM for INT 41h
 
     // reset DS to original value
@@ -307,15 +306,8 @@ void boot_dos() {
     }
     
     uart_print("Booting from CF-Card...\n");
-    
-    // jump to the loaded MBR at 0x7C00
-    /*
-    __asm__ volatile (
-        "movb $0x80, %%dl\n"    // Boot-Drive in DL (DOS-convention)
-        "ljmpw $0x0000, $0x7C00\n"
-        ::: "dl"
-    );
-    */
+    launch_bootsector();
+
     __asm__ __volatile__ (
         /* set DataSegment to 0x0000 */
         "xorw %%ax, %%ax\n\t"

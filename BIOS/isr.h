@@ -11,26 +11,42 @@
 
 extern volatile uint8_t g_kbd_scancode;
 
-struct interrupt_frame {
+struct interrupt_registers {
+    uint16_t ds;
+    uint16_t es;
+    uint16_t bp;
+    uint16_t di;
+    uint16_t si;
+    uint16_t dx;
+    uint16_t cx;
+    uint16_t bx;
+    uint16_t ax;
+    
+    // Von der CPU automatisch bei "INT" gepusht:
     uint16_t ip;
     uint16_t cs;
     uint16_t flags;
 };
 
+// some fake DiskParameterTable (DPT) for a dummy-floppy
+static const uint8_t fake_dpt[11] = {
+    0xDF, 0x02, 0x25, 0x02, 0x12, 0x1B, 0xFF, 0x54, 0xF6, 0x01, 0x08
+};
+
 void pirq_init();
-__attribute__((interrupt)) void c_int08_handler(struct interrupt_frame *frame);
-__attribute__((interrupt)) void c_int09_handler(struct interrupt_frame *frame);
-__attribute__((interrupt)) void c_int10_handler(struct interrupt_frame *frame);
-__attribute__((interrupt)) void c_int11_handler(struct interrupt_frame *frame);
-__attribute__((interrupt)) void c_int12_handler(struct interrupt_frame *frame);
-__attribute__((interrupt)) void c_int13_handler(struct interrupt_frame *frame);
-__attribute__((interrupt)) void c_int14_handler(struct interrupt_frame *frame);
-__attribute__((interrupt)) void c_int15_handler(struct interrupt_frame *frame);
-__attribute__((interrupt)) void c_int16_handler(struct interrupt_frame *frame);
-__attribute__((interrupt)) void c_int19_handler(struct interrupt_frame *frame);
-__attribute__((interrupt)) void c_int0c_handler(struct interrupt_frame *frame);
-__attribute__((interrupt)) void c_int1a_handler(struct interrupt_frame *frame);
-__attribute__((interrupt)) void c_int1c_handler(struct interrupt_frame *frame);
-__attribute__((interrupt)) void c_int_dummy_handler(struct interrupt_frame *frame);
+__attribute__((externally_visible, regparm(1))) void c_int08_handler(struct interrupt_registers *regs);
+__attribute__((externally_visible, regparm(1))) void c_int09_handler(struct interrupt_registers *regs);
+__attribute__((externally_visible, regparm(1))) void c_int10_handler(struct interrupt_registers *regs);
+__attribute__((externally_visible, regparm(1))) void c_int11_handler(struct interrupt_registers *regs);
+__attribute__((externally_visible, regparm(1))) void c_int12_handler(struct interrupt_registers *regs);
+__attribute__((externally_visible, regparm(1))) void c_int13_handler(struct interrupt_registers *regs);
+__attribute__((externally_visible, regparm(1))) void c_int14_handler(struct interrupt_registers *regs);
+__attribute__((externally_visible, regparm(1))) void c_int15_handler(struct interrupt_registers *regs);
+__attribute__((externally_visible, regparm(1))) void c_int16_handler(struct interrupt_registers *regs);
+__attribute__((externally_visible, regparm(1))) void c_int19_handler(struct interrupt_registers *regs);
+__attribute__((externally_visible, regparm(1))) void c_int0c_handler(struct interrupt_registers *regs);
+__attribute__((externally_visible, regparm(1))) void c_int1a_handler(struct interrupt_registers *regs);
+__attribute__((externally_visible, regparm(1))) void c_int1c_handler(struct interrupt_registers *regs);
+__attribute__((externally_visible, regparm(1))) void c_int_dummy_handler(struct interrupt_registers *regs);
 
 #endif

@@ -28,7 +28,21 @@
 
 
 // ISRs from Assembler-Part
-//extern void isr_int08(void);
+extern void launch_bootsector(void);
+extern void isr_int08(void);
+extern void isr_int09(void);
+extern void isr_int10(void);
+extern void isr_int11(void);
+extern void isr_int12(void);
+extern void isr_int13(void);
+extern void isr_int14(void);
+extern void isr_int15(void);
+extern void isr_int16(void);
+extern void isr_int19(void);
+extern void isr_int0c(void);
+extern void isr_int1a(void);
+extern void isr_int1c(void);
+extern void isr_int_dummy(void);
 
 // function prototypes
 void boot_dos();
