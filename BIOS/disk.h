@@ -47,10 +47,10 @@
 #define IDE_ERROR       0x1F1   // Error Register (read)
 #define IDE_FEATURES    0x1F1   // Features Register (write)
 #define IDE_SECT_COUNT  0x1F2   // Sector Count
-#define IDE_LBA_LOW     0x1F3   // LBA Bits 7:0
-#define IDE_LBA_MID     0x1F4   // LBA Bits 15:8
-#define IDE_LBA_HIGH    0x1F5   // LBA Bits 23:16
-#define IDE_DRIVE_HEAD  0x1F6   // Drive/Head + LBA Bits 27:24
+#define IDE_LBA_LOW     0x1F3   // Sector        / LBA Bits 7:0
+#define IDE_LBA_MID     0x1F4   // Cylinder Low  / LBA Bits 15:8
+#define IDE_LBA_HIGH    0x1F5   // Cylinder High / LBA Bits 23:16
+#define IDE_DRIVE_HEAD  0x1F6   // Drive/Head    / LBA Bits 27:24
 #define IDE_STATUS      0x1F7   // Status Register (read)
 #define IDE_COMMAND     0x1F7   // Command Register (write)
 #define IDE_ALT_STATUS  0x3F6   // Alternate Status (read, kein IRQ-Clear)

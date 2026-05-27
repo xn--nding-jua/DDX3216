@@ -182,6 +182,13 @@ send_eoi:
 
 // INT 10h: Video-interrupt
 __attribute__((interrupt)) void c_int10_handler(struct interrupt_frame *frame) {
+    lcd_putc('I', 0x07);
+    lcd_putc('N', 0x07);
+    lcd_putc('T', 0x07);
+    lcd_putc('1', 0x07);
+    lcd_putc('0', 0x07);
+    lcd_putc('h', 0x07);
+
     uint16_t current_ax;
     uint16_t current_dx;
 
@@ -276,6 +283,13 @@ __attribute__((interrupt)) void c_int12_handler(struct interrupt_frame *frame) {
 
 // INT13h: disk-interrupt
 __attribute__((interrupt)) void c_int13_handler(struct interrupt_frame *frame) {
+    lcd_putc('I', 0x07);
+    lcd_putc('N', 0x07);
+    lcd_putc('T', 0x07);
+    lcd_putc('1', 0x07);
+    lcd_putc('3', 0x07);
+    lcd_putc('h', 0x07);
+
     uint8_t  ah, al, ch, cl, dh, dl;
     uint16_t target_bx, target_es;
 

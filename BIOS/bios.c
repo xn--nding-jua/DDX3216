@@ -281,6 +281,7 @@ void boot_dos() {
     uint8_t status = 0xFF;
     uint8_t retries = 3;
     
+    uart_print("Reading Bootsector...\n");
     while (retries-- > 0) {
         if (ide_read_bootsector()) {
             status = 0; // success
@@ -296,19 +297,37 @@ void boot_dos() {
     }
 
     // check boot-signature at the end of the MBR
+    uart_print("Checking Boot Signature...");
     uint16_t signature = readFarWord(BASE_SEG, 0x7C00 + 510);
     if (signature != 0xAA55) {
-        uart_print("No Boot Signature found!\n");
+        uart_print("ERROR!\n");
         return;
+    }else{
+        uart_print("OK\n");
     }
     
     uart_print("Booting from CF-Card...\n");
     
     // jump to the loaded MBR at 0x7C00
+    /*
     __asm__ volatile (
         "movb $0x80, %%dl\n"    // Boot-Drive in DL (DOS-convention)
         "ljmpw $0x0000, $0x7C00\n"
         ::: "dl"
+    );
+    */
+    __asm__ __volatile__ (
+        /* set DataSegment to 0x0000 */
+        "xorw %%ax, %%ax\n\t"
+        "movw %%ax, %%ds\n\t"
+        "movw %%ax, %%es\n\t"
+        /* set first drive (0x80) to DL */
+        "movb $0x80, %%dl\n\t"
+        /* far-jump to 0x7C00 */
+        "ljmp $0x0000, $0x7C00\n\t"
+        : /* no output-register */
+        : /* no input-register */
+        : "ax", "dx" /* we will overwrite AX and DX */
     );
 }
 

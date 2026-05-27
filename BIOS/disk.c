@@ -28,6 +28,65 @@ CF-Karte verhält sich wie eine IDE-Festplatte:
 └─────────────────┴───────────────────────────────────┘
 */
 
+void mms_page_redirect(uint8_t MMS, uint8_t page, uint32_t address) {
+    uint8_t bit_23      = (address >> 23) & 0x01; // bit 23
+    uint8_t bit_22_21   = (address >> 21) & 0x03; // bits 22..21
+    uint8_t bit_20_14   = (address >> 14) & 0x7F; // bits 20..14
+    uint8_t reg_val; // storage for current register-setting
+
+    if (page > 7) {
+        return;
+    }
+
+    if (MMS == 0) {
+		// select MMSA
+		write_sc300_cfg(MMSB_CONTROL, 0b00000010);
+	}else{
+		if (page > 3) {
+			// MMSB supports only page 0..3
+			return;
+		}
+		
+		// select MMSB
+		write_sc300_cfg(MMSB_CONTROL, 0b00000001);
+	}
+
+    // set bit 23
+    // MSB: page 7, LSB: page 0
+    reg_val = read_sc300_cfg(MMS_ADDRESS_EXTENSION1);
+    reg_val &= ~(1 << page);               // delete old bit
+    reg_val |= (bit_23 << page);           // set new bit
+    write_sc300_cfg(MMS_ADDRESS_EXTENSION1, reg_val);
+
+    // set bits 22..21 depending on selected page
+    switch (page) {
+        // pages 0 to 3 are stored in MMS_ADDRESS_EXTENSION2
+        case 0: case 1: case 2: case 3:
+            reg_val = read_sc300_cfg(MMS_ADDRESS_EXTENSION2);
+            reg_val &= ~(0x03 << (page * 2));          // delete two old bits
+            reg_val |= (bit_22_21 << (page * 2));      // set both new bits 22..21
+            write_sc300_cfg(MMS_ADDRESS_EXTENSION2, reg_val);
+            break;
+
+        // pages 4 to 7 are stored in MMSA_ADDRESS_EXTENSION1
+        case 4: case 5: case 6: case 7:
+            reg_val = read_sc300_cfg(MMSA_ADDRESS_EXTENSION1);
+            // (page - 4) sorgt dafür, dass Page 4 bei Bit 0 startet, Page 5 bei Bit 2, etc.
+            reg_val &= ~(0x03 << ((page - 4) * 2));    
+            reg_val |= (bit_22_21 << ((page - 4) * 2));
+            write_sc300_cfg(MMSA_ADDRESS_EXTENSION1, reg_val);
+            break;
+
+        default:
+            // invalid page
+            return;
+    }
+
+    // set bits 20..14 and keep page enabled
+    uint16_t io_port = 0x0208 + (page * 0x2000);
+    outb(io_port, 0x80 | bit_20_14);
+}
+
 void mms_init() {
 	// Configure MMSA Device pages 0...7 to be mapped at PCMCIA-Slot A
 	// MMSA: 8x 16kB pages (mapped to 0xD0000 … 0xF0000) = 131072 bytes
@@ -143,22 +202,58 @@ bool pcmcia_init() {
 
     // configure VPPA-pin (here only bits 9...2 are set)
 	// VPPA is not used in CF-Cards
-    //write_sc300_cfg(PCMCIA_VPPA_ADDRESS, 0b11101000); // set VPPA to 0x3A0
+    //write_sc300_cfg(PCMCIA_VPPA_ADDRESS, 0b11101000); // map VPPA to 0x3A0
     //outb(VPPA_BASE, 0x00); // enable VPPA for CF-card. DataBit 0 will control the power
 
     // configure REGA#-pin (here only bits 9...2 are set)
-    write_sc300_cfg(PCMCIA_REGA_ADDRESS, 0b11101001); // set REGA# to 0x3A4
+    write_sc300_cfg(PCMCIA_REGA_ADDRESS, 0b11101001); // map REGA# to 0x3A4
 
 
-
+	// see page 3-21 in CF Card Specification for the following modes and registers
+	//
 	// switch CF-Card from PCMCIA-MemoryMode to TrueIDE-mode
+	// ==============================================
+	// VCC    -> CE2# = 1
+	// MCELA# -> CE1# = 0 or 1
+	// MEMR#  -> OE#
+	// MEMW#  -> WE#
+	// REGA#  -> 0x00 = 1
+	// 
+	// IO Read Operation:
+	// ==============================================
+	// Common Memory Read
+	// Common Memory Write
+	// 
+	// 
+	// Configuration Registers Decoding
+	// ==============================================
+	// VCC    -> CE2# = 1
+	// MCELA# -> CE1# = 0
+	// MEMR#  -> OE#
+	// MEMW#  -> WE#
+	// REGA#  -> 0x01 = 0
+	// Fixed Address Base: 0b01000000000 = 0x200
+	// 
+	// Memory Read Operation:
+	// -------------------------------------------
+	// 0x200: Configuration Option Register
+	// 0x202: Card Status Register
+	// 0x204: Pin Replacement Register
+	// 0x206: Socket and Copy Register
+	// 
+	// Memory Write Operation:
+	// -------------------------------------------
+	// 0x200: Configuration Option Register
+	// 0x202: Card Status Register
+	// 0x204: Pin Replacement Register
+	// 0x206: Socket and Copy Register
 
 	// set REGA# to LOW to access Attribute Memory
     outb(REGA_BASE, 0x01);
 	// read Card Information Structure (CIS) to get Configuration Option Register  (COR) address
 	//uint8_t cis_byte = readFarByte(PCMCIA_BASE, 0x0000);
-	// write 0x01 to COR to enable TrueIDE-Mode in Polling-Mode for IO-Access
-	writeFarByte(PCMCIA_BASE, 0x0200, 0x01); // b7=SoftReset, b6=Interrupt-Mode, b5=CardReset, b4..0=ConfigIndex
+	// set COR to switch from memory-mapped-mode into I/O-mapped mode in Polling-Mode (0x1F0...0x1F7 / 0x3F6...0x3F7)
+	writeFarByte(PCMCIA_BASE, 0x0200, 0b00000010); // b7=SoftReset, b6=Interrupt-Mode, b5=CardReset, b4..0=ConfigIndex
 	// set REGA# to HIGH to access Common Memory
 	delay_1us();
     outb(REGA_BASE, 0x00);
