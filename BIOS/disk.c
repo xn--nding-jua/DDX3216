@@ -28,6 +28,49 @@ CF-Karte verhält sich wie eine IDE-Festplatte:
 └─────────────────┴───────────────────────────────────┘
 */
 
+void mms_init() {
+	// Configure MMSA Device pages 0...7 to be mapped at PCMCIA-Slot A
+	// MMSA: 8x 16kB pages (mapped to 0xD0000 … 0xF0000) = 131072 bytes
+	// MMSB: 4x 16kB pages (fixed at 0xA0000, right after the first 640kB)
+
+	// select MMSA
+	write_sc300_cfg(MMSB_CONTROL, 0b00000010);
+	// set MMSA Base-Address to 0xD0000 and Page-IO-Address to 0x0208
+	write_sc300_cfg(MMS_ADDRESS, 0b01000000);
+	// no address extension-bit 23 for pages 0…7
+	write_sc300_cfg(MMS_ADDRESS_EXTENSION1, 0b00000000);
+	// no address-extension-bits 21/22 for pages 0…3
+	write_sc300_cfg(MMS_ADDRESS_EXTENSION2, 0b00000000);
+	// no address-extension-bits 21/22 for pages 4…7
+	write_sc300_cfg(MMSA_ADDRESS_EXTENSION1, 0b00000000);
+
+	// set translation-addresses and enable page 0...7
+	// bit 7 = page enable, bits 6..0 = Translate Address A20...A14
+	outb(0x0208, 0b10000000); // translate A20...A14 of MMSA page 0
+	outb(0x2208, 0b10000001); // translate A20...A14 of MMSA page 1
+	outb(0x4208, 0b10000010); // translate A20...A14 of MMSA page 2
+	outb(0x6208, 0b10000011); // translate A20...A14 of MMSA page 3
+	outb(0x8208, 0b10000100); // translate A20...A14 of MMSA page 4
+	outb(0xA208, 0b10000101); // translate A20...A14 of MMSA page 5
+	outb(0xC208, 0b10000110); // translate A20...A14 of MMSA page 6
+	outb(0xE208, 0b10000111); // translate A20...A14 of MMSA page 7
+
+	// set memory type for MMSA pages 0..3 to PCMCIA
+	write_sc300_cfg(MMSA_DEVICE1, 0b10101010);
+	// set memory type for MMSA pages 4..7 to PCMCIA
+	write_sc300_cfg(MMSA_DEVICE2, 0b10101010);
+	// select socket: MMSA pages 0...7 mapped to socket A
+	write_sc300_cfg(MMSA_SOCKET, 0b00000000); // 
+	// enable MMSA
+	write_sc300_cfg(ROM_CONFIGURATION1, 0b01000000); 
+	// initialize CA25 and CA24 for MMSA page 0...3
+	write_sc300_cfg(CA24_CA25_CONTROL1, 0b00000000);
+	// initialize CA25 and CA24 for MMSA page 4...7
+	write_sc300_cfg(CA24_CA25_CONTROL2, 0b00000000);
+
+	// from now on memory-addresses 0xD0000 to 0xEFFFF representing the first 128kB of PCMCIA-Card A
+}
+
 bool pcmcia_init() {
 	// PCMCIA-card is connected via 10-bit address-bus and 8-bit data-bus
 	// more signals connected to SC300:
@@ -42,7 +85,11 @@ bool pcmcia_init() {
 	//
 	// for more see chapter 5.3 in programming reference manual
 	
-    // I/O-addresses 0x1F0-0x1F7 for data, error, sector count, sector number, cylinder low, cylinder high, drive/head and status/command
+	// OE# is pulled-up with a 10k-resistor, so the CF-Card will start in PCMCIA-MemoryMode (PC-Card Standard)
+	// so we have to switch into TrueIDE mode using Configuration Option Register (COR) of the CF-Card
+	
+    // I/O-addresses 0x1F0-0x1F7 for IO-Read/Write in TrueIDE-Mode
+	// I/O-addresses 0x3A4 for REGA#
 
     // enable PCMCIA reset
     uint8_t b4 = read_sc300_cfg(PCMCIA_CARD_RESET);
@@ -75,14 +122,6 @@ bool pcmcia_init() {
     // set I/O Card IRQ Redirection
     write_sc300_cfg(PCMCIA_CARD_IRQ_REDIRECT,   0b0000111); // enable REGA# and MCELA# on I/O access
 
-    // configure VPPA-pin (here only bits 9...2 are set)
-    write_sc300_cfg(PCMCIA_VPPA_ADDRESS, 0b11101000); // set VPPA to 0x3A0
-    outb(0x03A0, 0x01); // enable VPPA for CF-card. DataBit 0 will control the power
-
-    // configure REGA#-pin (here only bits 9...2 are set)
-    write_sc300_cfg(PCMCIA_REGA_ADDRESS, 0b11101001); // set REGA# to 0x3A4
-    outb(0x03A4, 0x00); // enable REGA# for CF-card. DataBit 0 will control the pin inverted
-
     // configure wait-states
     //uint8_t ws2 = read_sc300_cfg(MMS_MEMORY_WAIT_STATE_CTRL2);
     //ws2 |= (1 << 5);    // CARDWSEN = 1
@@ -101,6 +140,29 @@ bool pcmcia_init() {
     // check if card is present (see page 5-68 in programming reference manual)
     //uart_print("Socket A-Status:");
     //uart_putc(read_sc300_cfg(PCMCIA_SOCKET_A_STATUS));
+
+    // configure VPPA-pin (here only bits 9...2 are set)
+	// VPPA is not used in CF-Cards
+    //write_sc300_cfg(PCMCIA_VPPA_ADDRESS, 0b11101000); // set VPPA to 0x3A0
+    //outb(VPPA_BASE, 0x00); // enable VPPA for CF-card. DataBit 0 will control the power
+
+    // configure REGA#-pin (here only bits 9...2 are set)
+    write_sc300_cfg(PCMCIA_REGA_ADDRESS, 0b11101001); // set REGA# to 0x3A4
+
+
+
+	// switch CF-Card from PCMCIA-MemoryMode to TrueIDE-mode
+
+	// set REGA# to LOW to access Attribute Memory
+    outb(REGA_BASE, 0x01);
+	// read Card Information Structure (CIS) to get Configuration Option Register  (COR) address
+	//uint8_t cis_byte = readFarByte(PCMCIA_BASE, 0x0000);
+	// write 0x01 to COR to enable TrueIDE-Mode in Polling-Mode for IO-Access
+	writeFarByte(PCMCIA_BASE, 0x0200, 0x01); // b7=SoftReset, b6=Interrupt-Mode, b5=CardReset, b4..0=ConfigIndex
+	// set REGA# to HIGH to access Common Memory
+	delay_1us();
+    outb(REGA_BASE, 0x00);
+	
 
     uart_print("PCMCIA/CF: Card soft reset\n");
     // CF-Card software-reset via IDE-Register

@@ -9,7 +9,21 @@
 
 #include "bios.h"
 
+// MMS registers
+#define MMSB_CONTROL				0x74
+#define MMS_ADDRESS					0x6D
+#define MMS_ADDRESS_EXTENSION1		0x6C
+#define MMS_ADDRESS_EXTENSION2		0x6E
+#define MMSA_ADDRESS_EXTENSION1		0x67
+#define MMSA_DEVICE1				0x71
+#define MMSA_DEVICE2				0x72
+#define MMSA_SOCKET					0xA8
+#define ROM_CONFIGURATION1			0x65
+#define CA24_CA25_CONTROL1			0xB5
+#define CA24_CA25_CONTROL2			0xB6
+
 // PCMCIA registers
+#define PCMCIA_BASE					0xD000
 #define PCMCIA_CARESET              (1 << 2)
 
 #define PCMCIA_WIN_A1_LOW_START     0x00
@@ -42,6 +56,9 @@
 #define IDE_ALT_STATUS  0x3F6   // Alternate Status (read, kein IRQ-Clear)
 #define IDE_DEV_CTRL    0x3F6   // Device Control (write)
 
+#define VPPA_BASE		0x3A0
+#define REGA_BASE		0x3A4
+
 // IDE Status-Bits
 #define IDE_SR_BSY      0x80    // Busy
 #define IDE_SR_DRDY     0x40    // Drive Ready
@@ -65,6 +82,7 @@
 #define CHS_TO_LBA(c, h, s) \
     (((uint32_t)(c) * CF_HEADS + (h)) * CF_SECTORS + ((s) - 1))
 
+void mms_init();
 bool pcmcia_init();
 bool ide_wait_ready();
 bool ide_wait_drq(void);

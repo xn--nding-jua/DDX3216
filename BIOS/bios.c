@@ -385,6 +385,7 @@ __attribute__((noreturn)) void bios_main() {
     setLEDs();
 
 	lcd_print_string(6, 0, "Init PCMCIA / CF-Card...", 0x07);
+	mms_init();
 	if (pcmcia_init()) {
         // try to load DOS from CF-Card and boot it
         lcd_print_string(7, 0, "Booting from CF-Card...", 0x07);
