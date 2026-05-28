@@ -34,8 +34,12 @@ static const uint8_t fake_dpt[11] = {
 };
 
 void pirq_init();
+// hardware-interrupts
 __attribute__((externally_visible, regparm(1))) void c_int08_handler(struct interrupt_registers *regs);
 __attribute__((externally_visible, regparm(1))) void c_int09_handler(struct interrupt_registers *regs);
+__attribute__((externally_visible, regparm(1))) void c_int0c_handler(struct interrupt_registers *regs);
+
+// software-interrupts
 __attribute__((externally_visible, regparm(1))) void c_int10_handler(struct interrupt_registers *regs);
 __attribute__((externally_visible, regparm(1))) void c_int11_handler(struct interrupt_registers *regs);
 __attribute__((externally_visible, regparm(1))) void c_int12_handler(struct interrupt_registers *regs);
@@ -44,7 +48,6 @@ __attribute__((externally_visible, regparm(1))) void c_int14_handler(struct inte
 __attribute__((externally_visible, regparm(1))) void c_int15_handler(struct interrupt_registers *regs);
 __attribute__((externally_visible, regparm(1))) void c_int16_handler(struct interrupt_registers *regs);
 __attribute__((externally_visible, regparm(1))) void c_int19_handler(struct interrupt_registers *regs);
-__attribute__((externally_visible, regparm(1))) void c_int0c_handler(struct interrupt_registers *regs);
 __attribute__((externally_visible, regparm(1))) void c_int1a_handler(struct interrupt_registers *regs);
 __attribute__((externally_visible, regparm(1))) void c_int1c_handler(struct interrupt_registers *regs);
 __attribute__((externally_visible, regparm(1))) void c_int_dummy_handler(struct interrupt_registers *regs);

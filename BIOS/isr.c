@@ -145,6 +145,59 @@ __attribute__((externally_visible, regparm(1))) void c_int09_handler(struct inte
     eoi_int09:
 }
 
+// INT04 (PIRQ0 is mapped here)
+__attribute__((externally_visible, regparm(1))) void c_int0c_handler(struct interrupt_registers *regs) {
+    uart_putc('I');
+    uart_putc('0');
+    uart_putc('C');
+
+/*
+	// store DS and reset it to 0
+	__asm__ volatile("movw %%ds, %0" : "=r"(g_old_ds));
+	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
+
+	while (!(inb(UART_IIR) & IIR_PENDING)) {
+        uint8_t reason = inb(UART_IIR) & IIR_REASON;
+
+        switch (reason) {
+            case IIR_RDA:
+            case IIR_TIMEOUT:
+                // receive data
+                // simulate a keyboard-pressing via UART
+                uint8_t c = inb(UART_BASE); // reading the data clears the RDA interrupt
+                
+                // put the received character into the keyboard-buffer
+                uint16_t tail = *BDA_KBD_TAIL;
+                uint16_t next_tail = tail + 2;
+                if (next_tail >= BDA_KBD_BUF_END) next_tail = BDA_KBD_BUF_START;
+                
+                if (next_tail != *BDA_KBD_HEAD) {
+                    uint16_t *ptr = (uint16_t*)(uintptr_t)(tail);
+                    *ptr = (uint16_t)c; // Scancode 0, ASCII = c
+                    *BDA_KBD_TAIL = next_tail;
+                }
+                break;
+
+            case IIR_RLS:
+                inb(UART_BASE + 5); // LSR lesen löscht diesen Interrupt
+                break;
+
+            case IIR_THRE:
+                // Sende-Puffer leer. Wenn wir keine Queue haben, 
+                // wird dieser Int durch das nächste Schreiben oder IIR-Lesen beruhigt.
+                break;
+                
+            case IIR_MS:
+                inb(UART_BASE + 6); // MSR lesen löscht diesen Interrupt
+                break;
+        }
+    }
+
+	// restore DS
+	__asm__ volatile("movw %0, %%ds" : : "r"(g_old_ds));
+*/
+}
+
 // INT 10h: Video-interrupt
 __attribute__((externally_visible, regparm(1))) void c_int10_handler(struct interrupt_registers *regs) {
     // read registers first
@@ -219,7 +272,7 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
     uart_putc('1');
     uart_putc('3');
 
-    // Holen der echten Registerwerte, die der MBR übergeben hat
+    // get registers
     uint8_t ah = (uint8_t)(regs->ax >> 8);
     uint8_t al = (uint8_t)(regs->ax & 0xFF);
     uint8_t ch = (uint8_t)(regs->cx >> 8);
@@ -234,15 +287,8 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
     uart_putc(dh);
     uart_putc(dl);
 
-    // Standardmäßig Erfolg annehmen (Carry Flag im Flags-Register löschen)
+    // clear carry-flag in flags-register
     regs->flags &= ~0x0001; 
-
-    // DL = 0x80 ist die erste Festplatte. Wenn nicht 0x80 und nicht Reset (0x00) -> Fehler
-    if (dl != 0x80 && ah != 0x00) {
-        regs->ax = (0x01 << 8); // Invalid Command / Invalid Drive
-        regs->flags |= 0x0001;  // Set Carry Flag
-        return;
-    }
 
     switch(ah) {
         case 0x00: // Reset Disk
@@ -258,78 +304,59 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
             uint8_t  sector          = cl & 0x3F;
             uint16_t cylinder        = ((uint16_t)(cl & 0xC0) << 2) | ch;
             uint8_t  head            = dh;
-            uint32_t lba             = CHS_TO_LBA(cylinder, head, sector);
+            uint16_t dest_bx         = regs->bx;
+            uint16_t dest_es         = regs->es;
+            uint8_t  sectors_done    = 0;
             uint8_t  error           = 0;
+            uint32_t lba             = CHS_TO_LBA(cylinder, head, sector);
 
-            uint16_t current_bx = regs->bx;
-            uint16_t target_es  = regs->es; // Das originale Ziel-Segment vom MBR/Syslinux
-
-            // Schleife über alle angeforderten Sektoren
+            // loop for all requested sectors
             for (uint8_t s = 0; s < sectors_to_read; s++) {
                 uint32_t cur_lba = lba + s;
 
-                // Warten, bis der IDE-Controller bereit für einen neuen Befehl ist
-                if (!ide_wait_ready()) { 
-                    error = 0xAA; // Zeitüberschreitung / Drive Not Ready
-                    break; 
+                // moving offset within ES (BX + s * 512)
+                uint16_t cur_offset  = dest_bx + ((uint16_t)s * 512);
+
+                error = ide_read_sector(cur_lba, dest_es, cur_offset);
+                if (error != 0x00) {
+                    break;
                 }
-
-                // IDE-Register mit der berechneten LBA-Adresse füttern
-                outb(IDE_SECT_COUNT, 1);
-                outb(IDE_LBA_LOW,   (uint8_t)( cur_lba        & 0xFF));
-                outb(IDE_LBA_MID,   (uint8_t)((cur_lba >>  8) & 0xFF));
-                outb(IDE_LBA_HIGH,  (uint8_t)((cur_lba >> 16) & 0xFF));
-                outb(IDE_DRIVE_HEAD, 0xE0 | (uint8_t)((cur_lba >> 24) & 0x0F));
-                outb(IDE_COMMAND, IDE_CMD_READ);
-
-                // Warten, bis der Controller Daten im Puffer bereitgestellt hat (Data Request)
-                if (!ide_wait_drq()) { 
-                    error = 0xBB; // Read Error / DRQ Failure
-                    break; 
-                }
-
-                // we are in DS 0x0000 so we can make use of flat pointer
-                uint32_t linear_address = ((uint32_t)target_es << 4) + current_bx;
-                uint16_t *ram_ptr = (uint16_t *)(uintptr_t)linear_address;
-
-                // Einen Sektor wortweise einlesen (256 Wörter = 512 Bytes)
-                for (uint16_t i = 0; i < 256; i++) {
-                    // Direktes Einlesen aus dem IDE-Datenregister in den RAM
-                    *ram_ptr = inw(IDE_DATA);
-                    
-                    ram_ptr++;        // Pointer im C-Code um 2 Bytes vorschieben
-                    current_bx += 2;  // BX-Offset synchron halten
-                }
+                sectors_done++;
             }
-            regs->bx = current_bx;
 
-            // Ergebnis an den Aufrufer melden via AX und Carry-Flag
+            // return answer
             if (error == 0) {
-                // Erfolg: AH = 00h (Success), AL = Anzahl tatsächlich gelesener Sektoren
-                regs->ax = (0x00 << 8) | (sectors_to_read & 0xFF); 
-                regs->flags &= ~0x0001; // Carry Flag löschen (Erfolg)
+                // success: AH = 00h (Success), AL = number of read sectors
+                regs->ax = (0x00 << 8) | sectors_done; 
+                regs->flags &= ~0x0001; // clear carray-flag on success
             } else {
-                // Fehler aufgetreten
-                regs->ax = (error << 8);
-                regs->flags |= 0x0001;  // Carry Flag setzen (Fehler)
+                // error occurred
+                regs->ax = (error << 8) | sectors_done;
+                regs->flags |= 0x0001;  // set carry flag on error
             }
             break;
         }
 
         case 0x08: { // Get Drive Parameters
             // what kind of drive is requested?
-            uint8_t drive = (uint8_t)(regs->dx & 0xFF);
-
-            if (drive >= 0x80) {
+            if (dl >= 0x80) {
                 // harddisk / CF-Card
-                uint8_t max_heads   = CF_HEADS - 1;     
-                uint8_t max_sectors = CF_SECTORS;       
-                uint16_t max_cyls   = CF_CYLINDERS - 1; 
+                uint8_t  max_heads   = CF_HEADS - 1;     
+                uint8_t  max_sectors = CF_SECTORS;       
+                uint16_t max_cyls    = CF_CYLINDERS - 1; 
 
+                // CX-encoding:
+                // Bits 15-8 : Bits 7-0 of cylinders
+                // Bits 7-6  : Bits 9-8 of cylinders
+                // Bits 5-0  : sectors per track
+                uint8_t cl_val = (max_sectors & 0x3F) |
+                                (uint8_t)((max_cyls >> 2) & 0xC0);
+                uint8_t ch_val = (uint8_t)(max_cyls & 0xFF);
+                
                 regs->ax = 0x0000; // Success
                 regs->bx = 0x0003; // Drive type (01h = Floppy, 03h = HDD)
-                regs->cx = ((max_cyls & 0xFF) << 8) | (max_sectors & 0x3F) | (((max_cyls >> 8) & 0x03) << 6);
-                regs->dx = (max_heads << 8) | 0x01; // DH = max heads, DL = number of drives (1)
+                regs->cx = ((uint16_t)ch_val << 8) | cl_val;
+                regs->dx =  ((uint16_t)max_heads << 8) | 0x01; // DL=1: an HDD
 
                 // set ES and DI to zero
                 regs->es = 0x0000;
@@ -344,223 +371,135 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
                 regs->dx = 0x0000;      // <--- Sagt dem MBR: 0 Diskettenlaufwerke installiert!
                 regs->flags |= 0x0001;  // Set Carry Flag = Fehler!
             }
-            /*
-            uint8_t max_heads   = CF_HEADS - 1;     
-            uint8_t max_sectors = CF_SECTORS;       
-            uint16_t max_cyls   = CF_CYLINDERS - 1; 
-
-            regs->ax = 0x0000; 
-            regs->bx = 0x0003; // Fixed Disk / HDD
-            
-            // CHS-Geometrie verpacken
-            regs->cx = ((max_cyls & 0xFF) << 8) | (max_sectors & 0x3F) | (((max_cyls >> 8) & 0x03) << 6);
-            
-            // WICHTIG: Wir spiegeln das abgefragte Laufwerk in DL zurück.
-            // Wenn Syslinux nach 0x00 gefragt hat, geben wir ihm 0x00 zurück, 
-            // aber mit den großen Geometriedaten der Festplatte!
-            regs->dx = (max_heads << 8) | dl; 
-            
-            regs->es = 0x0000;
-            regs->di = 0x0000;
-            regs->flags &= ~0x0001; // Erfolg signalisieren           
-            break;
-            */
         }
 
         case 0x15: // Get Disk Type
-            regs->ax = (0x03 << 8); // 03h = Fixed Disk (Festplatte/CF-Karte) mit CHS-Unterstützung
-            regs->flags &= ~0x0001; // Clear Carry Flag (Unterstützt)
+            // AH=03h: Fixed Disk with Sector-Count in CX:DX
+            uint32_t total = CF_TOTAL_SECTS;
+            regs->ax    = (0x03 << 8);
+            regs->cx    = (uint16_t)(total >> 16);
+            regs->dx    = (uint16_t)(total & 0xFFFF);
+            regs->flags &= ~0x0001;
             break;
 
-        case 0x41: // Extensions Present (Weigern wir uns, da wir CHS emulieren)
-            regs->flags |= 0x0001; // Carry Set = Nicht unterstützt
+        case 0x41: // Extensions Present (we do not use this as we emulate CHS)
             regs->ax = 0x0100;     // AH = 01h (Invalid function)
-            break;
+            regs->flags |= 0x0001; // Carry Set = not supported
 
-        default:
-            regs->flags |= 0x0001; // Carry Set
-            regs->ax = (0x01 << 8);
-            break;
-    }
-}
-
-/*
-__attribute__((externally_visible, regparm(1))) void c_int13_handler(struct interrupt_registers *regs) {
-    lcd_putc('I', 0x07);
-    lcd_putc('N', 0x07);
-    lcd_putc('T', 0x07);
-    lcd_putc('1', 0x07);
-    lcd_putc('3', 0x07);
-    lcd_putc('h', 0x07);
-
-    uint8_t  ah, al, ch, cl, dh, dl;
-    uint16_t target_bx, target_es;
-
-    __asm__ volatile ("movb %%ah, %0" : "=m"(ah)        : : );
-    __asm__ volatile ("movb %%al, %0" : "=m"(al)        : : );
-    __asm__ volatile ("movb %%ch, %0" : "=m"(ch)        : : );
-    __asm__ volatile ("movb %%cl, %0" : "=m"(cl)        : : );
-    __asm__ volatile ("movb %%dh, %0" : "=m"(dh)        : : );
-    __asm__ volatile ("movb %%dl, %0" : "=m"(dl)        : : );
-    __asm__ volatile ("movw %%bx, %0" : "=m"(target_bx) : : );
-    __asm__ volatile (
-        "movw %%es, %%ax\n"
-        "movw %%ax, %0"
-        : "=m"(target_es) : : "ax"
-    );
-
-    // store DS and switch to RAM (0x0000)
-    __asm__ volatile ("movw %%ds, %0"                   : "=r"(g_old_ds));
-    __asm__ volatile ("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
-
-    // support only for drive 0x80
-    if (dl != 0x80 && ah != 0x00) {
-        __asm__ volatile (
-            "movb $0x01, %%ah\n"
-            "orw  $0x0001, 6(%%bp)"
-            ::: "ax", "memory"
-        );
-        __asm__ volatile ("movw %0, %%ds" : : "r"(g_old_ds));
-        return;
-    }
-
-    switch(ah) {
-        case 0x00:
-            // ------------------------------------------------------
-            // AH=00h: Reset Disk System
-            // ------------------------------------------------------
-            outb(IDE_DEV_CTRL, 0x06);
-            for (volatile uint16_t i = 0; i < 10000; i++);
-            outb(IDE_DEV_CTRL, 0x02);
-            ide_wait_ready();
-
-            __asm__ volatile (
-                "movb $0x00, %%ah\n"
-                "andw $0xFFFE, 6(%%bp)"
-                ::: "ax", "memory"
-            );
-            break;
-        
-        case 0x02:
-            // ------------------------------------------------------
-            // AH=02h: Read Sectors
-            // ------------------------------------------------------
-            uint8_t  sectors_to_read = al;
-            uint8_t  sector          = cl & 0x3F;
-            uint16_t cylinder        = ((uint16_t)(cl & 0xC0) << 2) | ch;
-            uint8_t  head            = dh;
-            uint32_t lba             = CHS_TO_LBA(cylinder, head, sector);
-            uint8_t  error           = 0;
-
-            for (uint8_t s = 0; s < sectors_to_read; s++) {
-                uint32_t cur_lba = lba + s;
-
-                if (!ide_wait_ready()) {
-                    error = 0xAA;
-                    break;
-                }
-
-                // send LBA command to disk
-                outb(IDE_SECT_COUNT, 1);
-                outb(IDE_LBA_LOW,   (uint8_t)( cur_lba        & 0xFF));
-                outb(IDE_LBA_MID,   (uint8_t)((cur_lba >>  8) & 0xFF));
-                outb(IDE_LBA_HIGH,  (uint8_t)((cur_lba >> 16) & 0xFF));
-                outb(IDE_DRIVE_HEAD, 0xE0 | (uint8_t)((cur_lba >> 24) & 0x0F));
-                outb(IDE_COMMAND, IDE_CMD_READ);
-
-                if (!ide_wait_drq()) {
-                    error = 0xBB;
-                    break;
-                }
-
-                // read 256 words -> write to ES:BX
-                for (uint16_t i = 0; i < 256; i++) {
-                    uint16_t word = inw(IDE_DATA);
-                    __asm__ volatile (
-                        "movw %0, %%es:(%%bx)"
-                        : : "r"(word), "b"(target_bx)
-                    );
-                    target_bx += 2;
-                }
+            /*
+            // TEST: LBA-Support
+            // check for magic word 0x55AA
+            if (regs->bx != 0x55AA) {
+                regs->flags |= 0x0001;  // CF=1: Fehler
+                regs->ax = (0x01 << 8);
+                break;
             }
 
+            // enable LBA-support
+            regs->bx    = 0xAA55;      // send back magic word
+            regs->ax    = (0x30 << 8); // AH = Version 3.0
+            regs->cx    = 0x0007;      // Bit 0: Extended Disk Access
+                                       // Bit 1: Removable Drive Support
+                                       // Bit 2: EDD (Enhanced Disk Drive)
+            regs->flags &= ~0x0001;    // CF=0: Extensions available
+            */
+            break;
+
+        case 0x42: // Extended Read Sectors
+            // DAP is at DS:SI
+            uint16_t dap_segment = regs->ds;
+            uint16_t dap_offset  = regs->si;
+
+            // read DAP bytewise from caller
+            struct disk_address_packet dap;
+            uint8_t *dap_ptr = (uint8_t*)&dap;
+            for (uint8_t i = 0; i < sizeof(dap); i++) {
+                dap_ptr[i] = readFarByte(dap_segment, dap_offset + i);
+            }
+
+            // check the structure
+            if (dap.size < 0x10) {
+                regs->ax    = (0x01 << 8); // bad data
+                regs->flags |= 0x0001;
+                break;
+            }
+
+            // 64-bit LBA: upper 32 Bit must be 0 sein (CF-Card < 4GB)
+            if (dap.lba_high != 0) {
+                regs->ax    = (0x01 << 8); // LBA out of border
+                regs->flags |= 0x0001;
+                break;
+            }
+
+            uint32_t lba          = dap.lba_low;
+            uint16_t sector_count = dap.sector_count;
+            uint16_t dest_offset  = dap.dest_offset;
+            uint16_t dest_segment = dap.dest_segment;
+            uint16_t sectors_done = 0;
+            uint8_t  error        = 0;
+
+            for (uint16_t s = 0; s < sector_count; s++) {
+                uint32_t cur_lba    = lba + s;
+                uint16_t cur_offset = dest_offset + (s * 512);
+
+                error = ide_read_sector(cur_lba, dest_segment, cur_offset);
+                if (error != 0x00) {
+                    break;
+                }
+                sectors_done++;
+            }
+
+            // update sector-count in DAP
+            writeFarByte(dap_segment, dap_offset + 2, (uint8_t)(sectors_done & 0xFF));
+            writeFarByte(dap_segment, dap_offset + 3, (uint8_t)(sectors_done >> 8));
+
             if (error == 0) {
-                __asm__ volatile (
-                    "movb $0x00, %%ah\n"
-                    "andw $0xFFFE, 6(%%bp)"
-                    ::: "ax", "memory"
-                );
+                regs->ax    = 0x0000;
+                regs->flags &= ~0x0001;
             } else {
-                __asm__ volatile (
-                    "movb %0, %%ah\n"
-                    "orw  $0x0001, 6(%%bp)"
-                    : : "r"(error) : "ax", "memory"
-                );
-            }            break;
-
-        case 0x08:
-            // ------------------------------------------------------
-            // AH=08h: Get Drive Parameters
-            // ------------------------------------------------------
-            uint8_t max_heads   = CF_HEADS - 1;     // TODO: max_heads = bootsector->bpb.num_heads; // <- DS will be changed so we have to store this somewhere else for later use in INT13h AH=02h
-            uint8_t max_sectors = CF_SECTORS;       // TODO: max_sectors = bootsector->bpb.sectors_per_track; // <- DS will be changed so we have to store this somewhere else for later use in INT13h AH=02h
-            uint16_t max_cyls   = CF_CYLINDERS - 1; // TODO: max_cyls = bootsector->bpb.total_sectors / (bootsector->bpb.num_heads * bootsector->bpb.sectors_per_track) - 1;
-
-            uint8_t cl_val = (max_sectors & 0x3F) |
-                            (uint8_t)((max_cyls >> 2) & 0xC0);
-            uint8_t ch_val = (uint8_t)(max_cyls & 0xFF);
-
-            __asm__ volatile (
-                "movb $0x00, %%ah\n"
-                "movb $0x01, %%bl\n"
-                "movb %0,    %%ch\n"
-                "movb %1,    %%cl\n"
-                "movb %2,    %%dh\n"
-                "movb $0x01, %%dl\n"
-                "andw $0xFFFE, 6(%%bp)"
-                : : "m"(ch_val), "m"(cl_val), "m"(max_heads)
-                : "ax", "bx", "cx", "dx", "memory"
-            );
+                regs->ax    = (error << 8);
+                regs->flags |= 0x0001;
+            }
             break;
 
-        case 0x15:
-            // ------------------------------------------------------
-            // AH=15h: Get Disk Type
-            // ------------------------------------------------------
-            __asm__ volatile (
-                "movb $0x03, %%ah\n"
-                "andw $0xFFFE, 6(%%bp)"
-                ::: "ax", "memory"
-            );
-            break;
+        case 0x48: // Get Drive Parameters Extended
+            uint16_t buf_segment = regs->ds;
+            uint16_t buf_offset  = regs->si;
 
-        case 0x41:
-            // ------------------------------------------------------
-            // AH=41h: Check Extensions Present
-            // ------------------------------------------------------
-            __asm__ volatile (
-                "movb $0x00, %%ah\n"
-                "andw $0xFFFE, 6(%%bp)"
-                ::: "ax", "memory"
-            );
+            // check buffer-size (first two bytes)
+            uint16_t buf_size = readFarWord(buf_segment, buf_offset);
+            if (buf_size < 0x1A) {
+                regs->ax    = (0x01 << 8);
+                regs->flags |= 0x0001;
+                break;
+            }
+
+            struct drive_params_ext params;
+            params.size           = 0x1A;
+            params.flags          = 0x0002;        // Bit 1: Geometrie gültig
+            params.cylinders      = CF_CYLINDERS;
+            params.heads          = CF_HEADS;
+            params.sectors        = CF_SECTORS;
+            params.total_low      = CF_TOTAL_SECTS;
+            params.total_high     = 0;
+            params.bytes_per_sect = 512;
+
+            // write structure in buffer of caller
+            uint8_t *p = (uint8_t*)&params;
+            for (uint8_t i = 0; i < sizeof(params); i++) {
+                writeFarByte(buf_segment, buf_offset + i, p[i]);
+            }
+
+            regs->ax    = 0x0000;
+            regs->flags &= ~0x0001;
             break;
 
         default:
-            // ------------------------------------------------------
-            // unknown function
-            // ------------------------------------------------------
-            __asm__ volatile (
-                "movb $0x01, %%ah\n"
-                "orw  $0x0001, 6(%%bp)"
-                ::: "ax", "memory"
-            );
+            regs->ax = (0x01 << 8);
+            regs->flags |= 0x0001; // Carry Set
             break;
     }
-
-    // restore DS
-    __asm__ volatile ("movw %0, %%ds" : : "r"(g_old_ds));
 }
-*/
 
 // uart-interrupt
 __attribute__((externally_visible, regparm(1))) void c_int14_handler(struct interrupt_registers *regs) {
@@ -748,59 +687,6 @@ __attribute__((externally_visible, regparm(1))) void c_int19_handler(struct inte
     boot_dos();
     
     while(1) { __asm__("hlt"); }
-*/
-}
-
-// INT04 (PIRQ0 is mapped here)
-__attribute__((externally_visible, regparm(1))) void c_int0c_handler(struct interrupt_registers *regs) {
-    uart_putc('I');
-    uart_putc('0');
-    uart_putc('C');
-
-/*
-	// store DS and reset it to 0
-	__asm__ volatile("movw %%ds, %0" : "=r"(g_old_ds));
-	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
-
-	while (!(inb(UART_IIR) & IIR_PENDING)) {
-        uint8_t reason = inb(UART_IIR) & IIR_REASON;
-
-        switch (reason) {
-            case IIR_RDA:
-            case IIR_TIMEOUT:
-                // receive data
-                // simulate a keyboard-pressing via UART
-                uint8_t c = inb(UART_BASE); // reading the data clears the RDA interrupt
-                
-                // put the received character into the keyboard-buffer
-                uint16_t tail = *BDA_KBD_TAIL;
-                uint16_t next_tail = tail + 2;
-                if (next_tail >= BDA_KBD_BUF_END) next_tail = BDA_KBD_BUF_START;
-                
-                if (next_tail != *BDA_KBD_HEAD) {
-                    uint16_t *ptr = (uint16_t*)(uintptr_t)(tail);
-                    *ptr = (uint16_t)c; // Scancode 0, ASCII = c
-                    *BDA_KBD_TAIL = next_tail;
-                }
-                break;
-
-            case IIR_RLS:
-                inb(UART_BASE + 5); // LSR lesen löscht diesen Interrupt
-                break;
-
-            case IIR_THRE:
-                // Sende-Puffer leer. Wenn wir keine Queue haben, 
-                // wird dieser Int durch das nächste Schreiben oder IIR-Lesen beruhigt.
-                break;
-                
-            case IIR_MS:
-                inb(UART_BASE + 6); // MSR lesen löscht diesen Interrupt
-                break;
-        }
-    }
-
-	// restore DS
-	__asm__ volatile("movw %0, %%ds" : : "r"(g_old_ds));
 */
 }
 

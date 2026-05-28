@@ -332,7 +332,7 @@ halt:
 // ========================================================
 // GNU-Assembler Macro for ISR-Entries
 // ========================================================
-.macro ISR_ENTRY cfunc
+.macro ISR_HW_ENTRY cfunc
 //    cli
 //    cld
 
@@ -365,6 +365,50 @@ halt:
     mov dx, 0x0020
     mov al, 0x20
     out dx, al
+
+    // restore all registers in inverted order
+    pop ds
+    pop es
+    pop bp
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+
+//    sti
+    iret
+.endm
+
+.macro ISR_SW_ENTRY cfunc
+//    cli
+//    cld
+
+    // store all 16-bit registers
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+    push di
+    push bp
+    push es
+    push ds
+
+    // prepare segments for C-code (DS = SS) and store
+    // stackpointer in register SI that cannot be changed by C-Code
+    mov ax, ss
+    mov ds, ax
+    mov es, ax
+    mov si, sp
+    mov ax, sp
+
+    // call the C-Interrupt-Handler
+    call \cfunc
+
+    // force stackpointer back to original value
+    mov sp, si
 
     // restore all registers in inverted order
     pop ds
@@ -421,44 +465,46 @@ launch_bootsector:
 .global isr_int1c
 .global isr_int_dummy
 
+// hardware-interrupts with EOI
 isr_int08:
-    ISR_ENTRY c_int08_handler
+    ISR_HW_ENTRY c_int08_handler // Timer-interrupt
 
 isr_int09:
-    ISR_ENTRY c_int09_handler
-
-isr_int10:
-    ISR_ENTRY c_int10_handler
-
-isr_int11:
-    ISR_ENTRY c_int11_handler
-
-isr_int12:
-    ISR_ENTRY c_int12_handler
-
-isr_int13:
-    ISR_ENTRY c_int13_handler
-
-isr_int14:
-    ISR_ENTRY c_int14_handler
-
-isr_int15:
-    ISR_ENTRY c_int15_handler
-
-isr_int16:
-    ISR_ENTRY c_int16_handler
-
-isr_int19:
-    ISR_ENTRY c_int19_handler
+    ISR_HW_ENTRY c_int09_handler // keyboard-interrupt
 
 isr_int0c:
-    ISR_ENTRY c_int19_handler
+    ISR_HW_ENTRY c_int0c_handler // UART-interrupt
+
+// software-interrupts without EOI
+isr_int10:
+    ISR_SW_ENTRY c_int10_handler
+
+isr_int11:
+    ISR_SW_ENTRY c_int11_handler
+
+isr_int12:
+    ISR_SW_ENTRY c_int12_handler
+
+isr_int13:
+    ISR_SW_ENTRY c_int13_handler
+
+isr_int14:
+    ISR_SW_ENTRY c_int14_handler
+
+isr_int15:
+    ISR_SW_ENTRY c_int15_handler
+
+isr_int16:
+    ISR_SW_ENTRY c_int16_handler
+
+isr_int19:
+    ISR_SW_ENTRY c_int19_handler
 
 isr_int1a:
-    ISR_ENTRY c_int19_handler
+    ISR_SW_ENTRY c_int1a_handler
 
 isr_int1c:
-    ISR_ENTRY c_int19_handler
+    ISR_SW_ENTRY c_int1c_handler
 
 isr_int_dummy:
-    ISR_ENTRY c_int_dummy_handler
+    ISR_SW_ENTRY c_int_dummy_handler

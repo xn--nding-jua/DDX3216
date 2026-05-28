@@ -330,43 +330,16 @@ void pcmcia_set_waitstates_slow() {
     write_sc300_cfg(IO_WAIT_STATE_CTRL, iows);
 }
 
-bool ide_read_bootsector() {
-    // wait until drive is ready
-    if (!ide_wait_ready()) {
-        uart_print("ide_read_bootsector: Drive not ready\n");
-        return false;
-    }
-
-    // LBA-Address and send command
-    uint32_t lba = 0; // LBA 0 = MBR
-    outb(IDE_SECT_COUNT,  1);
-    outb(IDE_LBA_LOW,     (uint8_t)( lba        & 0xFF));
-    outb(IDE_LBA_MID,     (uint8_t)((lba >>  8) & 0xFF));
-    outb(IDE_LBA_HIGH,    (uint8_t)((lba >> 16) & 0xFF));
-    outb(IDE_DRIVE_HEAD,  0xE0 | (uint8_t)((lba >> 24) & 0x0F));
-    outb(IDE_COMMAND,     IDE_CMD_READ);
-
-    // wait until data is ready (DRQ set)
-    if (!ide_wait_drq()) {
-        uart_print("ide_read_bootsector: DRQ timeout\n");
-        return false;
-    }
-
-    // copy 512 bytes from CF-card to 0x7C00 in RAM
-    // IDE_DATA (0x1F0) delivers at 8-Bit access always Low-Byte
-    uint8_t* bootsector = (uint8_t*)0x7C00;
-    for (uint16_t i = 0; i < 512; i++) {
-        bootsector[i] = inb(IDE_DATA);
-    }
-
-    return true;
+uint8_t ide_read_bootsector() {
+   uint32_t lba = 0;
+   return ide_read_sector(lba, 0x7C00, 0x0000);
 }
 
-bool ide_read_sector(uint32_t lba, uint8_t* buffer) {
+uint8_t ide_read_sector(uint32_t lba, uint16_t dest_seg, uint16_t offset) {
     // wait until drive is ready
     if (!ide_wait_ready()) {
         uart_print("ide_read_sector: Drive not ready\n");
-        return false;
+        return 0xAA;
     }
 
     // LBA-Address and send command
@@ -380,32 +353,14 @@ bool ide_read_sector(uint32_t lba, uint8_t* buffer) {
     // wait until data is ready (DRQ set)
     if (!ide_wait_drq()) {
         uart_print("ide_read_sector: DRQ timeout\n");
-        return false;
+        return 0xBB;
     }
 
-    // 256 Words = read 512 bytes
-    // we have 8-Bit Bus -> each Word as two Bytes read
-    // IDE_DATA (0x1F0) delivers at 8-Bit access always Low-Byte
+    // read 512 bytes and IDE_DATA (0x1F0) delivers at 8-Bit access always Low-Byte
     for (uint16_t i = 0; i < 512; i++) {
-        buffer[i] = inb(IDE_DATA);
+        uint8_t data = inb(IDE_DATA);
+        writeFarByte(dest_seg, offset + i, data);
     }
 
-    return true;
-}
-
-// reads a single byte from the bootsector at the given offset (0-511)
-uint8_t read_bootsector_byte(uint16_t offset) {
-    // buffer in RAM for the whole sector
-    // this is within the BSS-Segment at 0x0500+
-    static uint8_t sector_buffer[512];
-
-    if (offset >= 512) {
-        return 0xFF;    // Invalid offset
-    }
-
-    if (!ide_read_sector(0, sector_buffer)) {
-        return 0xFF;    // Read error
-    }
-
-    return sector_buffer[offset];
+    return 0x00; // no error
 }

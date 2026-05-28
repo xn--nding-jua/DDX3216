@@ -70,14 +70,14 @@
 #define IDE_CMD_WRITE   0x30    // Write Sectors with Retry
 #define IDE_CMD_IDENT   0xEC    // Identify Drive
 
-// CF-Karte 512MB Geometrie
-// CHS für BIOS-Kompatibilität (DOS-Limit: 1024/16/63)
+// CF-Card geometry with 512MB (TODO: read this dynamically on PCMCIA-init)
+// CHS for BIOS-compatibility (DOS-Limit: 1024/16/63)
 #define CF_CYLINDERS    1024
 #define CF_HEADS        16
 #define CF_SECTORS      63
 #define CF_TOTAL_SECTS  ((uint32_t)CF_CYLINDERS * CF_HEADS * CF_SECTORS)
 
-// LBA-Berechnung aus CHS
+// LBA-calculation based on CHS
 // LBA = (C × H_max + H) × S_max + (S - 1)
 #define CHS_TO_LBA(c, h, s) \
     (((uint32_t)(c) * CF_HEADS + (h)) * CF_SECTORS + ((s) - 1))
@@ -86,7 +86,8 @@ void mms_init();
 bool pcmcia_init();
 bool ide_wait_ready();
 bool ide_wait_drq(void);
-bool ide_read_bootsector();
+uint8_t ide_read_bootsector();
+uint8_t ide_read_sector(uint32_t lba, uint16_t dest_seg, uint16_t offset);
 
 struct __attribute__((packed)) disk_param_table {
     uint16_t cylinders;
@@ -103,6 +104,27 @@ static const struct disk_param_table hd0_params = {
     .heads           = CF_HEADS,
     .sectors_per_track = CF_SECTORS,
     .drive_type      = 0x00,
+};
+
+struct __attribute__((packed)) disk_address_packet {
+    uint8_t  size;          // +0x00: Strukturgröße (0x10)
+    uint8_t  reserved;      // +0x01: immer 0x00
+    uint16_t sector_count;  // +0x02: Anzahl Sektoren
+    uint16_t dest_offset;   // +0x04: Ziel-Offset
+    uint16_t dest_segment;  // +0x06: Ziel-Segment
+    uint32_t lba_low;       // +0x08: LBA Bits 31:0
+    uint32_t lba_high;      // +0x0C: LBA Bits 63:32 (bei uns immer 0)
+};
+
+struct __attribute__((packed)) drive_params_ext {
+    uint16_t size;            // +0x00: Strukturgröße (0x1A)
+    uint16_t flags;           // +0x02: Info-Flags
+    uint32_t cylinders;       // +0x04: Anzahl Zylinder
+    uint32_t heads;           // +0x08: Anzahl Köpfe
+    uint32_t sectors;         // +0x0C: Sektoren pro Track
+    uint32_t total_low;       // +0x10: Gesamtsektoren (Low)
+    uint32_t total_high;      // +0x14: Gesamtsektoren (High)
+    uint16_t bytes_per_sect;  // +0x18: Bytes pro Sektor
 };
 
 #endif
