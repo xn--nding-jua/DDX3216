@@ -332,10 +332,60 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
                 // moving offset within ES (BX + s * 512)
                 uint16_t cur_offset  = dest_bx + ((uint16_t)s * 512);
 
+                uint16_t cur_seg     = dest_es;
+/*
                 error = ide_read_sector(cur_lba, dest_es, cur_offset);
                 if (error != 0x00) {
                     break;
                 }
+*/
+
+                        // =================== FOR DEBUGGING: not using the stack seems to allow more sectors to be read =====================
+                        // wait until drive is ready
+                        //ide_wait_ready();
+                                    inb(IDE_ALT_STATUS);
+                                    inb(IDE_ALT_STATUS);
+                                    inb(IDE_ALT_STATUS);
+                                    inb(IDE_ALT_STATUS);
+                                    for (uint32_t timeout = 10000; timeout > 0; timeout--) {
+                                    uint8_t status = inb(IDE_ALT_STATUS);
+                                    if (!(status & IDE_SR_BSY) && (status & IDE_SR_DRDY)) {
+                                        break; // ready
+                                    }
+                                    // small delay between polls
+                                    for (volatile uint32_t d = 0; d < 10; d++);
+                                }
+
+                        // LBA-Address and send command
+                        outb(IDE_SECT_COUNT,  1);
+                        outb(IDE_LBA_LOW,     (uint8_t)( cur_lba        & 0xFF));
+                        outb(IDE_LBA_MID,     (uint8_t)((cur_lba >>  8) & 0xFF));
+                        outb(IDE_LBA_HIGH,    (uint8_t)((cur_lba >> 16) & 0xFF));
+                        outb(IDE_DRIVE_HEAD,  0xE0 | (uint8_t)((cur_lba >> 24) & 0x0F));
+                        outb(IDE_COMMAND,     IDE_CMD_READ);
+
+                        // wait until data is ready (DRQ set)
+                        //ide_wait_drq();
+                                for (uint32_t timeout = 1000000; timeout > 0; timeout--) {
+                                    if (inb(IDE_ALT_STATUS) & IDE_SR_DRQ) {
+                                        break;
+                                    }
+                                }
+
+                        // read 512 bytes and IDE_DATA (0x1F0) delivers at 8-Bit access always Low-Byte
+                        for (uint16_t i = 0; i < 512; i++) {
+                            //uint8_t data = inb(IDE_DATA);
+                            //writeFarByte(dest_es, cur_offset + i, data);
+                            __asm__ __volatile__(
+                                "movw %w0, %%fs\n\t"       
+                                "movb %b2, %%fs:(%w1)\n\t" 
+                                :
+                                : "r"(dest_es), "b"(cur_offset + i), "r"(inb(IDE_DATA))
+                                : "memory"
+                            );
+                        }
+                        // =================== FOR DEBUGGING =====================
+
                 sectors_done++;
             }
 
@@ -397,7 +447,7 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
             regs->flags &= ~0x0001;
             break;
 
-        case 0x41: // Extensions Present (we do not use this as we emulate CHS)
+        case 0x41: // Extensions Present
             //regs->ax = 0x0100;     // AH = 01h (Invalid function)
             //regs->flags |= 0x0001; // Carry Set = not supported
 
@@ -576,7 +626,8 @@ __attribute__((externally_visible, regparm(1))) void c_int15_handler(struct inte
     uart_putc('1');
     uart_putc('5');
 
-    regs->flags &= ~0x0001; // clear carray-flag on success
+    regs->ax = 0x8600;
+    regs->flags |= 0x0001;
     
 /*
     uint16_t current_sp;
@@ -690,6 +741,7 @@ __attribute__((externally_visible, regparm(1))) void c_int17_handler(struct inte
     regs->flags &= ~0x0001; // clear carray-flag on success
 }
 
+// boot-process
 __attribute__((externally_visible, regparm(1))) void c_int19_handler(struct interrupt_registers *regs) {
     uart_putc('I');
     uart_putc('1');
@@ -784,7 +836,7 @@ __attribute__((externally_visible, regparm(1))) void c_int1a_handler(struct inte
 */
 }
 
-// software-interrupt
+// periodic interrupt
 __attribute__((externally_visible, regparm(1))) void c_int1c_handler(struct interrupt_registers *regs) {
     uart_putc('I');
     uart_putc('1');

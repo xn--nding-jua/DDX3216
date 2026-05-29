@@ -41,6 +41,7 @@
 
 #define MMS_MEMORY_WAIT_STATE_CTRL2 0x50
 #define IO_WAIT_STATE_CTRL          0x61
+#define MMS_MEMORY_WAIT_STATE1      0x62
 
 // IDE Register-Adressen
 #define IDE_DATA        0x1F0   // Data Register (16-Bit)

@@ -7,7 +7,7 @@
 	in, out will control IOR# and IOW#
 */
 
-__asm__(".code16gcc\n"); // we are using -m16 compiler-switch so this line is redundant
+__asm__(".code16gcc\n"); // we are using -m16 compiler-switch so this line is redundant but keeping is safe
 
 #include "bios.h"
 
@@ -17,12 +17,6 @@ __asm__(".code16gcc\n"); // we are using -m16 compiler-switch so this line is re
 
 void setup_ivt() {
     volatile struct ivt_entry* ivt = (volatile struct ivt_entry*)0x0000;
-    // set DS to segment 0x0000 temporarily to write to IVT with absolute addresses
-    __asm__ __volatile__(
-        "pushw %ds\n\t"
-        "xorw %ax, %ax\n\t"
-        "movw %ax, %ds\n\t"
-    );
 
     // dummy_callbacks for all interrupts
     for (uint16_t i = 0; i < 256; i++) {
@@ -48,23 +42,11 @@ void setup_ivt() {
     ivt[0x1a].offset = (uint16_t)(uintptr_t)isr_int1a;
     ivt[0x1c].offset = (uint16_t)(uintptr_t)isr_int1c;
     ivt[0x41].offset = (uint16_t)(uintptr_t)&hd0_params; // direct to disk-parameters in ROM for INT 41h
-
-    // reset DS to original value
-    __asm__ __volatile__(
-        "popw %ds\n\t"
-    );
 }
 
 void setup_bda() {
     // BDA is within our STACK_SEG so we can access it with 16-bit pointers directly
-
     volatile struct bios_data_area* bda = (volatile struct bios_data_area*)0x0400;
-    // set DS to segment 0x0000 temporarily to write to BDA with absolute addresses
-    __asm__ __volatile__(
-        "pushw %ds\n\t"
-        "xorw %ax, %ax\n\t"
-        "movw %ax, %ds\n\t"
-    );
  
     bda->com_ports[0] = UART_BASE; // COM1 = 0x1000 = external UART at I/O Port 0x1000
     bda->com_ports[1] = 0x0000; // COM2 = not available
@@ -80,7 +62,7 @@ void setup_bda() {
 	// set Equipment Word within BDA to tell DOS that we have an UART and a CGA-graphic
 	//                                     FEDCBA9876543210
     bda->equipment_word = 0b0000001000010000; // 1 COM-port / CGA-graphics
-    bda->base_memory_kb = 640; // base memory size in kB (standard: 640 kB)
+    bda->base_memory_kb = BIOS_CONVENTIONAL_KB; // base memory size in kB (standard: 640 kB, but we reserve 5kB for our BIOS-Stack)
     bda->kbd_status_flags1 = 0x00; // Keyboard-Status-Flags (e.g. Numlock/Capslock active, etc.)
     bda->kbd_status_flags2 = 0x00; // Keyboard-Status-Flags (e.g. Numlock/Capslock active, etc.)
 
@@ -97,11 +79,6 @@ void setup_bda() {
     bda->video_rows = (LCD_HEIGHT / 8) - 1; //  number of rows - 1
     bda->character_points = 8; // bytes per character (font height)
     bda->ext_memory_kb = 1024; // extended memory size in kB above 1MB (for INT15h)
-
-    // reset DS to original value
-    __asm__ __volatile__(
-        "popw %ds\n\t"
-    );
 }
 
 // in 16-bit RealMode we can only access RAM below 1MB
@@ -182,19 +159,8 @@ void kbd_init() {
     write_sc300_cfg(0xAD, pmu3 | SC300_XTKBDEN);
 
     // initialize keyboard-buffer
-    // set DS to segment 0x0000 temporarily to write to IVT with absolute addresses
-    __asm__ __volatile__(
-        "pushw %ds\n\t"
-        "xorw %ax, %ax\n\t"
-        "movw %ax, %ds\n\t"
-    );
     *BDA_KBD_HEAD = BDA_KBD_BUF_START;
     *BDA_KBD_TAIL = BDA_KBD_BUF_START;
-
-    // reset DS to original value
-    __asm__ __volatile__(
-        "popw %ds\n\t"
-    );
 
     // clear keyboard-register and IRQ
     uint8_t ctrl = inb(KBD_CTRL_PORT);
@@ -378,10 +344,13 @@ __attribute__((noreturn)) void bios_main() {
 
     lcd_init();
     lcd_clear();
-	lcd_print_string(0, 0, "AMD Elan SC300 BIOS v0.01", 0x07);
+	lcd_print_string(0, 0, "AMD Elan SC300 BIOS v0.01   . ", 0x07);
+    uint8_t version = read_sc300_cfg(0x64);
+    lcd_putc_pos(0, 27, 'A' + (version & 0b00000111) - 1, 0x07);
+    lcd_putc_pos(0, 29, '0' + ((version & 0b01111000) >> 3), 0x07);
 
-    //lcd_print_string(1, 0, "RAM-Test...", 0x07);
-	//ram_test_and_setup(); // this function halts the CPU on any RAM-error
+    lcd_print_string(1, 0, "RAM-Test...", 0x07);
+	ram_test_and_setup(); // this function halts the CPU on any RAM-error
 
     lcd_print_string(2, 0, "Init PIC and IVT...", 0x07);
     pic_init();

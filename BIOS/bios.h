@@ -21,6 +21,13 @@
 #include "helper.h"
 #include "keyboard.h"
 
+#define BIOS_RESERVED_KB        8
+#define BIOS_CONVENTIONAL_KB    (640 - BIOS_RESERVED_KB)
+
+#define BIOS_RT_SEG             0x9E00
+#define BIOS_RT_SIZE            0x2000   // 8 KiB
+#define BIOS_RT_STACK_TOP       0x2000   // Stackoberkante physisch 0xA0000
+
 #define LCD_BPP                 1      // bits per pixel (1 for text mode, 4 for graphics mode)
 #define LCD_WIDTH               240    // real LCD resolution of the DDX3216
 #define LCD_HEIGHT              64     // real vertical resolution of the LCD panel

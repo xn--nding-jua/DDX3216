@@ -11,20 +11,20 @@
 // **********************************************************
 
 /*
-CF-Karte verhält sich wie eine IDE-Festplatte:
+CF-Karte acts like an IDE harddisk-drive
 ┌─────────────────────────────────────────────────────┐
-│  CF-Karte 512MB - BIOS-Geometrie                    │
+│  CF-Card with 512MB BIOS-Geometry                   │
 ├─────────────────┬───────────────────────────────────┤
-│  Zylinder       │  1024        (BIOS-Maximum)       │
-│  Köpfe          │  16                               │
-│  Sektoren/Track │  63                               │
-│  Sektorgröße    │  512 Bytes                        │
+│  Cylinders      │  1024        (BIOS-Maximum)       │
+│  Headers        │  16                               │
+│  Sectors/Track  │  63                               │
+│  Sector-Size    │  512 Bytes                        │
 ├─────────────────┼───────────────────────────────────┤
-│  Gesamt Sektoren│  1.032.192                        │
-│  Nutzbare Kap.  │  ~504 MB (ausreichend für 512MB)  │
+│  Total Sectors  │  1.032.192                        │
+│  Usable capac.  │  ~504 MB (enoug for 512MB)        │
 ├─────────────────┼───────────────────────────────────┤
-│  LBA-Adressier. │  Ja (empfohlen, intern genutzt)   │
-│  INT 13h Zugriff│  CHS → LBA Konvertierung          │
+│  LBA-Adressing  │  Yes                              │
+│  INT 13h Access │  CHS -> LBA Conversion            │
 └─────────────────┴───────────────────────────────────┘
 */
 
@@ -182,19 +182,11 @@ bool pcmcia_init() {
     write_sc300_cfg(PCMCIA_CARD_IRQ_REDIRECT,   0b0000111); // enable REGA# and MCELA# on I/O access
 
     // configure wait-states
-    //uint8_t ws2 = read_sc300_cfg(MMS_MEMORY_WAIT_STATE_CTRL2);
-    //ws2 |= (1 << 5);    // CARDWSEN = 1
-    //ws2 |= (1 << 4);    // CARDWS1  = 1
-    //ws2 |= (1 << 3);    // CARDWS0  = 1
-    //write_sc300_cfg(MMS_MEMORY_WAIT_STATE_CTRL2, ws2);
-    write_sc300_cfg(MMS_MEMORY_WAIT_STATE_CTRL2, 0b00100000); // set to 4 waitstates
+    write_sc300_cfg(MMS_MEMORY_WAIT_STATE_CTRL2, 0x00); // default, 1 SYSCLK or controlled by MMS_MEMORY_WAIT_STATE1
+    write_sc300_cfg(MMS_MEMORY_WAIT_STATE1, 0b00000011); // 2 SYSCLK-Waitstates for 8-BIT IO Access
 
     // configure I/O wait-states
-    //uint8_t iows = read_sc300_cfg(IO_WAIT_STATE_CTRL);
-    //iows |=  (1 << 3);  // HDWS1 = 1
-    //iows |=  (1 << 2);  // HDWS0 = 1
-    //write_sc300_cfg(IO_WAIT_STATE_CTRL, iows);
-    write_sc300_cfg(IO_WAIT_STATE_CTRL, 0b00000000); // keep default waitstates (5 waitstates)
+    write_sc300_cfg(IO_WAIT_STATE_CTRL, 0b01111100); // 2 SYSCLK WaitStates for HDD and IO, select HighSpeed mode
 
     // check if card is present (see page 5-68 in programming reference manual)
     //uart_print("Socket A-Status:");

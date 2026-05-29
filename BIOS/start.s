@@ -17,9 +17,10 @@
 // 0x07C00 - 0x07DFF | 512 bytes  | OS Boot-Sector                          |
 // 0x07E00 - 0x7FFFF | 32kB       | Conventional memory (free RAM)          /
 // --------------------------------------------------------------------------
-// 0x80000 - 0x9FFFF | 128 kB     | EBDA (Extended BIOS Data Area)
+// 0x80000 - 0x9BFFF | 124 kB     | EBDA (Extended BIOS Data Area)
+// 0x9F000 - 0x9FFFF | 4 kB       | Reserved for BIOS (INT13-Stack, etc.)    <- here is a special STACK just for INT13-calls (harddisk-access)
 // -- high memory -----------------------------------------------------------
-// 0xA0000 - 0xAFFFF | 64 kB      | optional BIOS
+// 0xA0000 - 0xAFFFF | 64 kB      | Video-RAM for graphics
 // 0xB0000 - 0xB7FFF | 32 kB      | External Video-SRAM in HGA-Mode
 // 0xB8000 - 0xBFFFF | 32 kB      | External Video-SRAM in CGA-Mode (default)
 // 0xC0000 - 0xC7FFF | 32 kB      | Video BIOS
@@ -51,24 +52,6 @@
 .intel_syntax noprefix
 .code16
 
-.extern __bss_start
-.extern __bss_end
-.extern bios_main            
-.extern c_int08_handler
-.extern c_int09_handler
-.extern c_int10_handler
-.extern c_int11_handler
-.extern c_int12_handler
-.extern c_int13_handler
-.extern c_int14_handler
-.extern c_int15_handler
-.extern c_int16_handler
-.extern c_int19_handler
-.extern c_int0c_handler
-.extern c_int1a_handler
-.extern c_int1c_handler
-.extern c_int_dummy_handler
-
 // segment-addresses
 .equ ROM_SEG,     0xF000
 .equ STACK_SEG,   0x0000
@@ -89,7 +72,7 @@ reset_vector:
     nop                         // no-operation
     cli                         // disable interrupts
     jmp start                   // jump to beginning of the current segment (ROM_SEG)
-	//jmp ROM_SEG:start          // far-jump to the beginning of the ROM-segment
+
     // Padding to the end and add date
     .zero (0x10 - (. - reset_vector) - 8)
     .ascii "05/24/26"
@@ -313,12 +296,12 @@ skip_bss:
 
 start_c_code:
     // call the main-c-function of the BIOS
-    jmp     bios_main           // defined in main.c
+    jmp     bios_main           // defined in bios.c
 
     // we should never come back to here
 
 halt:
-    hlt                         // CPU anhalten
+    hlt                         // halt CPU
     jmp     halt
 
 
@@ -326,8 +309,6 @@ halt:
 // GNU-Assembler Macro for ISR-Entries
 // ========================================================
 .macro ISR_HW_ENTRY cfunc
-//    cli
-//    cld
     // store all 16-bit registers
     push ax
     push bx
@@ -369,14 +350,10 @@ halt:
     pop bx
     pop ax
 
-//    sti
     iret
 .endm
 
 .macro ISR_SW_ENTRY cfunc
-//    cli
-//    cld
-
     // store all 16-bit registers
     push ax
     push bx
@@ -413,7 +390,6 @@ halt:
     pop bx
     pop ax
 
-//    sti
     iret
 .endm
 
@@ -478,8 +454,8 @@ isr_int11:
 isr_int12:
     ISR_SW_ENTRY c_int12_handler
 
-isr_int13:
-    ISR_SW_ENTRY c_int13_handler
+//isr_int13:
+//    ISR_SW_ENTRY c_int13_handler
 
 isr_int14:
     ISR_SW_ENTRY c_int14_handler
@@ -504,3 +480,138 @@ isr_int1c:
 
 isr_int_dummy:
     ISR_SW_ENTRY c_int_dummy_handler
+
+
+
+.equ BIOS_INT13_STACK_SEG,  0x9E00 // Stack starts at 636kB
+.equ BIOS_INT13_STACK_TOP,  0x2000 // Stack is 0x1000 = 4096 Bytes in size
+
+.equ BIOS13_SAVE_OLD_SP,    0x0000
+.equ BIOS13_SAVE_OLD_SS,    0x0002
+.equ BIOS13_SAVE_FRAME_SP,  0x0004
+.equ BIOS13_SAVE_OLD_FS,    0x0006
+.equ BIOS13_SAVE_OLD_GS,    0x0008
+
+.equ INT_FRAME_SIZE,        24
+.equ INT_FRAME_WORDS,       12
+isr_int13:
+    cli
+
+    push ax
+    push fs
+
+    // store FS and GS. For this we will use the called-stack for a moment
+    mov ax, BIOS_INT13_STACK_SEG
+    mov fs, ax
+
+    pop ax // AX contains old FS
+    mov WORD PTR fs:[BIOS13_SAVE_OLD_FS], ax
+
+    mov ax, gs
+    mov WORD PTR fs:[BIOS13_SAVE_OLD_GS], ax
+
+    pop ax // restore original AX
+
+    // store registers to caller-stack in the common frame-layout
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+    push di
+    push bp
+    push es
+    push ds
+
+    // save old stack (SP directs on begin of new caller-stack)
+    mov ax, ss
+    mov WORD PTR fs:[BIOS13_SAVE_OLD_SS], ax
+
+    mov ax, sp
+    mov WORD PTR fs:[BIOS13_SAVE_OLD_SP], ax
+
+    // switch to our own BIOS-stack
+    mov ax, BIOS_INT13_STACK_SEG
+    mov ss, ax
+    mov sp, BIOS_INT13_STACK_TOP
+
+    // set DS and ES to new Stack-Segment as our register-frame will be there
+    // otherwise near-pointer wouln't work anymore
+    mov ds, ax
+    mov es, ax
+
+    // reserve space for register-frame on the BIOS-stack
+    sub sp, INT_FRAME_SIZE
+    mov di, sp
+    mov WORD PTR fs:[BIOS13_SAVE_FRAME_SP], di
+
+    // copy register-frame from old caller to BIOS-stack
+    mov ax, WORD PTR fs:[BIOS13_SAVE_OLD_SS]
+    mov gs, ax
+
+    mov si, WORD PTR fs:[BIOS13_SAVE_OLD_SP]
+    mov cx, INT_FRAME_WORDS
+
+.copy_frame_to_bios_stack:
+    mov ax, WORD PTR gs:[si]
+    mov WORD PTR [di], ax
+    add si, 2
+    add di, 2
+    loop .copy_frame_to_bios_stack
+
+    // call C-handler. regparm(1) is the first parameter in EAX within DS = BIOS_INT13_STACK_SEG
+    xor eax, eax
+    mov ax, WORD PTR fs:[BIOS13_SAVE_FRAME_SP]
+
+    cld
+    call c_int13_handler
+
+    // C-Code could have changed DS, ES or FS, so reset these registers
+    mov ax, BIOS_INT13_STACK_SEG
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+
+    // restore framepointer
+    mov sp, WORD PTR fs:[BIOS13_SAVE_FRAME_SP]
+
+    // copy altered frame back to caller-stack. AX, flags, etc. will be on right spot then
+    mov ax, WORD PTR fs:[BIOS13_SAVE_OLD_SS]
+    mov gs, ax
+
+    mov si, sp
+    mov di, WORD PTR fs:[BIOS13_SAVE_OLD_SP]
+    mov cx, INT_FRAME_WORDS
+
+.copy_frame_back_to_caller_stack:
+    mov ax, WORD PTR [si]
+    mov WORD PTR gs:[di], ax
+    add si, 2
+    add di, 2
+    loop .copy_frame_back_to_caller_stack
+
+    mov ax, WORD PTR fs:[BIOS13_SAVE_OLD_SS]
+    mov bx, WORD PTR fs:[BIOS13_SAVE_OLD_SP]
+    mov cx, WORD PTR fs:[BIOS13_SAVE_OLD_GS]
+    mov dx, WORD PTR fs:[BIOS13_SAVE_OLD_FS]
+
+    mov gs, cx
+    mov fs, dx
+
+    // switch back to original (caller) stack
+    cli
+    mov ss, ax
+    mov sp, bx
+
+    // restore registers
+    pop ds
+    pop es
+    pop bp
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+
+    iret

@@ -200,4 +200,23 @@ static inline void delay_1ms(void) {
     }
 }
 
+static inline void change_ds(uint16_t segment) {
+    // set DS to segment 0x0000 temporarily to write to IVT with absolute addresses
+    __asm__ __volatile__(
+        "pushw %ds\n\t"
+        "movw %0, %ax\n\t"
+        "movw %ax, %ds\n\t"
+        :
+        : "r"(segment)
+        : "memory"
+    );
+}
+
+static inline void restore_ds() {
+    // reset DS to original value
+    __asm__ __volatile__(
+        "popw %ds\n\t"
+    );
+}
+
 #endif
