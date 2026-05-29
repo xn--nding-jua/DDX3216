@@ -45,14 +45,7 @@
 // 1. Reset-Vector is called at end of 4GB Address-range at 0xFFFFFFF0 (ROM is displayed here during "Un"real mode)
 // 2. Far-Jump to address 0x000F0000 in ROM_SEG at 0xF000 (DS is set to ROM_SEG = 0xF000)
 // 3. CPU is now in "real" 16-bit RealMode
-// 4. After Startup, data (const, text, tables, etc.) is copied from ROM_SEG (0xF000) to STACK_SEG (0x0000) at Offset (0x0500)
-// 5. DataSegment DS is set to 0x0000, CodeSegment CS is kept at 0xF000
-// 6. C-Code and ISRs are still called from ROM_SEG but data is in 0x0500
-// 
-//
-// Within the C-Code the "Un"real-Mode is used to access the RAM via 32-bit accesses
-// we are using only FS/GS for the flat-access so that DS/SS is staying in 64kB-segment-mode
-// as DOS-programs seems to use Segment-Wrap-Around-techniques
+// 4. DataSegment DS is set to 0x0000, CodeSegment CS is kept at 0xF000 but C-Code and ISRs are still called from ROM_SEG
 //
 
 .intel_syntax noprefix
@@ -335,7 +328,6 @@ halt:
 .macro ISR_HW_ENTRY cfunc
 //    cli
 //    cld
-
     // store all 16-bit registers
     push ax
     push bx
@@ -437,7 +429,7 @@ launch_bootsector:
     mov ds, ax
     mov es, ax
     mov ss, ax                  // Optional: Stack-Segment to 0x0000
-    mov sp, 0x7C00              // stack-pointer below boot-sector
+    mov sp, STACK_TOP           // stack-pointer below boot-sector
 
     // write the boot-drive to DL
     mov dl, 0x80
@@ -459,6 +451,7 @@ launch_bootsector:
 .global isr_int14
 .global isr_int15
 .global isr_int16
+.global isr_int17
 .global isr_int19
 .global isr_int0c
 .global isr_int1a
@@ -496,6 +489,9 @@ isr_int15:
 
 isr_int16:
     ISR_SW_ENTRY c_int16_handler
+
+isr_int17:
+    ISR_SW_ENTRY c_int17_handler
 
 isr_int19:
     ISR_SW_ENTRY c_int19_handler

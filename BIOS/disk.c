@@ -332,7 +332,7 @@ void pcmcia_set_waitstates_slow() {
 
 uint8_t ide_read_bootsector() {
    uint32_t lba = 0;
-   return ide_read_sector(lba, 0x7C00, 0x0000);
+   return ide_read_sector(lba, BASE_SEG, 0x7C00);
 }
 
 uint8_t ide_read_sector(uint32_t lba, uint16_t dest_seg, uint16_t offset) {
@@ -362,5 +362,22 @@ uint8_t ide_read_sector(uint32_t lba, uint16_t dest_seg, uint16_t offset) {
         writeFarByte(dest_seg, offset + i, data);
     }
 
+    /*
+    __asm__ __volatile__ (
+        "pushw %%es\n\t"
+        "movw  %0, %%es\n\t"        // ES = dest_seg (einmalig!)
+        "movw  %1, %%di\n\t"        // DI = offset
+        "movw  $512, %%cx\n\t"      // Zähler: 512 Bytes
+        "movw  %2, %%dx\n\t"        // DX = IDE_DATA Port (0x1F0)
+    "1:\n\t"
+        "inb   %%dx, %%al\n\t"      // 1 Byte lesen
+        "stosb\n\t"                 // ES:[DI]++ = AL
+        "loop  1b\n\t"              // CX--; wenn != 0 -> Sprung
+        "popw  %%es\n\t"
+        :
+        : "r"(dest_seg), "r"(offset), "i"(IDE_DATA)
+        : "ax", "cx", "dx", "di", "memory"
+    );
+    */
     return 0x00; // no error
 }

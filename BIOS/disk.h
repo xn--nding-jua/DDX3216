@@ -79,8 +79,11 @@
 
 // LBA-calculation based on CHS
 // LBA = (C × H_max + H) × S_max + (S - 1)
+//#define CHS_TO_LBA(c, h, s) (((uint32_t)(c) * CF_HEADS + (h)) * CF_SECTORS + ((s) - 1))
 #define CHS_TO_LBA(c, h, s) \
-    (((uint32_t)(c) * CF_HEADS + (h)) * CF_SECTORS + ((s) - 1))
+    ((uint32_t)(c) * CF_HEADS * CF_SECTORS + \
+     (uint32_t)(h) * CF_SECTORS + \
+     (uint32_t)((s) - 1))
 
 void mms_init();
 bool pcmcia_init();

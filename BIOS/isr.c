@@ -19,7 +19,7 @@ void pirq_init() {
 }
 
 __attribute__((externally_visible, regparm(1))) void c_int08_handler(struct interrupt_registers *regs) {
-    //uart_putc('T');
+    uart_putc('T');
     //lcd_putc('T', 0x07);
 
     // increment BIOS-Timer-Counter in BDA
@@ -296,19 +296,34 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
             for (volatile uint16_t i = 0; i < 10000; i++);
             outb(IDE_DEV_CTRL, 0x02);
             ide_wait_ready();
-            regs->ax = 0x0000; // AH=00h (Success)
+            regs->ax = 0x0000; // Return-Code = Success
             break;
         
         case 0x02: { // Read Sectors
             uint8_t  sectors_to_read = al;
-            uint8_t  sector          = cl & 0x3F;
-            uint16_t cylinder        = ((uint16_t)(cl & 0xC0) << 2) | ch;
+            uint8_t  sector          = cl & 0b00111111;
+            uint16_t cylinder        = ((uint16_t)(cl & 0b11000000) << 2) | ch;
             uint8_t  head            = dh;
-            uint16_t dest_bx         = regs->bx;
-            uint16_t dest_es         = regs->es;
+            uint16_t dest_bx         = regs->bx; // offset within ES
+            uint16_t dest_es         = regs->es; // segment of destination buffer
             uint8_t  sectors_done    = 0;
             uint8_t  error           = 0;
             uint32_t lba             = CHS_TO_LBA(cylinder, head, sector);
+
+            uart_putc('B');
+            uart_putc('X');
+            uart_putc(dest_bx >> 8);
+            uart_putc(dest_bx & 0xFF);
+            uart_putc('E');
+            uart_putc('S');
+            uart_putc(dest_es >> 8);
+            uart_putc(dest_es & 0xFF);
+            uart_putc('S');
+            uart_putc('P');
+            uint16_t aktueller_sp;
+            __asm__ __volatile__("movw %%sp, %0" : "=r"(aktueller_sp));
+            uart_putc(aktueller_sp >> 8);
+            uart_putc(aktueller_sp & 0xFF);
 
             // loop for all requested sectors
             for (uint8_t s = 0; s < sectors_to_read; s++) {
@@ -341,7 +356,7 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
             // what kind of drive is requested?
             if (dl >= 0x80) {
                 // harddisk / CF-Card
-                uint8_t  max_heads   = CF_HEADS - 1;     
+                uint8_t  max_heads   = CF_HEADS - 1;
                 uint8_t  max_sectors = CF_SECTORS;       
                 uint16_t max_cyls    = CF_CYLINDERS - 1; 
 
@@ -349,16 +364,15 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
                 // Bits 15-8 : Bits 7-0 of cylinders
                 // Bits 7-6  : Bits 9-8 of cylinders
                 // Bits 5-0  : sectors per track
-                uint8_t cl_val = (max_sectors & 0x3F) |
-                                (uint8_t)((max_cyls >> 2) & 0xC0);
-                uint8_t ch_val = (uint8_t)(max_cyls & 0xFF);
+                uint8_t cl_val = (uint8_t)((max_cyls >> 2) & 0b11000000) | (uint8_t)(max_sectors & 0b00111111);
+                uint8_t ch_val = (uint8_t)(max_cyls & 0xFF); // low(!) eight bits of cylinder-number
                 
-                regs->ax = 0x0000; // Success
-                regs->bx = 0x0003; // Drive type (01h = Floppy, 03h = HDD)
-                regs->cx = ((uint16_t)ch_val << 8) | cl_val;
-                regs->dx =  ((uint16_t)max_heads << 8) | 0x01; // DL=1: an HDD
+                regs->ax = 0x0000; // Return-Code = Success
+                regs->bx = 0x0000; // Drive type (AT/PS2 floppies only)
+                regs->cx = ((uint16_t)ch_val << 8) | cl_val; // 15..6 = logical last index of cylinders = number of cylinders - 1 / 5..0 logical last index of sectors per track = number of sectors (starts at 1!)
+                regs->dx =  ((uint16_t)max_heads << 8) | 0x01; // DL = number of hard-disk-drives / DH = logical last index of heads = numer of heads - 1
 
-                // set ES and DI to zero
+                // set ES and DI to zero (pointer to drive parameter table, but only for floppies)
                 regs->es = 0x0000;
                 regs->di = 0x0000;
 
@@ -371,6 +385,7 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
                 regs->dx = 0x0000;      // <--- Sagt dem MBR: 0 Diskettenlaufwerke installiert!
                 regs->flags |= 0x0001;  // Set Carry Flag = Fehler!
             }
+            break;
         }
 
         case 0x15: // Get Disk Type
@@ -383,10 +398,9 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
             break;
 
         case 0x41: // Extensions Present (we do not use this as we emulate CHS)
-            regs->ax = 0x0100;     // AH = 01h (Invalid function)
-            regs->flags |= 0x0001; // Carry Set = not supported
+            //regs->ax = 0x0100;     // AH = 01h (Invalid function)
+            //regs->flags |= 0x0001; // Carry Set = not supported
 
-            /*
             // TEST: LBA-Support
             // check for magic word 0x55AA
             if (regs->bx != 0x55AA) {
@@ -402,7 +416,6 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
                                        // Bit 1: Removable Drive Support
                                        // Bit 2: EDD (Enhanced Disk Drive)
             regs->flags &= ~0x0001;    // CF=0: Extensions available
-            */
             break;
 
         case 0x42: // Extended Read Sectors
@@ -412,19 +425,19 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
 
             // read DAP bytewise from caller
             struct disk_address_packet dap;
-            uint8_t *dap_ptr = (uint8_t*)&dap;
+            uint8_t* dap_ptr = (uint8_t*)&dap;
             for (uint8_t i = 0; i < sizeof(dap); i++) {
                 dap_ptr[i] = readFarByte(dap_segment, dap_offset + i);
             }
 
             // check the structure
-            if (dap.size < 0x10) {
+            if (dap.size != 0x10) {
                 regs->ax    = (0x01 << 8); // bad data
                 regs->flags |= 0x0001;
                 break;
             }
 
-            // 64-bit LBA: upper 32 Bit must be 0 sein (CF-Card < 4GB)
+            // 64-bit LBA: upper 32 Bit must be 0 (CF-Card < 4GB)
             if (dap.lba_high != 0) {
                 regs->ax    = (0x01 << 8); // LBA out of border
                 regs->flags |= 0x0001;
@@ -450,11 +463,11 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
             }
 
             // update sector-count in DAP
-            writeFarByte(dap_segment, dap_offset + 2, (uint8_t)(sectors_done & 0xFF));
-            writeFarByte(dap_segment, dap_offset + 3, (uint8_t)(sectors_done >> 8));
+            //writeFarByte(dap_segment, dap_offset + 2, (uint8_t)(sectors_done & 0xFF));
+            //writeFarByte(dap_segment, dap_offset + 3, (uint8_t)(sectors_done >> 8));
 
             if (error == 0) {
-                regs->ax    = 0x0000;
+                regs->ax    = 0x0000; // Return-Code = Success
                 regs->flags &= ~0x0001;
             } else {
                 regs->ax    = (error << 8);
@@ -563,6 +576,8 @@ __attribute__((externally_visible, regparm(1))) void c_int15_handler(struct inte
     uart_putc('1');
     uart_putc('5');
 
+    regs->flags &= ~0x0001; // clear carray-flag on success
+    
 /*
     uint16_t current_sp;
     __asm__ __volatile__("movw %%sp, %0" : "=r"(current_sp));
@@ -621,6 +636,9 @@ __attribute__((externally_visible, regparm(1))) void c_int16_handler(struct inte
     uart_putc('1');
     uart_putc('6');
 
+    regs->ax = 0x0100;
+    regs->flags &= ~0x0001; // clear carray-flag on success
+
 /*
     uint8_t ah;
 
@@ -662,6 +680,16 @@ __attribute__((externally_visible, regparm(1))) void c_int16_handler(struct inte
 */
 }
 
+// this interrupt is called by DOS to request next char from ringbuffer
+__attribute__((externally_visible, regparm(1))) void c_int17_handler(struct interrupt_registers *regs) {
+    uart_putc('I');
+    uart_putc('1');
+    uart_putc('7');
+
+    regs->ax = 0x3000; // timeout
+    regs->flags &= ~0x0001; // clear carray-flag on success
+}
+
 __attribute__((externally_visible, regparm(1))) void c_int19_handler(struct interrupt_registers *regs) {
     uart_putc('I');
     uart_putc('1');
@@ -695,6 +723,11 @@ __attribute__((externally_visible, regparm(1))) void c_int1a_handler(struct inte
     uart_putc('I');
     uart_putc('1');
     uart_putc('A');
+
+    regs->ax = 0x0000;
+    regs->cx = 0x0000;
+    regs->dx = 0x0000;
+    regs->flags &= ~0x0001; // clear carray-flag on success
 
 /*
 	uint8_t ah;
@@ -761,7 +794,6 @@ __attribute__((externally_visible, regparm(1))) void c_int1c_handler(struct inte
 }
 
 __attribute__((externally_visible, regparm(1))) void c_int_dummy_handler(struct interrupt_registers *regs) {
-/*
     uart_putc('I');
     uart_putc('?');
     uart_putc('?');
@@ -779,5 +811,9 @@ __attribute__((externally_visible, regparm(1))) void c_int_dummy_handler(struct 
     uart_putc(cl);
     uart_putc(dh);
     uart_putc(dl);
-*/
+
+    //regs->ax = 0x8600; // "Function not supported"
+    //regs->flags |= 0x0001;
+    regs->ax = 0x0000;
+    regs->flags &= ~0x0001; // clear carray-flag on success
 }

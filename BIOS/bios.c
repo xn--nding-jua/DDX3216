@@ -26,7 +26,7 @@ void setup_ivt() {
 
     // dummy_callbacks for all interrupts
     for (uint16_t i = 0; i < 256; i++) {
-        ivt[i].offset = (uint16_t)(uintptr_t)c_int_dummy_handler;
+        ivt[i].offset = (uint16_t)(uintptr_t)isr_int_dummy;
         ivt[i].segment = ROM_SEG; // keep ROM-Segment
     }
 
@@ -42,6 +42,7 @@ void setup_ivt() {
     ivt[0x14].offset = (uint16_t)(uintptr_t)isr_int14;
     ivt[0x15].offset = (uint16_t)(uintptr_t)isr_int15;
     ivt[0x16].offset = (uint16_t)(uintptr_t)isr_int16;
+    ivt[0x17].offset = (uint16_t)(uintptr_t)isr_int17;
     ivt[0x19].offset = (uint16_t)(uintptr_t)isr_int19;
     ivt[0x0c].offset = (uint16_t)(uintptr_t)isr_int0c;
     ivt[0x1a].offset = (uint16_t)(uintptr_t)isr_int1a;
@@ -277,12 +278,20 @@ void wdt_disable() {
 }
 
 void boot_dos() {
+    /*
+    Phase 1: Loading MBR into RAM at 0x7C00 (512 Bytes)
+    Phase 2: MBR reads partitiontable, selects the active partition and load first sector into RAM at 0x7C00
+    IO.SYS must be the first file in Root-directory to be loaded into RAM now
+    Phase 3: First 3 Sectors of IO.SYS are loaded to RAM and system jumps to IO.SYS
+    Phase 4: IO.SYS requests conventional memory via INT12h and loads more sectors to Segment 0x0000:0x0500 and later last segment at end of conv. memory
+    Phase 5: IO.SYS loads MSDOS.SYS (60 - 80 sectors)
+    */
     uint8_t status = 0xFF;
     uint8_t retries = 3;
     
     uart_print("Reading Bootsector...\n");
     while (retries-- > 0) {
-        if (ide_read_bootsector()) {
+        if (ide_read_bootsector() == 0x00) {
             status = 0; // success
             break;
         }

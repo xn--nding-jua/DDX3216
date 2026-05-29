@@ -9,6 +9,11 @@
 
 #include "bios.h"
 
+#define ISR_FLAGS_CF    0x0001 // carry-flag
+#define ISR_FLAGS_PF    0x0004 // parity-flag
+#define ISR_FLAGS_ZF    0x0040 // zero-flag
+#define ISR_FLAGS_SF    0x0080 // sign-flag
+
 extern volatile uint8_t g_kbd_scancode;
 
 struct interrupt_registers {
@@ -47,6 +52,7 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
 __attribute__((externally_visible, regparm(1))) void c_int14_handler(struct interrupt_registers *regs);
 __attribute__((externally_visible, regparm(1))) void c_int15_handler(struct interrupt_registers *regs);
 __attribute__((externally_visible, regparm(1))) void c_int16_handler(struct interrupt_registers *regs);
+__attribute__((externally_visible, regparm(1))) void c_int17_handler(struct interrupt_registers *regs);
 __attribute__((externally_visible, regparm(1))) void c_int19_handler(struct interrupt_registers *regs);
 __attribute__((externally_visible, regparm(1))) void c_int1a_handler(struct interrupt_registers *regs);
 __attribute__((externally_visible, regparm(1))) void c_int1c_handler(struct interrupt_registers *regs);

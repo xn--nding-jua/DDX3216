@@ -94,6 +94,7 @@ static inline uint16_t readRomWord(uint16_t rom_offset) {
 // functions for accessing RAM space in other than the current segment
 // ==========================================================
 static inline void writeFarByte(uint16_t segment, uint16_t offset, uint8_t value) {
+    /*
     __asm__ __volatile__(
         "pushw %%es\n\t"         // store current ES
         "movw %0, %%es\n\t"      // load desired segment into ES register
@@ -103,6 +104,35 @@ static inline void writeFarByte(uint16_t segment, uint16_t offset, uint8_t value
         : "rm"(segment), "b"(offset), "qi"(value) // "b" zwingt GCC zu BX!
         : "memory"
     );
+    */
+    /*
+    __asm__ __volatile__(
+        "movw %0, %%fs\n\t"        // Lade das gewünschte Segment direkt nach FS
+        "movb %2, %%fs:(%1)\n\t"   // Schreibe das Byte mittels FS:[BX]
+        :
+        : "rm"(segment), "b"(offset), "qi"(value)
+        : "memory"
+    );
+    */
+    __asm__ __volatile__(
+        "movw %w0, %%fs\n\t"       
+        "movb %b2, %%fs:(%w1)\n\t" 
+        :
+        : "r"(segment), "b"(offset), "r"(value)
+        : "memory"
+    );
+    /*
+    __asm__ __volatile__(
+        "pushw %%fs\n\t"       // Altes FS sichern
+        "movw %0, %%fs\n\t"    // Segment sauber als 16-Bit laden
+        "movw %1, %%bx\n\t"    // Offset explizit in ein echtes 16-Bit-Basisregister
+        "movb %2, %%fs:(%%bx)\n\t" // Absolut sichere 16-Bit-Adressierung im Real Mode
+        "popw %%fs\n\t"        // FS wiederherstellen
+        :
+        : "ri"(segment), "ri"(offset), "ri"(value)
+        : "bx", "memory"       // "bx" muss in die Clobber-Liste!
+    );
+    */
 }
 
 static inline void writeFarWord(uint16_t segment, uint16_t offset, uint16_t value) {

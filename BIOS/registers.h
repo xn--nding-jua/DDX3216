@@ -4,7 +4,7 @@
 #define ROM_SEG                 0xF000 // external ROM is mapped to this segment (/ROMCS)
 #define VRAM_SEG                0xB800 // external SRAM is mapped to this segment
 #define STACK_SEG               BASE_SEG
-#define STACK_TOP               0x7C00 // stack grows downwards (below boot-sector, first push is on 0x7BFE)
+#define STACK_TOP               0x7C00 // stack grows downwards
 
 // BIOS Data Area (see https://www.lowlevel.eu/wiki/BIOS_Data_Area and https://github.com/sergev/tiltti/blob/main/docs/BIOS_Data_Area.md)
 #define BDA_COM1_BASE			0x0400
