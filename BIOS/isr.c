@@ -18,17 +18,6 @@ void pirq_init() {
     outb(CFG_DATA, 0x04); // Map auf IRQ 4
 }
 
-__attribute__((externally_visible, regparm(1))) void c_int08_handler(struct interrupt_registers *regs) {
-    uart_putc('T');
-    //lcd_putc('T', 0x07);
-
-    // increment BIOS-Timer-Counter in BDA
-    (*BDA_TIMER_COUNTER)++;
-
-    // call INT 1Ch (User Timer Tick)
-    //__asm__ volatile ("int $0x1C");
-}
-
 // INT 09h: keyboard-interrupt
 volatile uint8_t g_kbd_scancode;
 static volatile uint8_t g_kbd_set1_code;
@@ -121,24 +110,25 @@ __attribute__((externally_visible, regparm(1))) void c_int09_handler(struct inte
         if (ctrl_pressed)  flags |= KBD_FLAG_CTRL;
         if (alt_pressed)   flags |= KBD_FLAG_ALT;
         if (caps_lock)     flags |= KBD_FLAG_CAPSLOCK;
-        *(volatile uint8_t*)BDA_KBD_STATUS_FLAGS = flags;
+        writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, flags);
 
         // only convert make-codes to ASCII and put them on the LCD, break-codes are ignored for ASCII output
         if (!g_kbd_is_break) {
+            /*
             g_kbd_ascii = set1_to_ascii(g_kbd_set1_code, shift_pressed, caps_lock);
             if (g_kbd_ascii) {
                 // store scancode and ASCII-character in keyboard-buffer in BDA, if there is space (2 bytes per entry: high byte = scancode, low byte = ASCII)
-                g_kbd_tail = *BDA_KBD_TAIL;
+                g_kbd_tail = readFarWord(0x0000, BDA_KBD_TAIL);
                 g_kbd_next_tail = g_kbd_tail + 2;
                 if (g_kbd_next_tail >= BDA_KBD_BUF_END) g_kbd_next_tail = BDA_KBD_BUF_START;
 
-                if (g_kbd_next_tail != *BDA_KBD_HEAD) {
+                if (g_kbd_next_tail != readFarWord(0x0000, BDA_KBD_HEAD)) {
                     // store scancode (high) and ASCII (low)
-                    g_kbd_ptr = (uint16_t*)(uintptr_t)(g_kbd_tail);
-                    *g_kbd_ptr = (uint16_t)((g_kbd_scancode << 8) | g_kbd_ascii);
-                    *BDA_KBD_TAIL = g_kbd_next_tail;
+                    writeFarWord(0x0000, g_kbd_tail, (uint16_t)((g_kbd_scancode << 8) | g_kbd_ascii));
+                    writeFarWord(0x0000, BDA_KBD_TAIL, g_kbd_next_tail);
                 }
             }
+            */
         }
     }
 
@@ -200,6 +190,10 @@ __attribute__((externally_visible, regparm(1))) void c_int0c_handler(struct inte
 
 // INT 10h: Video-interrupt
 __attribute__((externally_visible, regparm(1))) void c_int10_handler(struct interrupt_registers *regs) {
+    uart_putc('I');
+    uart_putc('1');
+    uart_putc('0');
+
     // read registers first
     uint8_t ah = (uint8_t)(regs->ax >> 8);
     uint8_t al = (uint8_t)(regs->ax & 0xFF);
@@ -254,7 +248,7 @@ __attribute__((externally_visible, regparm(1))) void c_int11_handler(struct inte
     //   Bit 9-11: Number of serial interfaces (001 = One)
     //   Bit 14-15: Number of printers (00 = No)
     
-	regs->ax = *(uint16_t*)BDA_EQUIPMENT_WORD;
+	regs->ax = readFarWord(0x0000, BDA_EQUIPMENT_WORD);
 }
 
 // INT 12h: Get Memory Size
@@ -263,7 +257,7 @@ __attribute__((externally_visible, regparm(1))) void c_int12_handler(struct inte
     uart_putc('1');
     uart_putc('2');
 
-	regs->ax = *(uint16_t*)BDA_MEM_SIZE;
+	regs->ax = readFarWord(0x0000, BDA_MEM_SIZE);
 }
 
 // INT13h: disk-interrupt
@@ -279,13 +273,6 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
     uint8_t cl = (uint8_t)(regs->cx & 0xFF);
     uint8_t dh = (uint8_t)(regs->dx >> 8);
     uint8_t dl = (uint8_t)(regs->dx & 0xFF);
-
-    uart_putc(ah);
-    uart_putc(al);
-    uart_putc(ch);
-    uart_putc(cl);
-    uart_putc(dh);
-    uart_putc(dl);
 
     // clear carry-flag in flags-register
     regs->flags &= ~0x0001; 
@@ -310,21 +297,6 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
             uint8_t  error           = 0;
             uint32_t lba             = CHS_TO_LBA(cylinder, head, sector);
 
-            uart_putc('B');
-            uart_putc('X');
-            uart_putc(dest_bx >> 8);
-            uart_putc(dest_bx & 0xFF);
-            uart_putc('E');
-            uart_putc('S');
-            uart_putc(dest_es >> 8);
-            uart_putc(dest_es & 0xFF);
-            uart_putc('S');
-            uart_putc('P');
-            uint16_t aktueller_sp;
-            __asm__ __volatile__("movw %%sp, %0" : "=r"(aktueller_sp));
-            uart_putc(aktueller_sp >> 8);
-            uart_putc(aktueller_sp & 0xFF);
-
             // loop for all requested sectors
             for (uint8_t s = 0; s < sectors_to_read; s++) {
                 uint32_t cur_lba = lba + s;
@@ -333,58 +305,11 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
                 uint16_t cur_offset  = dest_bx + ((uint16_t)s * 512);
 
                 uint16_t cur_seg     = dest_es;
-/*
+
                 error = ide_read_sector(cur_lba, dest_es, cur_offset);
                 if (error != 0x00) {
                     break;
                 }
-*/
-
-                        // =================== FOR DEBUGGING: not using the stack seems to allow more sectors to be read =====================
-                        // wait until drive is ready
-                        //ide_wait_ready();
-                                    inb(IDE_ALT_STATUS);
-                                    inb(IDE_ALT_STATUS);
-                                    inb(IDE_ALT_STATUS);
-                                    inb(IDE_ALT_STATUS);
-                                    for (uint32_t timeout = 10000; timeout > 0; timeout--) {
-                                    uint8_t status = inb(IDE_ALT_STATUS);
-                                    if (!(status & IDE_SR_BSY) && (status & IDE_SR_DRDY)) {
-                                        break; // ready
-                                    }
-                                    // small delay between polls
-                                    for (volatile uint32_t d = 0; d < 10; d++);
-                                }
-
-                        // LBA-Address and send command
-                        outb(IDE_SECT_COUNT,  1);
-                        outb(IDE_LBA_LOW,     (uint8_t)( cur_lba        & 0xFF));
-                        outb(IDE_LBA_MID,     (uint8_t)((cur_lba >>  8) & 0xFF));
-                        outb(IDE_LBA_HIGH,    (uint8_t)((cur_lba >> 16) & 0xFF));
-                        outb(IDE_DRIVE_HEAD,  0xE0 | (uint8_t)((cur_lba >> 24) & 0x0F));
-                        outb(IDE_COMMAND,     IDE_CMD_READ);
-
-                        // wait until data is ready (DRQ set)
-                        //ide_wait_drq();
-                                for (uint32_t timeout = 1000000; timeout > 0; timeout--) {
-                                    if (inb(IDE_ALT_STATUS) & IDE_SR_DRQ) {
-                                        break;
-                                    }
-                                }
-
-                        // read 512 bytes and IDE_DATA (0x1F0) delivers at 8-Bit access always Low-Byte
-                        for (uint16_t i = 0; i < 512; i++) {
-                            //uint8_t data = inb(IDE_DATA);
-                            //writeFarByte(dest_es, cur_offset + i, data);
-                            __asm__ __volatile__(
-                                "movw %w0, %%fs\n\t"       
-                                "movb %b2, %%fs:(%w1)\n\t" 
-                                :
-                                : "r"(dest_es), "b"(cur_offset + i), "r"(inb(IDE_DATA))
-                                : "memory"
-                            );
-                        }
-                        // =================== FOR DEBUGGING =====================
 
                 sectors_done++;
             }
@@ -570,115 +495,142 @@ __attribute__((externally_visible, regparm(1))) void c_int14_handler(struct inte
     uart_putc('1');
     uart_putc('4');
 
-/*
-    // AH contains the function-number (0=Init, 1=Transmit, 2=Receive, 3=State)
-    // use inline-assembler as GCC-interrupts are more complex
-	uint8_t service;
-    uint8_t al_val;
-    __asm__ volatile (
-        "movb %%ah, %0\n"
-        "movb %%al, %1\n"
-        : "=r"(service), "=r"(al_val)
-        :
-        :
-    );
+    // get registers
+    uint8_t ah = (uint8_t)(regs->ax >> 8);
+    uint8_t al = (uint8_t)(regs->ax & 0xFF);
 
-    // store DS and reset it to 0
-	__asm__ volatile("movw %%ds, %0" : "=r"(g_old_ds));
-	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
-
-	switch (service) {
+	switch (ah) {
         case 0x00: // initializing (not implemented)
 			// we are initializing the UART with fixed 38400 Baud for now. But later we
 			// could use this to switch between different speeds and settings
-            //uart_init(al_val); // al_val contains the initializing-parameter
-            __asm__ volatile ("movb $0x00, %%ah" ::: "ax"); // state OK
+            regs->ax    = 0x0000;
+            regs->flags &= ~0x0001;
             break;
 
         case 0x01: // transmit char
-            uart_putc((char)al_val);
-            // AH Bit 7 = 0 (success), other bits = LSR Status
-            __asm__ volatile ("movb $0x60, %%ah" ::: "ax"); 
+            uart_putc((char)al);
+            regs->ax    = 0x6000;
+            regs->flags &= ~0x0001;
             break;
 
         case 0x02: // receive char (not implemented)
-            __asm__ volatile ("movb $0x00, %%al" ::: "ax");
-            __asm__ volatile ("movb $0x80, %%ah" ::: "ax"); // Timeout/Error
+            regs->ax    = 0x8000; // timeout
+            regs->flags &= ~0x0001;
             break;
 
         case 0x03: // request state
             {
                 uint8_t status = inb(UART_LSR); // LSR
-                __asm__ volatile ("movb %0, %%ah" : : "r"(status));
                 uint8_t modem = inb(UART_MSR);  // MSR
-                __asm__ volatile ("movb %0, %%al" : : "r"(modem));
+                regs->ax    = ((uint16_t)status << 8) | modem;
+                regs->flags &= ~0x0001;
             }
             break;
     }
-	
-	// restore DS
-	__asm__ volatile("movw %0, %%ds" : : "r"(g_old_ds));
-*/
 }
 
+// Detecting Memory
 __attribute__((externally_visible, regparm(1))) void c_int15_handler(struct interrupt_registers *regs) {
     uart_putc('I');
     uart_putc('1');
     uart_putc('5');
 
-    regs->ax = 0x8600;
-    regs->flags |= 0x0001;
-    
-/*
-    uint16_t current_sp;
-    __asm__ __volatile__("movw %%sp, %0" : "=r"(current_sp));
+    uint8_t ah = (uint8_t)(regs->ax >> 8);
+    uint8_t al = (uint8_t)(regs->ax & 0xFF);
 
-    uint16_t current_ax;
-    __asm__ __volatile__("movw %%ax, %0" : "=r"(current_ax));
-    uint8_t ah = (uint8_t)(current_ax >> 8);
+    uart_putc(ah);
+    uart_putc(al);
 
     switch (ah) {
         case 0x24:  // A20 Gate Control
-            {
-                uint8_t al = current_ax & 0xFF;
-                if (al == 0x01) {
-                    a20_enable();
-                    regs->flags &= ~0x0001;
-                } else if (al == 0x00) {
-                    a20_disable();
-                    regs->flags &= ~0x0001;
-                }
+            if (al == 0x00) { // disable Gate A20
+                a20_disable();
+                regs->flags &= ~0x0001; // Success
+            }else if (al == 0x01) { // enable Gate A20
+                a20_enable();
+                regs->flags &= ~0x0001; // Success
+            } else if (al == 0x02) { // request if Gate A20 is opened
+                regs->ax = a20_is_enabled() ? 0x0001 : 0x0000;
+                regs->flags &= ~0x0001;
+            } else {
+                regs->ax = 0x8600; // unknown AL-Subcode
+                regs->flags |= 0x0001;
             }
             break;
 
-        case 0x88: {
-            // request enhanced memory (return 1024 KB in AX)
-            uint16_t return_value = 1024;
+        case 0x41:
+            if (al == 0x01) {
+                regs->ax = 0x0000;
+                regs->flags &= ~0x0001;
+            } else {
+                regs->ax = 0x8600;
+                regs->flags |= 0x0001;
+            }
+            break;
 
-            __asm__ __volatile__(
-                "movw %0, %%ax" 
-                : 
-                : "r"(return_value) 
-                : "ax"
-            );
-            
-            regs->flags &= ~0x0001; // send success by deleting CarryFlag
+        case 0x86: {
+            uint32_t usec = ((uint32_t)regs->cx << 16) | regs->dx;
+
+            if (usec > 1000000UL) {
+                usec = 1000000UL;
+            }
+
+            delay_us(usec);
+
+            regs->ax = 0x0000;
+            regs->flags &= ~0x0001;
             break;
         }
 
         case 0x87:
-            // function 0x87: block-move (send success)
-            __asm__ __volatile__("xorw %%ax, %%ax" : : : "ax");
-            regs->flags &= ~0x0001; // send success by deleting CarryFlag
+            // Move block to/from extended memory -> unsupported
+            regs->ax = 0x8600;
+            regs->flags |= 0x0001;
             break;
 
+        case 0x88: {
+            // Request Extended Memory Size (up to 64MB)
+            //regs->ax = 1024; // TODO: implement the full 16 MB
+            regs->ax = 0; // no HIMEM
+            regs->flags &= ~0x0001; // Clear Carry Flag (Success)
+            break;
+        }
+
+        case 0x90: // AH=90h: Device busy
+        case 0x91: // AH=91h: Interrupt complete
+            regs->ax = 0x0000;
+            regs->flags &= ~0x0001;
+            break;
+
+        case 0xC0: {
+            // Get Configuration Table
+            // we do not support this for now
+            regs->ax = 0x8600;      // AH = 0x86
+            regs->flags |= 0x0001;  // Set Carry Flag
+            break;
+        }
+
+        case 0xC1: // Get EBDA segment
+            regs->es = BIOS_SEG;
+            regs->ax = 0x0000;
+            regs->flags &= ~0x0001;
+            break;
+
+        case 0xDA: {
+            // E820 / alternative memory-APIs
+            // we do not support this for now
+            regs->ax = 0x8600;
+            regs->flags |= 0x0001;
+            break;
+        }
+
         default:
-            // unknown function -> send error (AH = 0x86, Carry Flag = 1)
-            __asm__ __volatile__("movw $0x8600, %%ax" : : : "ax");
+            // Unbekannte Funktion -> Fehler (AH = 0x86, Carry Flag = 1)
+            regs->ax = 0x8600;
             regs->flags |= 0x0001; // Set Carry Flag
             break;
+
     }
-*/
 }
 
 // this interrupt is called by DOS to request next char from ringbuffer
@@ -691,14 +643,6 @@ __attribute__((externally_visible, regparm(1))) void c_int16_handler(struct inte
     regs->flags &= ~0x0001; // clear carray-flag on success
 
 /*
-    uint8_t ah;
-
-    __asm__ volatile ("movb %%ah, %0" : "=r"(ah));
-
-    // store DS and reset it to 0
-	__asm__ volatile("movw %%ds, %0" : "=r"(g_old_ds));
-	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
-	
     if (ah == 0x00) { // read character (blocking)
         while (*BDA_KBD_HEAD == *BDA_KBD_TAIL) {
             __asm__ volatile ("sti\n hlt\n cli"); // halt CPU until next interrupt
@@ -725,9 +669,6 @@ __attribute__((externally_visible, regparm(1))) void c_int16_handler(struct inte
             __asm__ volatile ("orw  $0x0040, 6(%%bp)" ::: "memory");
         }
     }
-	
-	// restore DS
-	__asm__ volatile("movw %0, %%ds" : : "r"(g_old_ds));
 */
 }
 
@@ -845,27 +786,42 @@ __attribute__((externally_visible, regparm(1))) void c_int1c_handler(struct inte
 	// placeholder for user-program
 }
 
+static uint8_t pic_read_isr_master(void) {
+    outb(0x20, 0x0B);
+    return inb(0x20);
+}
+
+static uint8_t pic_read_irr_master(void) {
+    outb(0x20, 0x0A);
+    return inb(0x20);
+}
+
 __attribute__((externally_visible, regparm(1))) void c_int_dummy_handler(struct interrupt_registers *regs) {
-    uart_putc('I');
-    uart_putc('?');
-    uart_putc('?');
+    uart_print("DUMMY INT / EXCEPTION\n");
 
-    uint8_t ah = (uint8_t)(regs->ax >> 8);
-    uint8_t al = (uint8_t)(regs->ax & 0xFF);
-    uint8_t ch = (uint8_t)(regs->cx >> 8);
-    uint8_t cl = (uint8_t)(regs->cx & 0xFF);
-    uint8_t dh = (uint8_t)(regs->dx >> 8);
-    uint8_t dl = (uint8_t)(regs->dx & 0xFF);
+    uart_print("CS=");
+    uart_putc(regs->cs >> 8);
+    uart_putc(regs->cs & 0xFF);
 
-    uart_putc(ah);
-    uart_putc(al);
-    uart_putc(ch);
-    uart_putc(cl);
-    uart_putc(dh);
-    uart_putc(dl);
+    uart_print(" IP=");
+    uart_putc(regs->ip >> 8);
+    uart_putc(regs->ip & 0xFF);
 
-    //regs->ax = 0x8600; // "Function not supported"
-    //regs->flags |= 0x0001;
-    regs->ax = 0x0000;
-    regs->flags &= ~0x0001; // clear carray-flag on success
+    uart_print(" AX=");
+    uart_putc(regs->ax >> 8);
+    uart_putc(regs->ax & 0xFF);
+
+    uint8_t isr = pic_read_isr_master();
+    uint8_t irr = pic_read_irr_master();
+
+    uart_print(" PIC ISR=");
+    uart_putc(isr);
+    uart_print(" IRR=");
+    uart_putc(irr);
+
+    uart_print("\nHALT\n");
+
+    while (1) {
+        __asm__ volatile ("cli; hlt");
+    }
 }

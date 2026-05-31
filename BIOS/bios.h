@@ -21,12 +21,16 @@
 #include "helper.h"
 #include "keyboard.h"
 
-#define BIOS_RESERVED_KB        8
+#define BIOS_RESERVED_KB        16
 #define BIOS_CONVENTIONAL_KB    (640 - BIOS_RESERVED_KB)
 
-#define BIOS_RT_SEG             0x9E00
-#define BIOS_RT_SIZE            0x2000   // 8 KiB
-#define BIOS_RT_STACK_TOP       0x2000   // Stackoberkante physisch 0xA0000
+#define BIOS_SEG                0x9C00
+#define BIOS_STACK_TOP          0x4000
+
+#define BIOS_DATA_START_OFF     0x0100 // start in RAM for global variables
+#define BIOS_DATA_END_OFF       0x2000 // end of RAM
+#define BIOS_STACK_LOW_OFF      0x2000 // end of Stack
+#define BIOS_STACK_HIGH_OFF     0x4000 // begin of Stack
 
 #define LCD_BPP                 1      // bits per pixel (1 for text mode, 4 for graphics mode)
 #define LCD_WIDTH               240    // real LCD resolution of the DDX3216
@@ -54,6 +58,7 @@ extern void isr_int_dummy(void);
 
 // function prototypes
 void boot_dos();
+bool a20_is_enabled();
 void a20_enable();
 void a20_disable();
 
@@ -67,32 +72,6 @@ struct __attribute__((packed)) ivt_entry {
 struct __attribute__((packed)) sCursorPos {
     uint8_t col;
     uint8_t row;
-};
-
-struct __attribute__((packed)) bios_data_area {
-    uint16_t com_ports[4];        // 0x0400: COM1 to COM4 I/O Port-Address
-    uint16_t lpt_ports[3];        // 0x0408: LPT1 to LPT3 I/O Port-Address
-    uint16_t ebda_base_address;   // EBDA-Address (0x040E)
-    uint16_t equipment_word;      // 0x0410: Equipment Word
-    uint8_t  res1;                // 0x0412: reserved
-    uint16_t base_memory_kb;      // 0x0413: base-memory-size in kB (Default: 640 kB)
-    uint8_t  padding1[2];         // 0x0415: placeholder until keyboard status flags at 0x0417
-    uint8_t  kbd_status_flags1;   // 0x0417: Keyboard-Status-Flags (e.g. Numlock/Capslock active, etc.)
-    uint8_t  kbd_status_flags2;  
-    uint8_t  padding2[23];        // 0x0419: placeholder until video modes at 0x0430
-    uint8_t  video_mode;          // 0x0449: Current Videomode (e.g. 0x03)
-    uint16_t video_columns;       // 0x044A: Number of ROWs (e.g. 30 or 80)
-    uint16_t video_page_size;     // 0x044C: Size of the current Video-Page in Bytes
-    uint16_t video_page_start;    // 0x044E: Start-Offset of VRAM for current page (in Bytes, relative to 0xB8000)
-    struct sCursorPos cursor_position[8];// 0x0450: Cursor-Positions for alle 8 possible Video-Pages (Row, Col)
-    uint16_t cursor_type;         // 0x0460: Cursor-Typ (Start-/End-Scanline)   
-    uint8_t  active_video_page;   // 0x0462: Active Video-Page index
-    uint16_t crtc_port_address;   // 0x0463: I/O Port of Videochip (z.B. 0x3D4 für CGA)
-    uint8_t  padding3[31];        // 0x0465: Placeholder until extended video area at 0x0480
-    uint8_t  video_rows;          // 0x0484: Number of screen rows MINUS 1 (Important for your 8-row LCD!)
-    uint16_t character_points;    // 0x0485: Bytes per character (Font height, e.g. 8)
-    uint8_t  padding4[19];        // 0x0487: Placeholder until extended memory information
-    uint16_t ext_memory_kb;       // 0x049B: Extended memory size in KB above 1MB (FFor your INT15)
 };
 
 struct __attribute__((packed)) bios_parameter_block {

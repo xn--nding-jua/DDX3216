@@ -94,6 +94,15 @@ static inline uint16_t readRomWord(uint16_t rom_offset) {
 // functions for accessing RAM space in other than the current segment
 // ==========================================================
 static inline void writeFarByte(uint16_t segment, uint16_t offset, uint8_t value) {
+	__asm__ __volatile__(
+        "pushw %%es\n\t"
+        "movw  %w0, %%es\n\t"
+        "movb  %b2, %%es:(%%bx)\n\t"
+        "popw  %%es\n\t"
+        :
+        : "r"(segment), "b"(offset), "q"(value)
+        : "memory"
+    );
     /*
     __asm__ __volatile__(
         "pushw %%es\n\t"         // store current ES
@@ -114,6 +123,7 @@ static inline void writeFarByte(uint16_t segment, uint16_t offset, uint8_t value
         : "memory"
     );
     */
+	/*
     __asm__ __volatile__(
         "movw %w0, %%fs\n\t"       
         "movb %b2, %%fs:(%w1)\n\t" 
@@ -121,6 +131,7 @@ static inline void writeFarByte(uint16_t segment, uint16_t offset, uint8_t value
         : "r"(segment), "b"(offset), "r"(value)
         : "memory"
     );
+	*/
     /*
     __asm__ __volatile__(
         "pushw %%fs\n\t"       // Altes FS sichern
@@ -137,6 +148,16 @@ static inline void writeFarByte(uint16_t segment, uint16_t offset, uint8_t value
 
 static inline void writeFarWord(uint16_t segment, uint16_t offset, uint16_t value) {
     __asm__ __volatile__(
+        "pushw %%es\n\t"
+        "movw  %w0, %%es\n\t"
+        "movw  %w2, %%es:(%%bx)\n\t"
+        "popw  %%es\n\t"
+        :
+        : "r"(segment), "b"(offset), "r"(value)
+        : "memory"
+    );
+/*
+    __asm__ __volatile__(
         "pushw %%es\n\t"         // store current ES
         "movw %0, %%es\n\t"      // load segment into ES register
         "movw %2, %%es:(%1)\n\t" // write Word to ES:[BX]
@@ -145,9 +166,24 @@ static inline void writeFarWord(uint16_t segment, uint16_t offset, uint16_t valu
         : "rm"(segment), "b"(offset), "ri"(value) // "b" zwingt GCC zu BX!
         : "memory"
     );
+*/
 }
 
 static inline uint8_t readFarByte(uint16_t segment, uint16_t offset) {
+    uint8_t value;
+
+    __asm__ __volatile__(
+        "pushw %%es\n\t"
+        "movw  %w1, %%es\n\t"
+        "movb  %%es:(%%bx), %b0\n\t"
+        "popw  %%es\n\t"
+        : "=q"(value)
+        : "r"(segment), "b"(offset)
+        : "memory"
+    );
+
+    return value;
+/*
     uint8_t value;
     
     __asm__ __volatile__(
@@ -159,9 +195,24 @@ static inline uint8_t readFarByte(uint16_t segment, uint16_t offset) {
     );
     
     return value;
+*/
 }
 
 static inline uint16_t readFarWord(uint16_t segment, uint16_t offset) {
+    uint16_t value;
+
+    __asm__ __volatile__(
+        "pushw %%es\n\t"
+        "movw  %w1, %%es\n\t"
+        "movw  %%es:(%%bx), %w0\n\t"
+        "popw  %%es\n\t"
+        : "=r"(value)
+        : "r"(segment), "b"(offset)
+        : "memory"
+    );
+
+    return value;
+/*
     uint16_t value;
     
     __asm__ __volatile__(
@@ -173,6 +224,7 @@ static inline uint16_t readFarWord(uint16_t segment, uint16_t offset) {
     );
     
     return value;
+*/
 }
 
 static inline void copyFarBlock(uint16_t srcSegment, uint16_t srcOffset, void* dest, uint32_t len) {
@@ -200,23 +252,10 @@ static inline void delay_1ms(void) {
     }
 }
 
-static inline void change_ds(uint16_t segment) {
-    // set DS to segment 0x0000 temporarily to write to IVT with absolute addresses
-    __asm__ __volatile__(
-        "pushw %ds\n\t"
-        "movw %0, %ax\n\t"
-        "movw %ax, %ds\n\t"
-        :
-        : "r"(segment)
-        : "memory"
-    );
-}
-
-static inline void restore_ds() {
-    // reset DS to original value
-    __asm__ __volatile__(
-        "popw %ds\n\t"
-    );
+static inline void set_ivt_entry(uint8_t int_no, uint16_t offset, uint16_t segment) {
+    uint16_t base = ((uint16_t)int_no) * 4;
+    writeFarWord(0x0000, base + 0, offset);
+    writeFarWord(0x0000, base + 2, segment);
 }
 
 #endif

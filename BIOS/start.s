@@ -17,8 +17,9 @@
 // 0x07C00 - 0x07DFF | 512 bytes  | OS Boot-Sector                          |
 // 0x07E00 - 0x7FFFF | 32kB       | Conventional memory (free RAM)          /
 // --------------------------------------------------------------------------
-// 0x80000 - 0x9BFFF | 124 kB     | EBDA (Extended BIOS Data Area)
-// 0x9F000 - 0x9FFFF | 4 kB       | Reserved for BIOS (INT13-Stack, etc.)    <- here is a special STACK just for INT13-calls (harddisk-access)
+// 0x80000 - 0x9BFFF | 112 kB     | EBDA (Extended BIOS Data Area)
+// 0x9C000 - 0x9EFFF | 12 kB      | Global RAM for BIOS (grows from bottom to top)
+// 0x9F000 - 0x9FFFF | 4 kB       | Reserved for BIOS-Stack (grows from top to bottom)
 // -- high memory -----------------------------------------------------------
 // 0xA0000 - 0xAFFFF | 64 kB      | Video-RAM for graphics
 // 0xB0000 - 0xB7FFF | 32 kB      | External Video-SRAM in HGA-Mode
@@ -46,18 +47,21 @@
 // 1. Reset-Vector is called at end of 4GB Address-range at 0xFFFFFFF0 (ROM is displayed here during "Un"real mode)
 // 2. Far-Jump to address 0x000F0000 in ROM_SEG at 0xF000 (DS is set to ROM_SEG = 0xF000)
 // 3. CPU is now in "real" 16-bit RealMode
-// 4. DataSegment DS is set to 0x0000, CodeSegment CS is kept at 0xF000 but C-Code and ISRs are still called from ROM_SEG
+// 4. DataSegment DS and StackSegment SS are set to 0x0000, CodeSegment CS is kept at 0xF000 but C-Code and ISRs are still called from ROM_SEG
 //
 
 .intel_syntax noprefix
 .code16
 
 // segment-addresses
-.equ ROM_SEG,     0xF000
-.equ STACK_SEG,   0x0000
-.equ STACK_TOP,   0x7C00      
-.equ CFG_ADDR,    0x22
-.equ CFG_DATA,    0x23
+.equ ROM_SEG,         0xF000
+.equ BIOS_SEG,        0x9C00
+.equ BIOS_STACK_TOP,  0x4000    // STACK-Pointer is 0x9C00 + 0x4000 = 0x9C000 + 0x4000 = 0xA0000
+.equ BOOT_STACK_SEG,  0x0000    // only during initialization. Will be changed later to 0x9C00
+.equ BOOT_STACK_TOP,  0x7C00    // STACK-Pointer during boot is 0x0000 + 0x7C00 = 0x00000 + 0x7C00 = 0x07C00
+
+.equ CFG_ADDR,        0x22
+.equ CFG_DATA,        0x23
 
 // ========================================================
 // Reset-Vector (must be at offset 0xFFF0 in ROM)
@@ -81,6 +85,7 @@ reset_vector:
 // Startup-Function
 // ========================================================
 .section .text, "ax"
+.code16gcc
 .global start
 start:
     // initialize all segment-registers
@@ -89,7 +94,7 @@ start:
     
     mov ax, 0x00F0
     mov ss, ax
-    mov sp, 0x0100
+    mov esp, 0x0100
     
     // ---------------------------------------------------------
     // setup internal registers of the SC300 using
@@ -277,22 +282,27 @@ dram_init_delay:
 
 clear_bss:
     // clear data in BSS to zero
-    mov     ax, STACK_SEG
+    mov     ax, BIOS_SEG
     mov     ds, ax
+	mov		es, ax
+
+	cld
 
     mov     di, __bss_start
     mov     cx, __bss_end
     sub     cx, di              // calc number of bytes
     jcxz    skip_bss            // no data in bss
+
     xor     al, al
     rep     stosb               // write zeros
 skip_bss:
     // initialize the stack
-    mov     ax, STACK_SEG
-    mov     ds, ax              // keep DS at RAM (0x0000)
+    cli
+    mov     ax, BIOS_SEG
+    mov     ds, ax              // switch DS at RAM (0x9C00)
     mov     es, ax
     mov     ss, ax				// redirect stack-segment to 0x0000
-    mov     sp, STACK_TOP		// set stack-pointer to desired 0x7BFF
+    mov     sp, BIOS_STACK_TOP  // set stack-pointer to desired 0x4000
 
 start_c_code:
     // call the main-c-function of the BIOS
@@ -310,6 +320,7 @@ halt:
 // ========================================================
 .macro ISR_HW_ENTRY cfunc
     // store all 16-bit registers
+    .code16
     push ax
     push bx
     push cx
@@ -319,20 +330,28 @@ halt:
     push bp
     push es
     push ds
+    .code16gcc
 
     // prepare segments for C-code (DS = SS) and store
     // stackpointer in register SI that cannot be changed by C-Code
     mov ax, ss
     mov ds, ax
     mov es, ax
-    mov si, sp
-    mov ax, sp
+
+    mov bp, sp
+    xor esp, esp
+    mov sp, bp
+
+    xor eax, eax
+    mov ax, bp
+
+    cld
 
     // call the C-Interrupt-Handler
     call \cfunc
 
     // force stackpointer back to original value
-    mov sp, si
+    mov sp, bp
 
     // send EndOfInterrupt (EOI) to PIC
     mov dx, 0x0020
@@ -340,6 +359,7 @@ halt:
     out dx, al
 
     // restore all registers in inverted order
+    .code16
     pop ds
     pop es
     pop bp
@@ -349,12 +369,14 @@ halt:
     pop cx
     pop bx
     pop ax
+    .code16gcc
 
-    iret
+    iretw
 .endm
 
 .macro ISR_SW_ENTRY cfunc
     // store all 16-bit registers
+    .code16
     push ax
     push bx
     push cx
@@ -364,22 +386,31 @@ halt:
     push bp
     push es
     push ds
+    .code16gcc
 
     // prepare segments for C-code (DS = SS) and store
     // stackpointer in register SI that cannot be changed by C-Code
     mov ax, ss
     mov ds, ax
     mov es, ax
-    mov si, sp
-    mov ax, sp
+
+    mov bp, sp
+    xor esp, esp
+    mov sp, bp
+
+    xor eax, eax
+    mov ax, bp
+
+    cld
 
     // call the C-Interrupt-Handler
     call \cfunc
 
     // force stackpointer back to original value
-    mov sp, si
+    mov sp, bp
 
     // restore all registers in inverted order
+    .code16
     pop ds
     pop es
     pop bp
@@ -389,8 +420,9 @@ halt:
     pop cx
     pop bx
     pop ax
+    .code16gcc
 
-    iret
+    iretw
 .endm
 
 // ========================================================
@@ -405,7 +437,7 @@ launch_bootsector:
     mov ds, ax
     mov es, ax
     mov ss, ax                  // Optional: Stack-Segment to 0x0000
-    mov sp, STACK_TOP           // stack-pointer below boot-sector
+    mov esp, BOOT_STACK_TOP     // stack-pointer for MBR below video-RAM
 
     // write the boot-drive to DL
     mov dl, 0x80
@@ -436,7 +468,30 @@ launch_bootsector:
 
 // hardware-interrupts with EOI
 isr_int08:
-    ISR_HW_ENTRY c_int08_handler // Timer-interrupt
+    .code16
+    push ax
+    push ds
+    .code16gcc
+
+    xor ax, ax
+    mov ds, ax
+
+    // increase BIOS-timer-tick in BDA
+    inc WORD PTR ds:[0x046C]
+    jnz 1f
+    inc WORD PTR ds:[0x046E]
+1:
+    .code16
+    pop ds
+    .code16gcc
+
+    mov al, 0x20
+    out 0x20, al
+
+    .code16
+    pop ax
+    .code16gcc
+    iretw
 
 isr_int09:
     ISR_HW_ENTRY c_int09_handler // keyboard-interrupt
@@ -482,34 +537,36 @@ isr_int_dummy:
     ISR_SW_ENTRY c_int_dummy_handler
 
 
-
-.equ BIOS_INT13_STACK_SEG,  0x9E00 // Stack starts at 636kB
-.equ BIOS_INT13_STACK_TOP,  0x2000 // Stack is 0x1000 = 4096 Bytes in size
-
-.equ BIOS13_SAVE_OLD_SP,    0x0000
-.equ BIOS13_SAVE_OLD_SS,    0x0002
-.equ BIOS13_SAVE_FRAME_SP,  0x0004
-.equ BIOS13_SAVE_OLD_FS,    0x0006
-.equ BIOS13_SAVE_OLD_GS,    0x0008
+// we leave 0x0100 bytes at segment 0x9C00 for the following variables
+.equ BIOS13_SAVE_OLD_SP,    0x0020
+.equ BIOS13_SAVE_OLD_SS,    0x0022
+.equ BIOS13_SAVE_FRAME_SP,  0x0024
+.equ BIOS13_SAVE_OLD_FS,    0x0026
+.equ BIOS13_SAVE_OLD_GS,    0x0028
 
 .equ INT_FRAME_SIZE,        24
 .equ INT_FRAME_WORDS,       12
 isr_int13:
     cli
 
+    .code16
     push ax
     push fs
+    .code16gcc
 
     // store FS and GS. For this we will use the called-stack for a moment
-    mov ax, BIOS_INT13_STACK_SEG
+    mov ax, BIOS_SEG
     mov fs, ax
 
+    .code16
     pop ax // AX contains old FS
+    .code16gcc
     mov WORD PTR fs:[BIOS13_SAVE_OLD_FS], ax
 
     mov ax, gs
     mov WORD PTR fs:[BIOS13_SAVE_OLD_GS], ax
 
+    .code16
     pop ax // restore original AX
 
     // store registers to caller-stack in the common frame-layout
@@ -522,6 +579,7 @@ isr_int13:
     push bp
     push es
     push ds
+    .code16gcc
 
     // save old stack (SP directs on begin of new caller-stack)
     mov ax, ss
@@ -531,12 +589,12 @@ isr_int13:
     mov WORD PTR fs:[BIOS13_SAVE_OLD_SP], ax
 
     // switch to our own BIOS-stack
-    mov ax, BIOS_INT13_STACK_SEG
+    mov ax, BIOS_SEG
     mov ss, ax
-    mov sp, BIOS_INT13_STACK_TOP
+    mov esp, BIOS_STACK_TOP
 
     // set DS and ES to new Stack-Segment as our register-frame will be there
-    // otherwise near-pointer wouln't work anymore
+    // otherwise near-pointer woulnt work anymore
     mov ds, ax
     mov es, ax
 
@@ -559,7 +617,7 @@ isr_int13:
     add di, 2
     loop .copy_frame_to_bios_stack
 
-    // call C-handler. regparm(1) is the first parameter in EAX within DS = BIOS_INT13_STACK_SEG
+    // call C-handler. regparm(1) is the first parameter in EAX within DS = BOOT_STACK_SEG
     xor eax, eax
     mov ax, WORD PTR fs:[BIOS13_SAVE_FRAME_SP]
 
@@ -567,7 +625,7 @@ isr_int13:
     call c_int13_handler
 
     // C-Code could have changed DS, ES or FS, so reset these registers
-    mov ax, BIOS_INT13_STACK_SEG
+    mov ax, BIOS_SEG
     mov ds, ax
     mov es, ax
     mov fs, ax
@@ -604,6 +662,7 @@ isr_int13:
     mov sp, bx
 
     // restore registers
+    .code16
     pop ds
     pop es
     pop bp
@@ -613,5 +672,6 @@ isr_int13:
     pop cx
     pop bx
     pop ax
+    .code16gcc
 
-    iret
+    iretw

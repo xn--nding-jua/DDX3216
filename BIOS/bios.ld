@@ -29,8 +29,8 @@ MEMORY {
 	/* Destination: EPROM-IC 27C512 with 64kB */
     ROM (rx)  : ORIGIN = 0x0000, LENGTH = 64K
 
-    /* RAM Area starting at 0x0500 behind the BIOS Data Area, ~29.7kB */
-    RAM (wa)  : ORIGIN = 0x0500, LENGTH = 0x7700
+    /* RAM Area in DS-Segment (0x9C00) starting at offset 0x0100 with ~8kB in size */
+    BIOSRAM (wa)  : ORIGIN = 0x0100, LENGTH = 0x1F00 /* leave 0x0100 bytes for some global variables */
 }
 
 SECTIONS {
@@ -71,7 +71,7 @@ SECTIONS {
         *(COMMON)
         . = ALIGN(2);
         __bss_end = .;
-    } > RAM
+    } > BIOSRAM
 
 	/* Reset-Vector at very end of the ROM-image */
     .reset 0xFFF0 : {
@@ -82,3 +82,4 @@ SECTIONS {
 /* Sanity Checks */
 ASSERT(SIZEOF(.reset) <= 16, "ERROR: Reset-Sector has more than 16 Bytes!")
 ASSERT(SIZEOF(.data) == 0,   "ERROR: DataSection not zero - found preloaded variable!")
+ASSERT(__bss_end <= 0x2000,  "ERROR: BIOS .bss exceeds data area 0x0000..0x1FFF!")

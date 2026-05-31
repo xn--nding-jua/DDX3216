@@ -16,69 +16,84 @@ __asm__(".code16gcc\n"); // we are using -m16 compiler-switch so this line is re
 // **********************************************************
 
 void setup_ivt() {
-    volatile struct ivt_entry* ivt = (volatile struct ivt_entry*)0x0000;
-
-    // dummy_callbacks for all interrupts
     for (uint16_t i = 0; i < 256; i++) {
-        ivt[i].offset = (uint16_t)(uintptr_t)isr_int_dummy;
-        ivt[i].segment = ROM_SEG; // keep ROM-Segment
+        set_ivt_entry((uint8_t)i, (uint16_t)(uintptr_t)isr_int_dummy, ROM_SEG);
     }
 
-  	// register callback-handlers for specific interrupts
-	// the following code will produce warnings during compilation, but
-	// the warning is the proof of using the 16-bit "iret" after the ISR
-    ivt[0x08].offset = (uint16_t)(uintptr_t)isr_int08;
-    ivt[0x09].offset = (uint16_t)(uintptr_t)isr_int09;
-    ivt[0x10].offset = (uint16_t)(uintptr_t)isr_int10;
-    ivt[0x11].offset = (uint16_t)(uintptr_t)isr_int11;
-    ivt[0x12].offset = (uint16_t)(uintptr_t)isr_int12;
-    ivt[0x13].offset = (uint16_t)(uintptr_t)isr_int13;
-    ivt[0x14].offset = (uint16_t)(uintptr_t)isr_int14;
-    ivt[0x15].offset = (uint16_t)(uintptr_t)isr_int15;
-    ivt[0x16].offset = (uint16_t)(uintptr_t)isr_int16;
-    ivt[0x17].offset = (uint16_t)(uintptr_t)isr_int17;
-    ivt[0x19].offset = (uint16_t)(uintptr_t)isr_int19;
-    ivt[0x0c].offset = (uint16_t)(uintptr_t)isr_int0c;
-    ivt[0x1a].offset = (uint16_t)(uintptr_t)isr_int1a;
-    ivt[0x1c].offset = (uint16_t)(uintptr_t)isr_int1c;
-    ivt[0x41].offset = (uint16_t)(uintptr_t)&hd0_params; // direct to disk-parameters in ROM for INT 41h
+    set_ivt_entry(0x08, (uint16_t)(uintptr_t)isr_int08, ROM_SEG);
+    set_ivt_entry(0x09, (uint16_t)(uintptr_t)isr_int09, ROM_SEG);
+    set_ivt_entry(0x10, (uint16_t)(uintptr_t)isr_int10, ROM_SEG);
+    set_ivt_entry(0x11, (uint16_t)(uintptr_t)isr_int11, ROM_SEG);
+    set_ivt_entry(0x12, (uint16_t)(uintptr_t)isr_int12, ROM_SEG);
+    set_ivt_entry(0x13, (uint16_t)(uintptr_t)isr_int13, ROM_SEG);
+    set_ivt_entry(0x14, (uint16_t)(uintptr_t)isr_int14, ROM_SEG);
+    set_ivt_entry(0x15, (uint16_t)(uintptr_t)isr_int15, ROM_SEG);
+    set_ivt_entry(0x16, (uint16_t)(uintptr_t)isr_int16, ROM_SEG);
+    set_ivt_entry(0x17, (uint16_t)(uintptr_t)isr_int17, ROM_SEG);
+    set_ivt_entry(0x19, (uint16_t)(uintptr_t)isr_int19, ROM_SEG);
+    set_ivt_entry(0x0c, (uint16_t)(uintptr_t)isr_int0c, ROM_SEG);
+    set_ivt_entry(0x1a, (uint16_t)(uintptr_t)isr_int1a, ROM_SEG);
+    set_ivt_entry(0x1c, (uint16_t)(uintptr_t)isr_int1c, ROM_SEG);
+    set_ivt_entry(0x41, (uint16_t)(uintptr_t)&hd0_params, ROM_SEG);
 }
 
 void setup_bda() {
-    // BDA is within our STACK_SEG so we can access it with 16-bit pointers directly
-    volatile struct bios_data_area* bda = (volatile struct bios_data_area*)0x0400;
- 
-    bda->com_ports[0] = UART_BASE; // COM1 = 0x1000 = external UART at I/O Port 0x1000
-    bda->com_ports[1] = 0x0000; // COM2 = not available
-    bda->com_ports[2] = 0x0000; // COM3 = not available
-    bda->com_ports[3] = 0x0000; // COM4 = not available
+    // set UART-ports
+    writeFarWord(0x0000, BDA_COM1_BASE, UART_BASE);
+    writeFarWord(0x0000, BDA_COM1_BASE + 2, 0x0000);
+    writeFarWord(0x0000, BDA_COM1_BASE + 4, 0x0000);
+    writeFarWord(0x0000, BDA_COM1_BASE + 6, 0x0000);
 
-    bda->lpt_ports[0] = 0x0000; // LPT1 = not available
-    bda->lpt_ports[1] = 0x0000; // LPT2 = not available
-    bda->lpt_ports[2] = 0x0000; // LPT3 = not available
+    // set LPT-ports
+    writeFarWord(0x0000, BDA_LPT1_BASE, 0x0000);
+    writeFarWord(0x0000, BDA_LPT1_BASE + 2, 0x0000);
+    writeFarWord(0x0000, BDA_LPT1_BASE + 4, 0x0000);
 
-    bda->ebda_base_address = 0x0000; // EBDA-Address (not used)
+    // EBDA Base
+	writeFarWord(0x0000, BDA_EBDA_BASE, BIOS_SEG);
+	writeFarWord(BIOS_SEG, 0x0000, BIOS_RESERVED_KB);
 
 	// set Equipment Word within BDA to tell DOS that we have an UART and a CGA-graphic
-	//                                     FEDCBA9876543210
-    bda->equipment_word = 0b0000001000010000; // 1 COM-port / CGA-graphics
-    bda->base_memory_kb = BIOS_CONVENTIONAL_KB; // base memory size in kB (standard: 640 kB, but we reserve 5kB for our BIOS-Stack)
-    bda->kbd_status_flags1 = 0x00; // Keyboard-Status-Flags (e.g. Numlock/Capslock active, etc.)
-    bda->kbd_status_flags2 = 0x00; // Keyboard-Status-Flags (e.g. Numlock/Capslock active, etc.)
+    writeFarWord(0x0000, BDA_EQUIPMENT_WORD, 0b0000001000010000); // 1 COM-port / CGA-graphics
 
-    // create DOS-compatibility by updating BDA
-    bda->video_mode = 0x00; // current video mode (40x25 grayscale-text, but we are using only 30x8)
-    bda->video_columns = 30; // number of columns
-    bda->video_page_size = 512; // (LCD_WIDTH / 8) * (LCD_HEIGHT / 8) * 2 = 480 -> rounded to 512 // size of one video page in bytes (virtual CGA resolution)
-    bda->video_page_start = 0x0000; // start offset of page relative to video memory
-    bda->cursor_position[0].row = 0; // initial cursor position (row)
-    bda->cursor_position[0].col = 0; // initial cursor position (column)
-    bda->cursor_type = 0x0607; // cursor type (start/end scanline)
-    bda->active_video_page = 0; // active video page index
-    bda->crtc_port_address = LCD_CGA_IDX_ADDR; // I/O Port of Videochip (CGA = 0x3D4)
-    bda->video_rows = (LCD_HEIGHT / 8) - 1; //  number of rows - 1
-    bda->character_points = 8; // bytes per character (font height)
-    bda->ext_memory_kb = 1024; // extended memory size in kB above 1MB (for INT15h)
+    // set conventional memory
+	writeFarWord(0x0000, BDA_MEM_SIZE, BIOS_CONVENTIONAL_KB);
+	
+    // set keyboard state flag
+	writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, 0x0000);
+	writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS + 1, 0x0000);
+	
+	// set video information
+    writeFarByte(0x0000, BDA_VIDEO_MODE, 0x00);    // video-mode = text
+	writeFarWord(0x0000, BDA_VIDEO_COLUMS, 30);      // number of columns
+	writeFarWord(0x0000, 0x044C, 512);     // size of Video-Page in bytes: (LCD_WIDTH / 8) * (LCD_HEIGHT / 8) * 2 = 480 -> rounded to 512 // size of one video page in bytes (virtual CGA resolution)
+    writeFarWord(0x0000, 0x044E, 0x0000);  //  Start-Offset of VRAM for current page (in Bytes, relative to 0xB8000)
+
+    // cursor position (8x Col/Row)
+    writeFarWord(0x0000, BDA_CURSOR_POS_COL, 0x0000);
+    writeFarWord(0x0000, BDA_CURSOR_POS_COL + 2, 0x0000);
+    writeFarWord(0x0000, BDA_CURSOR_POS_COL + 4, 0x0000);
+    writeFarWord(0x0000, BDA_CURSOR_POS_COL + 6, 0x0000);
+    writeFarWord(0x0000, BDA_CURSOR_POS_COL + 8, 0x0000);
+    writeFarWord(0x0000, BDA_CURSOR_POS_COL + 10, 0x0000);
+    writeFarWord(0x0000, BDA_CURSOR_POS_COL + 12, 0x0000);
+    writeFarWord(0x0000, BDA_CURSOR_POS_COL + 14, 0x0000);
+    writeFarWord(0x0000, 0x0460, 0x0607);
+	
+    // set Active Video-Page index
+    writeFarByte(0x0000, 0x0462, 0);
+
+    // set I/O Port of Videochip (z.B. 0x3D4 für CGA)
+    writeFarWord(0x0000, BDA_VIDEO_IO_BASE, LCD_CGA_IDX_ADDR); // I/O Port of Videochip (CGA = 0x3D4)
+
+    // Number of screen rows MINUS 1 (Important for your 8-row LCD!)
+    writeFarByte(0x0000, BDA_VIDEO_ROWS, (LCD_HEIGHT / 8) - 1); //  number of rows - 1
+
+    // set Bytes per character (Font height, e.g. 8)
+    writeFarWord(0x0000, 0x0485, 8);
+
+    // extended memory size in kB above 1MB (for INT15h)
+    writeFarWord(0x0000, 0x49B, 1024);
 }
 
 // in 16-bit RealMode we can only access RAM below 1MB
@@ -129,7 +144,7 @@ void ram_test_and_setup() {
     // RealMode limitations, but this is sufficient for DOS and our LCD framebuffer
 
     // this will test RAM-segments 0x07C0 (bootsector) to 0x9FFF = the end of conventional memory (640 kB)
-    if (test_ram_range(0x07C0, 0x9000)) {
+    if (test_ram_range(0x07C0, 0x87C0)) {
         lcd_print_string(1, 11, "OK    ", 0x07); // delete the last 3 chars from memory-test as well
     } else {
         lcd_print_string(1, 11, "ERROR!", 0x07);
@@ -159,8 +174,8 @@ void kbd_init() {
     write_sc300_cfg(0xAD, pmu3 | SC300_XTKBDEN);
 
     // initialize keyboard-buffer
-    *BDA_KBD_HEAD = BDA_KBD_BUF_START;
-    *BDA_KBD_TAIL = BDA_KBD_BUF_START;
+    writeFarWord(0x0000, BDA_KBD_HEAD, BDA_KBD_BUF_START);
+    writeFarWord(0x0000, BDA_KBD_TAIL, BDA_KBD_BUF_START);
 
     // clear keyboard-register and IRQ
     uint8_t ctrl = inb(KBD_CTRL_PORT);
@@ -215,6 +230,11 @@ void cpu_reset() {
 
     // this should never be reached
     for(;;) {}
+}
+
+bool a20_is_enabled() {
+    uint8_t val = inb(0x92);
+    return (val & 0x02);
 }
 
 void a20_enable() {
@@ -330,8 +350,25 @@ void setLEDs() {
 // **********************************************************
 // main function
 // **********************************************************
+
+static void debug_print_ivt_entry(uint8_t int_no) {
+    uint16_t base = ((uint16_t)int_no) * 4;
+    uint16_t off = readFarWord(0x0000, base + 0);
+    uint16_t seg = readFarWord(0x0000, base + 2);
+
+    uart_print("IVT[");
+    uart_putc(int_no);
+    uart_print("] = ");
+    uart_putc(seg >> 8);
+    uart_putc(seg & 0xFF);
+    uart_putc(':');
+    uart_putc(off >> 8);
+    uart_putc(off & 0xFF);
+    uart_print("\n");
+}
+
 __attribute__((noreturn)) void bios_main() {
-    if (*(volatile uint16_t*)BDA_SOFT_RESET_FLAGS == 0x1234) {
+    if (readFarWord(0x0000, BDA_SOFT_RESET_FLAGS) == 0x1234) {
         // warm-boot
     }else{
         // cold-boot
@@ -349,8 +386,8 @@ __attribute__((noreturn)) void bios_main() {
     lcd_putc_pos(0, 27, 'A' + (version & 0b00000111) - 1, 0x07);
     lcd_putc_pos(0, 29, '0' + ((version & 0b01111000) >> 3), 0x07);
 
-    lcd_print_string(1, 0, "RAM-Test...", 0x07);
-	ram_test_and_setup(); // this function halts the CPU on any RAM-error
+    //lcd_print_string(1, 0, "RAM-Test...", 0x07);
+	//ram_test_and_setup(); // this function halts the CPU on any RAM-error
 
     lcd_print_string(2, 0, "Init PIC and IVT...", 0x07);
     pic_init();
@@ -369,11 +406,10 @@ __attribute__((noreturn)) void bios_main() {
     lcd_print_string(5, 0, "Init keyboard...", 0x07);
 	kbd_init();
 	
-    // enable interrupts
 	__asm__ volatile ("sti");
     setLEDs();
 
-	lcd_print_string(6, 0, "Init PCMCIA / CF-Card...", 0x07);
+    lcd_print_string(6, 0, "Init PCMCIA / CF-Card...", 0x07);
 	mms_init();
 	if (pcmcia_init()) {
         // try to load DOS from CF-Card and boot it
