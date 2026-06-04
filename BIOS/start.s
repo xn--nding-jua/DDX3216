@@ -687,6 +687,12 @@ launch_bootsector:
 .equ BIOS_SW_ISR_GS,        0x0026
 .equ BIOS_SW_ISR_FRAME,     0x0028
 
+.equ BIOS_INT15_SS,         0x002A
+.equ BIOS_INT15_SP,         0x002C
+.equ BIOS_INT15_FS,         0x002E
+.equ BIOS_INT15_GS,         0x0030
+.equ BIOS_INT15_FRAME,      0x0032
+
 .global isr_int08
 .global isr_int09
 .global isr_int10
@@ -769,7 +775,8 @@ isr_int14:
 
 isr_int15:
 //    ISR_SW_ENTRY c_int15_handler
-    ISR_SAFE_STACK_ENTRY c_int15_handler, BIOS_SW_ISR_SS, BIOS_SW_ISR_SP, BIOS_SW_ISR_FS, BIOS_SW_ISR_GS, BIOS_SW_ISR_FRAME
+    ISR_SAFE_STACK_ENTRY c_int15_handler, BIOS_INT15_SS, BIOS_INT15_SP, BIOS_INT15_FS, BIOS_INT15_GS, BIOS_INT15_FRAME
+    // TODO: check if we can move the stack-variables to general BIOS_SW_ISR_xxx lateron
 
 isr_int16:
     ISR_SW_ENTRY c_int16_handler

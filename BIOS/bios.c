@@ -65,7 +65,7 @@ void setup_bda() {
 	
 	// set video information
     writeFarByte(0x0000, BDA_VIDEO_MODE, 0x00);    // video-mode = text
-	writeFarWord(0x0000, BDA_VIDEO_COLUMS, 30);      // number of columns
+	writeFarWord(0x0000, BDA_VIDEO_COLUMS, 40);    // number of columns. We have only 30 rows, but we tell DOS that we have 40 columns, because otherwise some software would not work at all
 	writeFarWord(0x0000, 0x044C, 512);     // size of Video-Page in bytes: (LCD_WIDTH / 8) * (LCD_HEIGHT / 8) * 2 = 480 -> rounded to 512 // size of one video page in bytes (virtual CGA resolution)
     writeFarWord(0x0000, 0x044E, 0x0000);  //  Start-Offset of VRAM for current page (in Bytes, relative to 0xB8000)
 

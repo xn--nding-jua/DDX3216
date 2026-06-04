@@ -14,8 +14,11 @@ uint16_t g_old_ds;
 
 void pirq_init() {
     // map PIRQ0 (external UART) to IRQ4
-    outb(CFG_ADDR, 0x60); // Beispiel-Index für PIRQ0 Routing
-    outb(CFG_DATA, 0x04); // Map auf IRQ 4
+
+    // PIRQ Configuration Register (Index B2h)
+    // Bits 7-4: PIRQ1, Bits 3-0: PIRQ0
+    // IRQ4 = 0b0100
+    write_sc300_cfg(0xB2, 0x40); // PIRQ0 -> IRQ4
 }
 
 // INT 09h: keyboard-interrupt
@@ -223,9 +226,9 @@ __attribute__((externally_visible, regparm(1))) void c_int10_handler(struct inte
             break;
 
         case 0x0F: // get Current Video Mode
-            // AH = Columns (30), AL = Video Mode (00h), BH = Page (0)
+            // AH = Columns (40), AL = Video Mode (00h), BH = Page (0)
             // number of rows is set in BDA and not returned via INT10h, because DOS will ignore the returned value anyway and would always assume 25 rows
-            regs->ax = (30 << 8) | 0x00; // 40x25 char in grayscale-text mode
+            regs->ax = (40 << 8) | 0x00; // 40x25 char in grayscale-text mode
             regs->bx = 0x0000; // BH = 0
             break;
 
@@ -428,9 +431,11 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
 
             for (uint16_t s = 0; s < sector_count; s++) {
                 uint32_t cur_lba    = lba + s;
-                uint16_t cur_offset = dest_offset + (s * 512);
+                uint32_t total_offset = (uint32_t)dest_offset + ((uint32_t)s * 512);
+                uint16_t cur_seg    = dest_segment + (uint16_t)((total_offset >> 4) & 0xF000);
+                uint16_t cur_offset = (uint16_t)(total_offset & 0xFFFF);
 
-                error = ide_read_sector(cur_lba, dest_segment, cur_offset);
+                error = ide_read_sector(cur_lba + s, dest_segment, cur_offset);                
                 if (error != 0x00) {
                     break;
                 }
@@ -591,7 +596,7 @@ __attribute__((externally_visible, regparm(1))) void c_int15_handler(struct inte
         case 0x88: {
             // Request Extended Memory Size (up to 64MB)
             //regs->ax = 1024; // TODO: implement the full 16 MB
-            regs->ax = 0; // no HIMEM
+            regs->ax = 0; // for Debugging: no HIMEM
             regs->flags &= ~0x0001; // Clear Carry Flag (Success)
             break;
         }
