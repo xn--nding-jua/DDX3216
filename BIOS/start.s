@@ -4,7 +4,7 @@
 //
 // This code initializes the AMD Elan SC300
 // creates a stack and initializes the C-code
-// the final product is a 64KB Image for the 27C512
+// the final product is a 64kB Image for the 27C512
 //
 // x86-Instructions: https://www.felixcloutier.com/x86/
 //
@@ -54,8 +54,8 @@
 .code16
 
 // segment-addresses
-.equ ROM_SEG,         0xF000
-.equ BIOS_SEG,        0x9C00
+.equ ROM_SEG,         0xF000    // Segment where the ROM is mapped and where the BIOS code is located
+.equ BIOS_SEG,        0x9C00    // Segment for global variables and stack during interrupts
 .equ BIOS_STACK_TOP,  0x4000    // STACK-Pointer is 0x9C00 + 0x4000 = 0x9C000 + 0x4000 = 0xA0000
 .equ BOOT_STACK_SEG,  0x0000    // only during initialization. Will be changed later to 0x9C00
 .equ BOOT_STACK_TOP,  0x7C00    // STACK-Pointer during boot is 0x0000 + 0x7C00 = 0x00000 + 0x7C00 = 0x07C00
@@ -79,13 +79,12 @@ reset_vector:
 
     // Padding to the end and add date
     .zero (0x10 - (. - reset_vector) - 8)
-    .ascii "05/24/26"
+    .ascii "06/04/26"           // MM/DD/YY
 
 // ========================================================
 // Startup-Function
 // ========================================================
 .section .text, "ax"
-.code16gcc
 .global start
 start:
     // initialize all segment-registers
@@ -94,7 +93,7 @@ start:
     
     mov ax, 0x00F0
     mov ss, ax
-    mov esp, 0x0100
+    mov sp, 0x0100
     
     // ---------------------------------------------------------
     // setup internal registers of the SC300 using
@@ -288,8 +287,8 @@ clear_bss:
 
 	cld
 
-    mov     di, __bss_start
-    mov     cx, __bss_end
+    mov     di, __bss_start     // offset from linker-script relative to BIOS_SEG
+    mov     cx, __bss_end       // offset from linker-script relative to BIOS_SEG
     sub     cx, di              // calc number of bytes
     jcxz    skip_bss            // no data in bss
 
@@ -299,10 +298,10 @@ skip_bss:
     // initialize the stack
     cli
     mov     ax, BIOS_SEG
-    mov     ds, ax              // switch DS at RAM (0x9C00)
+    mov     ds, ax              // switch DS to RAM (0x9C00)
     mov     es, ax
-    mov     ss, ax				// redirect stack-segment to 0x0000
-    mov     sp, BIOS_STACK_TOP  // set stack-pointer to desired 0x4000
+    mov     ss, ax				// redirect stack-segment to 0x9C00
+    mov     sp, BIOS_STACK_TOP  // set stack-pointer to desired offset of 0x4000 (right below 0x9C000 + 0x4000 = 0xA0000 = video-RAM)
 
 start_c_code:
     // call the main-c-function of the BIOS
@@ -315,12 +314,38 @@ halt:
     jmp     halt
 
 
+
+
 // ========================================================
-// GNU-Assembler Macro for ISR-Entries
+// Launching Bootsector
+// ========================================================
+.global launch_bootsector
+launch_bootsector:
+    cli                         // disable interrupts
+    
+    // clear all segments to 0x0000
+    xor ax, ax                  // set ax to 0x0000
+    mov ds, ax
+    mov es, ax
+    mov ss, ax                  // optional: set Stack-Segment to 0x0000
+    mov sp, BOOT_STACK_TOP     // stack-pointer for initial DOS right below bootsector at 0x0000:0x7C00
+
+    // write the boot-drive to DL
+    mov dl, 0x80
+
+    sti                         // enable interrupts
+
+    // far-jump to bootsector
+    jmp 0x0000:0x7C00
+
+
+
+
+// ========================================================
+// GNU-Assembler Macros for ISR-Entries
 // ========================================================
 .macro ISR_HW_ENTRY cfunc
     // store all 16-bit registers
-    .code16
     push ax
     push bx
     push cx
@@ -330,19 +355,13 @@ halt:
     push bp
     push es
     push ds
-    .code16gcc
 
-    // prepare segments for C-code (DS = SS) and store
-    // stackpointer in register SI that cannot be changed by C-Code
-    mov ax, ss
+    // prepare segments for C-code: set DataSegment to BIOS_SEG to access global variables
+    mov ax, BIOS_SEG
     mov ds, ax
     mov es, ax
 
     mov bp, sp
-    xor esp, esp
-    mov sp, bp
-
-    xor eax, eax
     mov ax, bp
 
     cld
@@ -354,12 +373,10 @@ halt:
     mov sp, bp
 
     // send EndOfInterrupt (EOI) to PIC
-    mov dx, 0x0020
     mov al, 0x20
-    out dx, al
+    out 0x20, al
 
     // restore all registers in inverted order
-    .code16
     pop ds
     pop es
     pop bp
@@ -369,14 +386,12 @@ halt:
     pop cx
     pop bx
     pop ax
-    .code16gcc
 
     iretw
 .endm
 
 .macro ISR_SW_ENTRY cfunc
     // store all 16-bit registers
-    .code16
     push ax
     push bx
     push cx
@@ -386,19 +401,13 @@ halt:
     push bp
     push es
     push ds
-    .code16gcc
 
-    // prepare segments for C-code (DS = SS) and store
-    // stackpointer in register SI that cannot be changed by C-Code
-    mov ax, ss
+    // prepare segments for C-code: set DataSegment to BIOS_SEG to access global variables
+    mov ax, BIOS_SEG
     mov ds, ax
     mov es, ax
 
     mov bp, sp
-    xor esp, esp
-    mov sp, bp
-
-    xor eax, eax
     mov ax, bp
 
     cld
@@ -410,7 +419,6 @@ halt:
     mov sp, bp
 
     // restore all registers in inverted order
-    .code16
     pop ds
     pop es
     pop bp
@@ -420,36 +428,265 @@ halt:
     pop cx
     pop bx
     pop ax
-    .code16gcc
 
     iretw
 .endm
 
-// ========================================================
-// Launching Bootsector
-// ========================================================
-.global launch_bootsector
-launch_bootsector:
-    cli                         // disable interrupts
-    
-    // Segmente kompromisslos nullen
-    xor ax, ax
+.equ INT_FRAME_WORDS,  12
+
+.macro ISR_SAFE_STACK_ENTRY cfunc, save_old_ss, save_old_sp, save_old_fs, save_old_gs, save_frame_sp
+    cli
+
+    push ax
+    push fs
+
+    // set FS to BIOS_SEG to safe variables
+    mov ax, BIOS_SEG
+    mov fs, ax
+
+    pop ax // AX contains old FS
+    mov WORD PTR fs:[\save_old_fs], ax
+
+    mov ax, gs
+    mov WORD PTR fs:[\save_old_gs], ax
+
+    pop ax // restore original AX
+
+    // safe registers to current caller-stack
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+    push di
+    push bp
+    push es
+    push ds
+    // IP, CS, FLAGS already on stack from interrupt
+
+    // safe old stack-state
+    mov ax, ss
+    mov WORD PTR fs:[\save_old_ss], ax
+    mov ax, sp
+    mov WORD PTR fs:[\save_old_sp], ax
+
+    // change stack to safe-BIOS-stack
+    mov ax, BIOS_SEG
+    mov ss, ax
+    mov sp, BIOS_STACK_TOP
+
+    // set segments for C to allow usage of near-pointer
     mov ds, ax
     mov es, ax
-    mov ss, ax                  // Optional: Stack-Segment to 0x0000
-    mov esp, BOOT_STACK_TOP     // stack-pointer for MBR below video-RAM
 
-    // write the boot-drive to DL
-    mov dl, 0x80
+    // reserve some space for register-frame on BIOS-stack
+    sub sp, (INT_FRAME_WORDS * 2)
+    mov di, sp
+    mov WORD PTR fs:[\save_frame_sp], di
 
-    // far-jump to bootsector
-    .byte 0xEA
-    .word 0x7C00
-    .word 0x0000
+    // copy register-frame from DOS-Stack to BIOS-stack
+    mov ax, WORD PTR fs:[\save_old_ss]
+    mov gs, ax
+    mov si, WORD PTR fs:[\save_old_sp]
+    mov cx, INT_FRAME_WORDS
+
+1:  // local variables for copy-loop (direction to C-function)
+    mov ax, WORD PTR gs:[si]
+    mov WORD PTR [di], ax
+    add si, 2
+    add di, 2
+    loop 1b
+
+    // call C-Handler via regparm(1) -> Struct-Pointer is in AX
+    mov ax, WORD PTR fs:[\save_frame_sp]
+    cld
+    call \cfunc
+
+    // for the case C has changed the segments: back to BIOS-stack
+    mov ax, BIOS_SEG
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+
+    // load framepointer from BIOS-stack
+    mov si, WORD PTR fs:[\save_frame_sp]
+
+    // modify frame back to original DOS-stack
+    mov ax, WORD PTR fs:[\save_old_ss]
+    mov gs, ax
+    mov di, WORD PTR fs:[\save_old_sp]
+    mov cx, INT_FRAME_WORDS
+
+2:  // local variables for copy-loop (direction to DOS-functions)
+    mov ax, WORD PTR [si]
+    mov WORD PTR gs:[di], ax
+    add si, 2
+    add di, 2
+    loop 2b
+
+    // read original segment-configuration from memory
+    mov ax, WORD PTR fs:[\save_old_ss]
+    mov bx, WORD PTR fs:[\save_old_sp]
+    //sub bx, (INT_FRAME_WORDS * 2)          // adjust stackpointer to point to original register-frame on DOS-stack with the updated register-values
+    mov cx, WORD PTR fs:[\save_old_gs]
+    mov dx, WORD PTR fs:[\save_old_fs]
+
+    mov gs, cx
+    mov fs, dx
+
+    // change back to original DOS-stack
+    cli
+    mov ss, ax
+    mov sp, bx
+
+    // pop registers from restored original stack
+    pop ds
+    pop es
+    pop bp
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+
+    iretw
+.endm
+
+
+/*
+.macro ISR_SAFE_STACK_ENTRY cfunc, save_old_ss, save_old_sp, save_old_fs, save_old_gs, save_frame_sp
+    cli
+
+    push ax
+    push fs
+
+    // set FS to BIOS_SEG to safe variables
+    mov ax, BIOS_SEG
+    mov fs, ax
+
+    pop ax // AX contains old FS
+    mov WORD PTR fs:[\save_old_fs], ax
+    mov ax, gs
+    mov WORD PTR fs:[\save_old_gs], ax
+
+    pop ax // restore original AX
+
+    // safe registers to current caller-stack
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+    push di
+    push bp
+    push es
+    push ds
+    // IP, CS, FLAGS already on stack from interrupt
+
+    // safe old stack-state
+    mov ax, ss
+    mov WORD PTR fs:[\save_old_ss], ax
+    mov ax, sp
+    mov WORD PTR fs:[\save_old_sp], ax
+
+    // change stack to safe-BIOS-stack
+    mov ax, BIOS_SEG
+    mov ss, ax
+    mov sp, BIOS_STACK_TOP
+
+    // set segments for C to allow usage of near-pointer
+    mov ds, ax
+    mov es, ax
+
+    // reserve some space for register-frame on BIOS-stack
+    sub sp, (INT_FRAME_WORDS * 2)
+    mov di, sp
+    mov WORD PTR fs:[\save_frame_sp], di
+
+    // copy register-frame from DOS-Stack to BIOS-stack
+    mov ax, WORD PTR fs:[\save_old_ss]
+    mov gs, ax
+    mov si, WORD PTR fs:[\save_old_sp]
+    mov cx, INT_FRAME_WORDS
+
+1:  // local variables for copy-loop (direction to C-function)
+    mov ax, WORD PTR gs:[si]
+    mov WORD PTR [di], ax
+    add si, 2
+    add di, 2
+    loop 1b
+
+    // call C-Handler via regparm(1) -> Struct-Pointer is in AX/AX
+    mov ax, WORD PTR fs:[\save_frame_sp]
+    cld
+    call \cfunc
+
+    // for the case C has changed the segments: back to BIOS-stack
+    mov ax, BIOS_SEG
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+
+    // load framepointer from BIOS-stack
+    mov sp, WORD PTR fs:[\save_frame_sp]
+
+    // modify frame back to original DOS-stack
+    mov ax, WORD PTR fs:[\save_old_ss]
+    mov gs, ax
+
+    mov si, sp
+    mov di, WORD PTR fs:[\save_old_sp]
+    mov cx, INT_FRAME_WORDS
+
+2:  // local variables for copy-loop (direction to DOS-functions)
+    mov ax, WORD PTR [si]
+    mov WORD PTR gs:[di], ax
+    add si, 2
+    add di, 2
+    loop 2b
+
+    // read original segment-configuration from memory
+    mov ax, WORD PTR fs:[\save_old_ss]
+    mov bx, WORD PTR fs:[\save_old_sp]
+    mov cx, WORD PTR fs:[\save_old_gs]
+    mov dx, WORD PTR fs:[\save_old_fs]
+
+    mov gs, cx
+    mov fs, dx
+
+    // change back to original DOS-stack
+    cli
+    mov ss, ax
+    mov sp, bx
+
+    // pop registers from restored original stack
+    pop ds
+    pop es
+    pop bp
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+
+    iretw
+.endm
+*/
 
 // ========================================================
 // Interrupt Service Routines
 // ========================================================
+// we leave 0x0100 bytes at segment 0x9C00 for the following variables
+
+# storage for old register-values during safe-stack-ISR
+.equ BIOS_SW_ISR_SS,        0x0020
+.equ BIOS_SW_ISR_SP,        0x0022
+.equ BIOS_SW_ISR_FS,        0x0024
+.equ BIOS_SW_ISR_GS,        0x0026
+.equ BIOS_SW_ISR_FRAME,     0x0028
+
 .global isr_int08
 .global isr_int09
 .global isr_int10
@@ -468,29 +705,44 @@ launch_bootsector:
 
 // hardware-interrupts with EOI
 isr_int08:
-    .code16
     push ax
+    push bx
     push ds
-    .code16gcc
 
     xor ax, ax
     mov ds, ax
 
     // increase BIOS-timer-tick in BDA
     inc WORD PTR ds:[0x046C]
-    jnz 1f
+    jnz 1f                          // no overflow
     inc WORD PTR ds:[0x046E]
 1:
-    .code16
-    pop ds
-    .code16gcc
+    // check for 24h overflow (0x1800B0 Ticks)
+    mov ax, WORD PTR ds:[0x046E]
+    cmp ax, 0x0018
+    jne 2f                          // no 24h overflow
+    mov ax, WORD PTR ds:[0x046C]
+    cmp ax, 0x00B0
+    jne 2f                          // no 24h overflow
 
+    // reset and set overflow-flag
+    xor ax, ax
+    mov WORD PTR ds:[0x046C], ax
+    mov WORD PTR ds:[0x046E], ax
+    mov BYTE PTR ds:[0x0470], 1     // overflow-flag in BDA
+2:
+    pop ds
+
+    // set EOI before INT1C
     mov al, 0x20
     out 0x20, al
 
-    .code16
+    // call user-interrupt INT 1C
+    int 0x1C
+
+    pop bx
     pop ax
-    .code16gcc
+
     iretw
 
 isr_int09:
@@ -509,14 +761,15 @@ isr_int11:
 isr_int12:
     ISR_SW_ENTRY c_int12_handler
 
-//isr_int13:
-//    ISR_SW_ENTRY c_int13_handler
+isr_int13:
+    ISR_SAFE_STACK_ENTRY c_int13_handler, BIOS_SW_ISR_SS, BIOS_SW_ISR_SP, BIOS_SW_ISR_FS, BIOS_SW_ISR_GS, BIOS_SW_ISR_FRAME
 
 isr_int14:
     ISR_SW_ENTRY c_int14_handler
 
 isr_int15:
-    ISR_SW_ENTRY c_int15_handler
+//    ISR_SW_ENTRY c_int15_handler
+    ISR_SAFE_STACK_ENTRY c_int15_handler, BIOS_SW_ISR_SS, BIOS_SW_ISR_SP, BIOS_SW_ISR_FS, BIOS_SW_ISR_GS, BIOS_SW_ISR_FRAME
 
 isr_int16:
     ISR_SW_ENTRY c_int16_handler
@@ -535,143 +788,3 @@ isr_int1c:
 
 isr_int_dummy:
     ISR_SW_ENTRY c_int_dummy_handler
-
-
-// we leave 0x0100 bytes at segment 0x9C00 for the following variables
-.equ BIOS13_SAVE_OLD_SP,    0x0020
-.equ BIOS13_SAVE_OLD_SS,    0x0022
-.equ BIOS13_SAVE_FRAME_SP,  0x0024
-.equ BIOS13_SAVE_OLD_FS,    0x0026
-.equ BIOS13_SAVE_OLD_GS,    0x0028
-
-.equ INT_FRAME_SIZE,        24
-.equ INT_FRAME_WORDS,       12
-isr_int13:
-    cli
-
-    .code16
-    push ax
-    push fs
-    .code16gcc
-
-    // store FS and GS. For this we will use the called-stack for a moment
-    mov ax, BIOS_SEG
-    mov fs, ax
-
-    .code16
-    pop ax // AX contains old FS
-    .code16gcc
-    mov WORD PTR fs:[BIOS13_SAVE_OLD_FS], ax
-
-    mov ax, gs
-    mov WORD PTR fs:[BIOS13_SAVE_OLD_GS], ax
-
-    .code16
-    pop ax // restore original AX
-
-    // store registers to caller-stack in the common frame-layout
-    push ax
-    push bx
-    push cx
-    push dx
-    push si
-    push di
-    push bp
-    push es
-    push ds
-    .code16gcc
-
-    // save old stack (SP directs on begin of new caller-stack)
-    mov ax, ss
-    mov WORD PTR fs:[BIOS13_SAVE_OLD_SS], ax
-
-    mov ax, sp
-    mov WORD PTR fs:[BIOS13_SAVE_OLD_SP], ax
-
-    // switch to our own BIOS-stack
-    mov ax, BIOS_SEG
-    mov ss, ax
-    mov esp, BIOS_STACK_TOP
-
-    // set DS and ES to new Stack-Segment as our register-frame will be there
-    // otherwise near-pointer woulnt work anymore
-    mov ds, ax
-    mov es, ax
-
-    // reserve space for register-frame on the BIOS-stack
-    sub sp, INT_FRAME_SIZE
-    mov di, sp
-    mov WORD PTR fs:[BIOS13_SAVE_FRAME_SP], di
-
-    // copy register-frame from old caller to BIOS-stack
-    mov ax, WORD PTR fs:[BIOS13_SAVE_OLD_SS]
-    mov gs, ax
-
-    mov si, WORD PTR fs:[BIOS13_SAVE_OLD_SP]
-    mov cx, INT_FRAME_WORDS
-
-.copy_frame_to_bios_stack:
-    mov ax, WORD PTR gs:[si]
-    mov WORD PTR [di], ax
-    add si, 2
-    add di, 2
-    loop .copy_frame_to_bios_stack
-
-    // call C-handler. regparm(1) is the first parameter in EAX within DS = BOOT_STACK_SEG
-    xor eax, eax
-    mov ax, WORD PTR fs:[BIOS13_SAVE_FRAME_SP]
-
-    cld
-    call c_int13_handler
-
-    // C-Code could have changed DS, ES or FS, so reset these registers
-    mov ax, BIOS_SEG
-    mov ds, ax
-    mov es, ax
-    mov fs, ax
-
-    // restore framepointer
-    mov sp, WORD PTR fs:[BIOS13_SAVE_FRAME_SP]
-
-    // copy altered frame back to caller-stack. AX, flags, etc. will be on right spot then
-    mov ax, WORD PTR fs:[BIOS13_SAVE_OLD_SS]
-    mov gs, ax
-
-    mov si, sp
-    mov di, WORD PTR fs:[BIOS13_SAVE_OLD_SP]
-    mov cx, INT_FRAME_WORDS
-
-.copy_frame_back_to_caller_stack:
-    mov ax, WORD PTR [si]
-    mov WORD PTR gs:[di], ax
-    add si, 2
-    add di, 2
-    loop .copy_frame_back_to_caller_stack
-
-    mov ax, WORD PTR fs:[BIOS13_SAVE_OLD_SS]
-    mov bx, WORD PTR fs:[BIOS13_SAVE_OLD_SP]
-    mov cx, WORD PTR fs:[BIOS13_SAVE_OLD_GS]
-    mov dx, WORD PTR fs:[BIOS13_SAVE_OLD_FS]
-
-    mov gs, cx
-    mov fs, dx
-
-    // switch back to original (caller) stack
-    cli
-    mov ss, ax
-    mov sp, bx
-
-    // restore registers
-    .code16
-    pop ds
-    pop es
-    pop bp
-    pop di
-    pop si
-    pop dx
-    pop cx
-    pop bx
-    pop ax
-    .code16gcc
-
-    iretw

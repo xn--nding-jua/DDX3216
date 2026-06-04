@@ -18,7 +18,9 @@
 #define BDA_SOFT_RESET_FLAGS    0x0472
 #define BDA_VIDEO_COLUMS		0x044A
 #define BDA_VIDEO_ROWS          0x0484
-#define BDA_TIMER_COUNTER 		0x046C
+#define BDA_TIMER_COUNTER_LOW   0x046C
+#define BDA_TIMER_COUNTER_HIGH  0x046E
+#define BDA_MIDNIGHT_FLAG       0x0470
 
 #define BDA_KBD_HEAD        	0x041A // Kopf (nächstes zu lesendes Zeichen)
 #define BDA_KBD_TAIL        	0x041C // Ende (nächstes zu schreibendes Zeichen)

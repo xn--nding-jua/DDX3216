@@ -1,27 +1,37 @@
 echo off
-md obj
-del obj\*.o
-del obj\*.elf
 cls
-
-echo Compile assembler- and c-files...
-C:\Programme2\i686-elf-tools-windows\bin\i686-elf-gcc.exe -march=i386 -m16 -O0 -ffreestanding -fno-toplevel-reorder -fno-omit-frame-pointer -fno-stack-protector -mpreferred-stack-boundary=2 -mno-80387 start.S -o obj\start.o -c
-C:\Programme2\i686-elf-tools-windows\bin\i686-elf-gcc.exe -march=i386 -m16 -O0 -ffreestanding -fno-toplevel-reorder -fno-omit-frame-pointer -fno-stack-protector -mpreferred-stack-boundary=2 -mno-80387 -nostdlib bios.c -o obj\bios.o -c
-C:\Programme2\i686-elf-tools-windows\bin\i686-elf-gcc.exe -march=i386 -m16 -O0 -ffreestanding -fno-toplevel-reorder -fno-omit-frame-pointer -fno-stack-protector -mpreferred-stack-boundary=2 -mno-80387 -nostdlib uart.c -o obj\uart.o -c
-C:\Programme2\i686-elf-tools-windows\bin\i686-elf-gcc.exe -march=i386 -m16 -O0 -ffreestanding -fno-toplevel-reorder -fno-omit-frame-pointer -fno-stack-protector -mpreferred-stack-boundary=2 -mno-80387 -nostdlib lcd.c -o obj\lcd.o -c
-C:\Programme2\i686-elf-tools-windows\bin\i686-elf-gcc.exe -march=i386 -m16 -O0 -ffreestanding -fno-toplevel-reorder -fno-omit-frame-pointer -fno-stack-protector -mpreferred-stack-boundary=2 -mno-80387 -nostdlib disk.c -o obj\disk.o -c
-C:\Programme2\i686-elf-tools-windows\bin\i686-elf-gcc.exe -march=i386 -m16 -O0 -ffreestanding -fno-toplevel-reorder -fno-omit-frame-pointer -fno-stack-protector -mpreferred-stack-boundary=2 -mno-80387 -nostdlib timer.c -o obj\timer.o -c
-C:\Programme2\i686-elf-tools-windows\bin\i686-elf-gcc.exe -march=i386 -m16 -O0 -ffreestanding -fno-toplevel-reorder -fno-omit-frame-pointer -fno-stack-protector -mpreferred-stack-boundary=2 -mno-80387 -nostdlib isr.c -o obj\isr.o -c
-C:\Programme2\i686-elf-tools-windows\bin\i686-elf-gcc.exe -march=i386 -m16 -O0 -ffreestanding -fno-toplevel-reorder -fno-omit-frame-pointer -fno-stack-protector -mpreferred-stack-boundary=2 -mno-80387 -nostdlib helper.c -o obj\helper.o -c
-echo Done
+echo Building x86 BIOS for the Behringer DDX3216...
+echo ===============================================
 echo .
 
-echo Link assembler-part and c-part together...
-C:\Programme2\i686-elf-tools-windows\bin\i686-elf-ld.exe -m elf_i386 --no-check-sections -T bios.ld obj\start.o obj\bios.o obj\uart.o obj\lcd.o obj\disk.o obj\timer.o obj\isr.o obj\helper.o -o obj\bios.elf
-echo Done
+echo Step 1/3: Compiling sourcecode...
+setlocal enabledelayedexpansion
+set "CC=C:\Programme2\i686-elf-tools-windows\bin\i686-elf-gcc.exe"
+set "LD=C:\Programme2\i686-elf-tools-windows\bin\i686-elf-ld.exe"
+set "OBJCOPY=C:\Programme2\i686-elf-tools-windows\bin\i686-elf-objcopy.exe"
+set "CFLAGS=-march=i386 -m16 -O0 -ffreestanding -fno-toplevel-reorder -fno-omit-frame-pointer -fno-stack-protector -mpreferred-stack-boundary=2 -mno-80387 -nostdlib"
+
+set "OBJECT_FILES="
+for %%F in (*.s *.c) do (
+    echo Compiling %%F...
+    %CC% %CFLAGS% "%%F" -o "obj\%%~nF.o" -c
+    set "OBJECT_FILES=!OBJECT_FILES! obj\%%~nF.o"
+)
 echo .
 
-echo Create 64kB ROM-file...
-C:\Programme2\i686-elf-tools-windows\bin\i686-elf-objcopy.exe -O binary obj\bios.elf bios.bin
-echo Done
+echo Step 2/3: Linking project...
+echo %OBJECT_FILES%
+%LD% -m elf_i386 --no-check-sections -T bios.ld %OBJECT_FILES% -o obj\bios.elf
 echo .
+
+echo Step 3/3: Creating binary-file...
+%OBJCOPY% -O binary obj\bios.elf bios.bin
+echo Done
+echo "======================================="
+echo "   ____  ______  ___________  _  __    "
+echo "  |  _ \|  _ \ \/ /___ /___ \/ |/ /_   "
+echo "  | | | | | | \  /  |_ \ __) | | '_ \  "
+echo "  | |_| | |_| /  \ ___) / __/| | (_) | "
+echo "  |____/|____/_/\_\____/_____|_|\___/  "
+echo "  x86 BIOS for Behringers DDX3216      "
+echo "======================================="

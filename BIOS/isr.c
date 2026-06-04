@@ -639,35 +639,39 @@ __attribute__((externally_visible, regparm(1))) void c_int16_handler(struct inte
     uart_putc('1');
     uart_putc('6');
 
-    regs->ax = 0x0100;
-    regs->flags &= ~0x0001; // clear carray-flag on success
-
+    uint8_t ah = regs->ax >> 8;
 /*
-    if (ah == 0x00) { // read character (blocking)
-        while (*BDA_KBD_HEAD == *BDA_KBD_TAIL) {
-            __asm__ volatile ("sti\n hlt\n cli"); // halt CPU until next interrupt
-        }
-        
-        uint16_t head = *BDA_KBD_HEAD;
-        uint16_t val = *(uint16_t*)(uintptr_t)(head);
-        
-        uint16_t next_head = head + 2;
-        if (next_head >= BDA_KBD_BUF_END) next_head = BDA_KBD_BUF_START;
-        *BDA_KBD_HEAD = next_head;
+    switch (ah) {
+        case 0x00: // Read key, blocking
+            while (*BDA_KBD_HEAD == *BDA_KBD_TAIL) {
+                __asm__ volatile ("sti\n hlt\n cli"); // halt CPU until next interrupt
+            }
+            
+            uint16_t head = *BDA_KBD_HEAD;
+            uint16_t val = *(uint16_t*)(uintptr_t)(head);
+            
+            uint16_t next_head = head + 2;
+            if (next_head >= BDA_KBD_BUF_END) next_head = BDA_KBD_BUF_START;
+            *BDA_KBD_HEAD = next_head;
 
-        // return in AX: AH = Scancode, AL = ASCII
-        __asm__ volatile ("movw %0, %%ax" : : "r"(val) : "ax");
-    }
-    else if (ah == 0x01) { // check state
-        if (*BDA_KBD_HEAD != *BDA_KBD_TAIL) {
-            // Key in buffer -> delete ZF
-            __asm__ volatile ("andw $0xFFBF, 6(%%bp)" ::: "memory");
-            uint16_t val = *(uint16_t*)(uintptr_t)(*BDA_KBD_HEAD);
-            __asm__ volatile ("movw %0, %%ax" : : "r"(val) : "ax");
-        } else {
-            // buffer empty -> set ZF
-            __asm__ volatile ("orw  $0x0040, 6(%%bp)" ::: "memory");
-        }
+            regs->ax = val;
+            break;
+
+        case 0x01: // Check key
+            if (*BDA_KBD_HEAD != *BDA_KBD_TAIL) {
+                // Key in buffer -> delete ZF
+                __asm__ volatile ("andw $0xFFBF, 6(%%bp)" ::: "memory");
+                uint16_t val = *(uint16_t*)(uintptr_t)(*BDA_KBD_HEAD);
+                regs->ax = val;
+            } else {
+                // buffer empty -> set ZF
+                __asm__ volatile ("orw  $0x0040, 6(%%bp)" ::: "memory");
+            }
+            break;
+
+        default:
+            regs->flags |= 0x0040;
+            break;
     }
 */
 }
@@ -716,65 +720,38 @@ __attribute__((externally_visible, regparm(1))) void c_int1a_handler(struct inte
     uart_putc('I');
     uart_putc('1');
     uart_putc('A');
+    uint8_t ah = (uint8_t)(regs->ax >> 8);
 
-    regs->ax = 0x0000;
-    regs->cx = 0x0000;
-    regs->dx = 0x0000;
-    regs->flags &= ~0x0001; // clear carray-flag on success
-
-/*
-	uint8_t ah;
-
-    __asm__ volatile ("movb %%ah, %0" : "=r"(ah));
-
-    // store DS and reset it to 0
-	__asm__ volatile("movw %%ds, %0" : "=r"(g_old_ds));
-	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
-	
     switch (ah) {
-        case 0x00: // Get System Time
-            {
-                uint32_t ticks = *BDA_TIMER_COUNTER;
-                uint16_t low = (uint16_t)(ticks & 0xFFFF);
-                uint16_t high = (uint16_t)(ticks >> 16);
+        case 0x00: { // Get system time
+            uint16_t lo = readFarWord(0x0000, BDA_TIMER_COUNTER_LOW);
+            uint16_t hi = readFarWord(0x0000, BDA_TIMER_COUNTER_HIGH);
+            uint8_t midnight = readFarByte(0x0000, BDA_MIDNIGHT_FLAG);
 
-                __asm__ volatile (
-                    "movw %0, %%cx\n"
-                    "movw %1, %%dx\n"
-                    "xorw %%ax, %%ax" // AL = 0
-                    : 
-                    : "r"(high), "r"(low) 
-                    : "ax", "cx", "dx"
-                );
-            }
-            break;
+            regs->cx = hi;
+            regs->dx = lo;
+            regs->ax = midnight;       // AL = midnight flag, AH = 0
+            regs->flags &= ~0x0001;    // CF=0
 
-        case 0x02: // Read Real Time Clock Time
-            {
-				uint8_t h = read_rtc(0x04);
-                uint8_t m = read_rtc(0x02);
-                uint8_t s = read_rtc(0x00);
-                
-                __asm__ volatile (
-                    "movb %0, %%ch\n"
-                    "movb %1, %%cl\n"
-                    "movb %2, %%dh\n"
-                    "clc" 
-                    : 
-                    : "g"(h), "g"(m), "g"(s) // "g" erlaubt Register, Memory oder Immediate
-                    : "cx", "dx", "cc"
-                );
-            }
+            // Optional: clear IBM-compatible midnight-flag after reading
+            writeFarByte(0x0000, BDA_MIDNIGHT_FLAG, 0);
             break;
+        }
+
+        case 0x01: { // Set system time CX:DX
+            writeFarWord(0x0000, BDA_TIMER_COUNTER_LOW, regs->dx);
+            writeFarWord(0x0000, BDA_TIMER_COUNTER_HIGH, regs->cx);
+            writeFarByte(0x0000, BDA_MIDNIGHT_FLAG, 0);
+            regs->ax = 0x0000;
+            regs->flags &= ~0x0001;
+            break;
+        }
 
         default:
-            __asm__ volatile ("stc");
+            regs->ax = 0x8600;
+            regs->flags |= 0x0001;
             break;
     }
-
-	// restore DS
-    __asm__ volatile("movw %0, %%ds" : : "r"(g_old_ds));
-*/
 }
 
 // periodic interrupt
@@ -797,6 +774,8 @@ static uint8_t pic_read_irr_master(void) {
 }
 
 __attribute__((externally_visible, regparm(1))) void c_int_dummy_handler(struct interrupt_registers *regs) {
+    // this interrupt is not supposed to be called, but if it is called, we print some debug information and halt the system
+
     uart_print("DUMMY INT / EXCEPTION\n");
 
     uart_print("CS=");

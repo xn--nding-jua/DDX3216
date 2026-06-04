@@ -460,8 +460,6 @@ __attribute__((noreturn)) void bios_main() {
         if (inb(UART_LSR) & 0x01) {
             char uart_c = inb(UART_RBR);
             uart_putc(uart_c); // echo back to sender
-
-            cpu_reset();
         }
 
         delay_1ms();
