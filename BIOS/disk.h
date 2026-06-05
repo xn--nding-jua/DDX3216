@@ -87,7 +87,7 @@
      (uint32_t)((s) - 1))
 
 void mms_init();
-bool pcmcia_init();
+bool cfcard_init();
 bool ide_wait_ready();
 bool ide_wait_drq(void);
 uint8_t ide_read_bootsector();

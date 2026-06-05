@@ -107,28 +107,6 @@ void lcd_scroll_up() {
 	write_sc300_lcd_cfg(LCD_VID_IDX_CURSOR_ADDR_LOWER, (offset >> 1) & 0xFF); // lower 8 bits of offset (divide by 2)
 }
 
-// output single char on LCD at specific position
-void lcd_putc_pos(int row, int col, char c, uint8_t attribute) {
-	// 0xB0000 is the upper left character
-	// in text-mode the LCD uses 2-bytes to display a single character: the first byte is the ASCII code of the character, the second byte is the attribute (color, blinking, etc.)
-	// the offset within video-memory can be calculated as follows:
-	uint16_t offset = ((row * (LCD_WIDTH / 8)) + col) * 2;
-    
-    writeFarByte(VRAM_SEG, offset,     c); // character-byte (8-bit ASCII-chars)
-    writeFarByte(VRAM_SEG, offset + 1, attribute); // attribute-byte
-	
-	writeFarByte(BASE_SEG, BDA_CURSOR_POS_ROW, row);
-	writeFarByte(BASE_SEG, BDA_CURSOR_POS_COL, col);
-
-	/*
-	Attribute Byte:
-	bit 7     -> Blink
-	bit 6..4  -> Background Color (RGB)
-	bit 3     -> Intensity
-	bit 2..0  -> Foreground Color (RGB)
-	*/
-}
-
 void lcd_putc(char c, uint8_t attribute) {
 	uint16_t offset;
 
@@ -184,15 +162,21 @@ void lcd_putc(char c, uint8_t attribute) {
 	write_sc300_lcd_cfg(LCD_VID_IDX_CURSOR_ADDR_LOWER, (offset >> 1) & 0xFF); // lower 8 bits of offset (divide by 2)
 }
 
-// output whole string on LCD
-void lcd_print_string(int row, int col, const char *str, uint8_t attribute) {
+// output single char on LCD at specific position
+void lcd_putc_pos(int row, int col, char c, uint8_t attribute) {
+	// set cursor at desired position
+	writeFarByte(BASE_SEG, BDA_CURSOR_POS_COL, col);
+	writeFarByte(BASE_SEG, BDA_CURSOR_POS_ROW, row);
+
+	// output char at current cursor position
+	lcd_putc(c, attribute);
+}
+
+// output whole string on LCD at current position
+void lcd_print_string(const char *str, uint8_t attribute) {
 	// Strings are placed in ROM so we have to take care of different memory-segments
 	// so we take the relative offset and use the readRomByte function
     uint16_t rom_offset = (uint16_t)(uintptr_t)str;
-
-    int current_col = col;
-	writeFarByte(BASE_SEG, BDA_CURSOR_POS_COL, col);
-	writeFarByte(BASE_SEG, BDA_CURSOR_POS_ROW, row);
 
     while (1) {
         char c = (char)readRomByte(rom_offset);
@@ -201,37 +185,34 @@ void lcd_print_string(int row, int col, const char *str, uint8_t attribute) {
             break;
         }
 
-        lcd_putc_pos(row, current_col, c, attribute);
-
-		// get next character
-        rom_offset++;
-        current_col++;
-        
-        // automatic line break
-        if (current_col >= (LCD_WIDTH / 8)) {
-            current_col = 0;
-            row++;
-        }
-
-		writeFarByte(BASE_SEG, BDA_CURSOR_POS_COL, current_col);
-		writeFarByte(BASE_SEG, BDA_CURSOR_POS_ROW, row);
+		lcd_putc(c, attribute);
     }
 }
 
-void lcd_print_string_ram(int row, int col, const char *str, uint8_t attribute) {
-    int current_col = col;
-    while (*str) {
-        lcd_putc_pos(row, current_col, *str, attribute);
-        str++;
-        current_col++;
-        if (current_col >= (LCD_WIDTH / 8)) {
-            current_col = 0;
-            row++;
-        }
+// output whole string on LCD at specific position
+void lcd_print_string_pos(int row, int col, const char *str, uint8_t attribute) {
+	// set cursor at desired position
+	writeFarByte(BASE_SEG, BDA_CURSOR_POS_COL, col);
+	writeFarByte(BASE_SEG, BDA_CURSOR_POS_ROW, row);
 
-		writeFarByte(BASE_SEG, BDA_CURSOR_POS_COL, current_col);
-		writeFarByte(BASE_SEG, BDA_CURSOR_POS_ROW, row);
+	// output whole string on LCD at specific position
+	lcd_print_string(str, attribute);
+}
+
+void lcd_print_string_ram(const char *str, uint8_t attribute) {
+    while (*str) {
+        lcd_putc(*str, attribute);
+        str++;
 	}
+}
+
+void lcd_print_string_ram_pos(int row, int col, const char *str, uint8_t attribute) {
+	// set cursor at desired position
+	writeFarByte(BASE_SEG, BDA_CURSOR_POS_COL, col);
+	writeFarByte(BASE_SEG, BDA_CURSOR_POS_ROW, row);
+
+	// output whole string on LCD at specific position
+	lcd_print_string_ram(str, attribute);
 }
 
 void lcd_install_character(uint8_t c, uint8_t row, uint8_t value) {

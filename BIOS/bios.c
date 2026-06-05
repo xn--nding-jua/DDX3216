@@ -107,7 +107,7 @@ int test_ram_range(uint16_t start_seg, uint16_t end_seg) {
     for (uint32_t seg = start_seg; seg <= end_seg; seg += 0x1000) { 
         tested_kb += 64;
         uint16_to_dec(tested_kb, textbuffer); 
-        lcd_print_string_ram(1, 11, textbuffer, 0x07);
+        lcd_print_string_ram_pos(1, 11, textbuffer, 0x07);
 
         // the full loop would take quite long, so we are testing only
         // every 1024th byte per segment
@@ -124,7 +124,7 @@ int test_ram_range(uint16_t start_seg, uint16_t end_seg) {
     for (uint32_t seg = start_seg; seg <= end_seg; seg += 0x1000) {
         tested_kb += 64;
         uint16_to_dec(tested_kb, textbuffer);
-        lcd_print_string_ram(1, 11, textbuffer, 0x07);
+        lcd_print_string_ram_pos(1, 11, textbuffer, 0x07);
 
         // the full loop would take quite long, so we are testing only
         // every 1024th byte per segment
@@ -145,9 +145,9 @@ void ram_test_and_setup() {
 
     // this will test RAM-segments 0x07C0 (bootsector) to 0x9FFF = the end of conventional memory (640 kB)
     if (test_ram_range(0x07C0, 0x87C0)) {
-        lcd_print_string(1, 11, "OK    ", 0x07); // delete the last 3 chars from memory-test as well
+        lcd_print_string_pos(1, 11, "OK    ", 0x07); // delete the last 3 chars from memory-test as well
     } else {
-        lcd_print_string(1, 11, "ERROR!", 0x07);
+        lcd_print_string_pos(1, 11, "ERROR!", 0x07);
         while(1) { __asm__("hlt"); }
     }
 }
@@ -381,42 +381,44 @@ __attribute__((noreturn)) void bios_main() {
 
     lcd_init();
     lcd_clear();
-	lcd_print_string(0, 0, "AMD Elan SC300 BIOS v0.01   . ", 0x07);
+	lcd_print_string_pos(0, 0, "AMD Elan SC300 BIOS v0.01   . ", 0x07);
     uint8_t version = read_sc300_cfg(0x64);
     lcd_putc_pos(0, 27, 'A' + (version & 0b00000111) - 1, 0x07);
     lcd_putc_pos(0, 29, '0' + ((version & 0b01111000) >> 3), 0x07);
 
-    //lcd_print_string(1, 0, "RAM-Test...", 0x07);
+    //lcd_print_string_pos(1, 0, "RAM-Test...", 0x07);
 	//ram_test_and_setup(); // this function halts the CPU on any RAM-error
 
-    lcd_print_string(2, 0, "Init PIC and IVT...", 0x07);
+    lcd_print_string_pos(2, 0, "Init PIC and IVT...", 0x07);
     pic_init();
 	setup_ivt();
 	setup_bda();
 
-    lcd_print_string(3, 0, "Init UART...", 0x07);
+    lcd_print_string_pos(3, 0, "Init UART...", 0x07);
     uart_init(9600);
     //pirq_init();
 	//uart_interrupt_enable();
 	uart_print("AMD Elan SC300 BIOS v0.01\n");
 
-	lcd_print_string(4, 0, "Init timer...", 0x07);
+	lcd_print_string_pos(4, 0, "Init timer...", 0x07);
 	timer_init();
 
-    lcd_print_string(5, 0, "Init keyboard...", 0x07);
+    lcd_print_string_pos(5, 0, "Init keyboard...", 0x07);
 	kbd_init();
 	
 	__asm__ volatile ("sti");
     setLEDs();
 
-    lcd_print_string(6, 0, "Init PCMCIA / CF-Card...", 0x07);
+    lcd_print_string_pos(6, 0, "Init PCMCIA / CF-Card...", 0x07);
 	mms_init();
-	if (pcmcia_init()) {
+	if (cfcard_init()) {
         // try to load DOS from CF-Card and boot it
-        lcd_print_string(7, 0, "Booting from CF-Card...", 0x07);
+        lcd_print_string_pos(7, 0, "Booting from CF-Card...\n", 0x07);
         boot_dos();
 	}else{
-        lcd_print_string(7, 0, "Failed to initialize CF-Card.", 0x07);
+        // no CF-card found, launch BASIC instead
+        lcd_print_string_pos(7, 0, "No CF-Card. Booting BASIC...", 0x07);
+        launch_basic();
     }
 
     uint8_t c = 'A';
@@ -440,13 +442,13 @@ __attribute__((noreturn)) void bios_main() {
             char ascii = (*ptr) & 0xFF;
 
             // display scancode and ASCII-character on LCD
-            lcd_print_string(7, 0, "Scancode: 0x", 0x07);
+            lcd_print_string_pos(7, 0, "Scancode: 0x", 0x07);
             char textbuffer[3];
             uint8_to_hex(scancode, textbuffer);
             lcd_putc_pos(7, 15, textbuffer[0], 0x07);
             lcd_putc_pos(7, 16, textbuffer[1], 0x07);
 
-            lcd_print_string(7, 18, "ASCII: ", 0x07);
+            lcd_print_string_pos(7, 18, "ASCII: ", 0x07);
             lcd_putc_pos(7, 25, ascii ? ascii : '.', 0x07);
 
             // move head forward

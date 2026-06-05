@@ -63,6 +63,8 @@
 .equ CFG_ADDR,        0x22
 .equ CFG_DATA,        0x23
 
+.equ BASIC_SIZE_WORDS, 2048     // size of basic BIOS in words (2048 words = 4096 bytes = 4 kB)
+
 // ========================================================
 // Reset-Vector (must be at offset 0xFFF0 in ROM)
 // ========================================================
@@ -795,3 +797,44 @@ isr_int1c:
 
 isr_int_dummy:
     ISR_SW_ENTRY c_int_dummy_handler
+
+
+// ========================================================
+// FUNCTIONS FOR TINY8086 BASIC
+// ========================================================
+.global launch_basic
+launch_basic:
+        // copy BASIC from ROM to RAM (0x2000:0x0000)
+        call copy_basic_to_ram
+    
+        // basic uses an own stack at 0x1000:0x0000 that it will initialize by its own
+
+        // jump to BASIC in RAM at 0x2000:0x0000
+        jmp 0x2000:0x0000
+
+copy_basic_to_ram:
+    push ds
+    push es
+    
+    // get the source from ROM
+    mov ax, 0xF000               // BIOS-Segment
+    mov ds, ax
+    mov si, basic_binary         // offset of BASIC in ROM
+    
+    // destination in RAM
+    mov ax, 0x2000               // destination-segment
+    mov es, ax
+    xor di, di                   // Offset 0x0000
+    
+    // copy BASIC from ROM to RAM
+    mov cx, BASIC_SIZE_WORDS     // number of words to copy
+    cld                          // clear direction flag (copy forwards)
+    rep movsw                    // copy DS:SI to ES:DI
+    
+    pop es
+    pop ds
+    ret
+
+.align 16
+basic_binary:
+    .incbin "bin/basic.bin"

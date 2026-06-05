@@ -11,6 +11,14 @@ set "LD=C:\Programme2\i686-elf-tools-windows\bin\i686-elf-ld.exe"
 set "OBJCOPY=C:\Programme2\i686-elf-tools-windows\bin\i686-elf-objcopy.exe"
 set "CFLAGS=-march=i386 -m16 -O0 -ffreestanding -fno-toplevel-reorder -fno-omit-frame-pointer -fno-stack-protector -mpreferred-stack-boundary=2 -mno-80387 -nostdlib"
 
+if not exist obj md obj
+if not exist bin md bin
+
+echo Compiling tiny8086 BASIC...
+cd tiny8086basic
+c:\Programme2\nasm-3.01\nasm.exe basic.asm -o ..\bin\basic.bin
+cd ..
+
 set "OBJECT_FILES="
 for %%F in (*.s *.c) do (
     echo Compiling %%F...
@@ -25,7 +33,7 @@ echo %OBJECT_FILES%
 echo .
 
 echo Step 3/3: Creating binary-file...
-%OBJCOPY% -O binary obj\bios.elf bios.bin
+%OBJCOPY% -O binary obj\bios.elf bin\bios.bin
 echo Done
 echo "======================================="
 echo "   ____  ______  ___________  _  __    "

@@ -130,7 +130,7 @@ void mms_init() {
 	// from now on memory-addresses 0xD0000 to 0xEFFFF representing the first 128kB of PCMCIA-Card A
 }
 
-bool pcmcia_init() {
+bool cfcard_init() {
 	// PCMCIA-card is connected via 10-bit address-bus and 8-bit data-bus
 	// more signals connected to SC300:
 	// MCELA# -> CE1#               Card Enable Even byte
