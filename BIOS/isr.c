@@ -22,120 +22,109 @@ void pirq_init() {
 }
 
 // INT 09h: keyboard-interrupt
-volatile uint8_t g_kbd_scancode;
-static volatile uint8_t g_kbd_set1_code;
-static volatile bool g_kbd_is_break;
-static volatile char g_kbd_ascii;
-static volatile uint16_t g_kbd_tail;
-static volatile uint16_t g_kbd_next_tail;
-static volatile uint16_t* g_kbd_ptr;
-
 __attribute__((externally_visible, regparm(1))) void c_int09_handler(struct interrupt_registers *regs) {
     uart_putc('I');
     uart_putc('0');
     uart_putc('9');
 
     // read scancode from keyboard-controller
-	g_kbd_scancode = inb(KBD_DATA_PORT);
+	uint8_t scancode = inb(KBD_DATA_PORT);
 
     // clear shift-register and IRQ in keyboard-controller
-    outb(KBD_CTRL_PORT, inb(KBD_CTRL_PORT) | KBD_CTRL_CLEAR);
-    outb(KBD_CTRL_PORT, inb(KBD_CTRL_PORT) & ~KBD_CTRL_CLEAR);
+    uint8_t ctrl = inb(KBD_CTRL_PORT);
+    outb(KBD_CTRL_PORT, ctrl | KBD_CTRL_CLEAR);   // set Bit 7
+    outb(KBD_CTRL_PORT, ctrl & ~KBD_CTRL_CLEAR);  // clear Bit 7
 
-    switch (kbd_state) {
-        case KBD_STATE_IDLE:
-            if (g_kbd_scancode == SC2_EXTENDED) {
-                kbd_state = KBD_STATE_EXTENDED;
-                goto eoi_int09;
-            }
-            if (g_kbd_scancode == SC2_BREAK) {
-                kbd_state = KBD_STATE_BREAK;
-                goto eoi_int09;
-            }
-            // regular make-code (key pressed)
-            //g_kbd_set1_code = set2_to_set1[g_kbd_scancode];
-            g_kbd_set1_code = readRomByte((uint16_t)(uintptr_t)&set2_to_set1[g_kbd_scancode]);
-            g_kbd_is_break  = false;
-            break;
+    // check if it is make or break
+    if (scancode & 0x80) {
+        // break (key is lifted up)
+        uint8_t real_scancode = scancode & 0x7F; // Bit 7 entfernen
 
-        case KBD_STATE_EXTENDED:
-            if (g_kbd_scancode == SC2_BREAK) {
-                kbd_state = KBD_STATE_EXT_BREAK;
-                goto eoi_int09;
-            }
-            // extended make-code (key pressed)
-            //g_kbd_set1_code = set2_ext_to_set1[g_kbd_scancode];
-            g_kbd_set1_code = readRomByte((uint16_t)(uintptr_t)&set2_ext_to_set1[g_kbd_scancode]);
-            g_kbd_is_break  = false;
-            kbd_state = KBD_STATE_IDLE;
-            break;
-
-        case KBD_STATE_BREAK:
-            // regular break-code (key released)
-            //g_kbd_set1_code = set2_to_set1[g_kbd_scancode];
-            g_kbd_set1_code = readRomByte((uint16_t)(uintptr_t)&set2_to_set1[g_kbd_scancode]);
-            g_kbd_is_break  = true;
-            kbd_state = KBD_STATE_IDLE;
-            break;
-
-        case KBD_STATE_EXT_BREAK:
-            // Extended Break-Code (key released)
-            //g_kbd_set1_code = set2_ext_to_set1[g_kbd_scancode];
-            g_kbd_set1_code = readRomByte((uint16_t)(uintptr_t)&set2_ext_to_set1[g_kbd_scancode]);
-            g_kbd_is_break  = true;
-            kbd_state = KBD_STATE_IDLE;
-            break;
-    }
-
-    // manage modifier-key
-    if (g_kbd_set1_code) {
-        switch (g_kbd_set1_code) {
-            case 0x2A:  // Left Shift
-            case 0x36:  // Right Shift
-                shift_pressed = !g_kbd_is_break;
-                goto eoi_int09;
-
-            case 0x1D:  // Ctrl
-                ctrl_pressed = !g_kbd_is_break;
-                goto eoi_int09;
-
-            case 0x38:  // Alt
-                alt_pressed = !g_kbd_is_break;
-                goto eoi_int09;
-
-            case 0x3A:  // Caps Lock (only on Make)
-                if (!g_kbd_is_break) caps_lock = !caps_lock;
-                goto eoi_int09;
+        switch(real_scancode) {
+            case 0x2A: // Left Shift
+                writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, readFarByte(0x0000, BDA_KBD_STATUS_FLAGS) & ~KBD_FLAG_LSHIFT);
+                break;
+            case 0x36: // Right Shift
+                writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, readFarByte(0x0000, BDA_KBD_STATUS_FLAGS) & ~KBD_FLAG_RSHIFT);
+                break;
+            case 0x1D: // Ctrl
+                writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, readFarByte(0x0000, BDA_KBD_STATUS_FLAGS) & ~KBD_FLAG_CTRL);
+                break;
+            case 0x38: // Alt
+                writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, readFarByte(0x0000, BDA_KBD_STATUS_FLAGS) & ~KBD_FLAG_ALT);
+                break;
         }
+    }else{
+        // make (key is pressed down)
+        switch(scancode) {
+            case 0x2A: // Left Shift
+                writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, readFarByte(0x0000, BDA_KBD_STATUS_FLAGS) | KBD_FLAG_LSHIFT);
+                break;
+            case 0x36: // Right Shift
+                writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, readFarByte(0x0000, BDA_KBD_STATUS_FLAGS) | KBD_FLAG_RSHIFT);
+                break;
+            case 0x1D: // Ctrl
+                writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, readFarByte(0x0000, BDA_KBD_STATUS_FLAGS) | KBD_FLAG_CTRL);
+                break;
+            case 0x38: // Alt
+                writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, readFarByte(0x0000, BDA_KBD_STATUS_FLAGS) | KBD_FLAG_ALT);
+                break;
+            default:
+                // regular key, put scancode into keyboard-buffer
+                char ascii = 0;
 
-        uint8_t flags = 0;
-        if (shift_pressed) flags |= KBD_FLAG_RSHIFT;
-        if (ctrl_pressed)  flags |= KBD_FLAG_CTRL;
-        if (alt_pressed)   flags |= KBD_FLAG_ALT;
-        if (caps_lock)     flags |= KBD_FLAG_CAPSLOCK;
-        writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, flags);
-
-        // only convert make-codes to ASCII and put them on the LCD, break-codes are ignored for ASCII output
-        if (!g_kbd_is_break) {
-            /*
-            g_kbd_ascii = set1_to_ascii(g_kbd_set1_code, shift_pressed, caps_lock);
-            if (g_kbd_ascii) {
-                // store scancode and ASCII-character in keyboard-buffer in BDA, if there is space (2 bytes per entry: high byte = scancode, low byte = ASCII)
-                g_kbd_tail = readFarWord(0x0000, BDA_KBD_TAIL);
-                g_kbd_next_tail = g_kbd_tail + 2;
-                if (g_kbd_next_tail >= BDA_KBD_BUF_END) g_kbd_next_tail = BDA_KBD_BUF_START;
-
-                if (g_kbd_next_tail != readFarWord(0x0000, BDA_KBD_HEAD)) {
-                    // store scancode (high) and ASCII (low)
-                    writeFarWord(0x0000, g_kbd_tail, (uint16_t)((g_kbd_scancode << 8) | g_kbd_ascii));
-                    writeFarWord(0x0000, BDA_KBD_TAIL, g_kbd_next_tail);
+                // check if shift is active
+                uint8_t status_flags = readFarByte(0x0000, BDA_KBD_STATUS_FLAGS);
+                if (status_flags & (KBD_FLAG_LSHIFT | KBD_FLAG_RSHIFT)) {
+                    if (scancode < sizeof(xt_to_ascii_shift)) {
+                        uint16_t rom_offset = (uint16_t)(uintptr_t)xt_to_ascii_shift[scancode];
+                        ascii = (char)readRomByte(rom_offset);
+                    }else{
+                        ascii = 0;
+                    }
+                } else {
+                    if (scancode < sizeof(xt_to_ascii_normal)) {
+                        uint16_t rom_offset = (uint16_t)(uintptr_t)xt_to_ascii_normal[scancode];
+                        ascii = (char)readRomByte(rom_offset);
+                    }else{
+                        ascii = 0;
+                    }
                 }
-            }
-            */
+
+                // if valid ascii-character, put it into the keyboard-buffer together with the scancode, otherwise ignore it
+                if (ascii != 0 || scancode != 0) {
+                    uint16_t next_tail = readFarWord(0x0000, BDA_KBD_TAIL) + sizeof(uint16_t);
+                
+                    // wrap write-pointer around if it reaches the end of the buffer
+                    if (next_tail >= BDA_KBD_BUF_END) {
+                        next_tail = BDA_KBD_BUF_START;
+                    }
+
+                    // check if buffer has some space left for the new scancode
+                    if (next_tail != readFarWord(0x0000, BDA_KBD_HEAD)) {
+                        // BIOS is storing a 16-bit value for each key-press in the keyboard-buffer,
+                        // where the high-byte is the scancode and the low-byte is the ASCII-character
+
+                        // High-Byte = Scancode, Low-Byte = ASCII
+                        uint16_t key_data = (scancode << 8) | (uint8_t)ascii;
+                        
+                        // write keydata to keyboard-buffer at position
+                        writeFarWord(0x0000, readFarWord(0x0000, BDA_KBD_TAIL), key_data);
+
+                        // update tail-pointer
+                        writeFarWord(0x0000, BDA_KBD_TAIL, next_tail);
+                    } else {
+                        // buffer overflow -> ignore new key-press
+                        // regular BIOS would beep here, but we have no speaker
+                    }
+                }
+
+                break;
         }
     }
 
-    eoi_int09:
+    // send End of Interrupt (EOI) to PIC
+    outb(0x20, 0x20);
 }
 
 // INT04 (PIRQ0 is mapped here)
@@ -278,7 +267,7 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
     uint8_t dl = (uint8_t)(regs->dx & 0xFF);
 
     // clear carry-flag in flags-register
-    regs->flags &= ~0x0001; 
+    regs->flags &= ~ISR_FLAGS_CF; 
 
     switch(ah) {
         case 0x00: // Reset Disk
@@ -321,11 +310,11 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
             if (error == 0) {
                 // success: AH = 00h (Success), AL = number of read sectors
                 regs->ax = (0x00 << 8) | sectors_done; 
-                regs->flags &= ~0x0001; // clear carray-flag on success
+                regs->flags &= ~ISR_FLAGS_CF; // clear carray-flag on success
             } else {
                 // error occurred
                 regs->ax = (error << 8) | sectors_done;
-                regs->flags |= 0x0001;  // set carry flag on error
+                regs->flags |= ISR_FLAGS_CF;  // set carry flag on error
             }
             break;
         }
@@ -354,14 +343,14 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
                 regs->es = 0x0000;
                 regs->di = 0x0000;
 
-                regs->flags &= ~0x0001;
+                regs->flags &= ~ISR_FLAGS_CF;
             }else{
                 // floppy
                 regs->ax = (0x01 << 8); // AH = 01h (Invalid Command / Drive Not Ready)
                 regs->bx = 0x0000;
                 regs->cx = 0x0000;
                 regs->dx = 0x0000;      // <--- Sagt dem MBR: 0 Diskettenlaufwerke installiert!
-                regs->flags |= 0x0001;  // Set Carry Flag = Fehler!
+                regs->flags |= ISR_FLAGS_CF;  // Set Carry Flag = Fehler!
             }
             break;
         }
@@ -372,17 +361,17 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
             regs->ax    = (0x03 << 8);
             regs->cx    = (uint16_t)(total >> 16);
             regs->dx    = (uint16_t)(total & 0xFFFF);
-            regs->flags &= ~0x0001;
+            regs->flags &= ~ISR_FLAGS_CF;
             break;
 
         case 0x41: // Extensions Present
             //regs->ax = 0x0100;     // AH = 01h (Invalid function)
-            //regs->flags |= 0x0001; // Carry Set = not supported
+            //regs->flags |= ISR_FLAGS_CF; // Carry Set = not supported
 
             // TEST: LBA-Support
             // check for magic word 0x55AA
             if (regs->bx != 0x55AA) {
-                regs->flags |= 0x0001;  // CF=1: Fehler
+                regs->flags |= ISR_FLAGS_CF;  // CF=1: Fehler
                 regs->ax = (0x01 << 8);
                 break;
             }
@@ -393,7 +382,7 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
             regs->cx    = 0x0007;      // Bit 0: Extended Disk Access
                                        // Bit 1: Removable Drive Support
                                        // Bit 2: EDD (Enhanced Disk Drive)
-            regs->flags &= ~0x0001;    // CF=0: Extensions available
+            regs->flags &= ~ISR_FLAGS_CF;    // CF=0: Extensions available
             break;
 
         case 0x42: // Extended Read Sectors
@@ -411,14 +400,14 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
             // check the structure
             if (dap.size != 0x10) {
                 regs->ax    = (0x01 << 8); // bad data
-                regs->flags |= 0x0001;
+                regs->flags |= ISR_FLAGS_CF;
                 break;
             }
 
             // 64-bit LBA: upper 32 Bit must be 0 (CF-Card < 4GB)
             if (dap.lba_high != 0) {
                 regs->ax    = (0x01 << 8); // LBA out of border
-                regs->flags |= 0x0001;
+                regs->flags |= ISR_FLAGS_CF;
                 break;
             }
 
@@ -448,10 +437,10 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
 
             if (error == 0) {
                 regs->ax    = 0x0000; // Return-Code = Success
-                regs->flags &= ~0x0001;
+                regs->flags &= ~ISR_FLAGS_CF;
             } else {
                 regs->ax    = (error << 8);
-                regs->flags |= 0x0001;
+                regs->flags |= ISR_FLAGS_CF;
             }
             break;
 
@@ -463,7 +452,7 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
             uint16_t buf_size = readFarWord(buf_segment, buf_offset);
             if (buf_size < 0x1A) {
                 regs->ax    = (0x01 << 8);
-                regs->flags |= 0x0001;
+                regs->flags |= ISR_FLAGS_CF;
                 break;
             }
 
@@ -484,12 +473,12 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
             }
 
             regs->ax    = 0x0000;
-            regs->flags &= ~0x0001;
+            regs->flags &= ~ISR_FLAGS_CF;
             break;
 
         default:
             regs->ax = (0x01 << 8);
-            regs->flags |= 0x0001; // Carry Set
+            regs->flags |= ISR_FLAGS_CF; // Carry Set
             break;
     }
 }
@@ -509,18 +498,18 @@ __attribute__((externally_visible, regparm(1))) void c_int14_handler(struct inte
 			// we are initializing the UART with fixed 38400 Baud for now. But later we
 			// could use this to switch between different speeds and settings
             regs->ax    = 0x0000;
-            regs->flags &= ~0x0001;
+            regs->flags &= ~ISR_FLAGS_CF;
             break;
 
         case 0x01: // transmit char
             uart_putc((char)al);
             regs->ax    = 0x6000;
-            regs->flags &= ~0x0001;
+            regs->flags &= ~ISR_FLAGS_CF;
             break;
 
         case 0x02: // receive char (not implemented)
             regs->ax    = 0x8000; // timeout
-            regs->flags &= ~0x0001;
+            regs->flags &= ~ISR_FLAGS_CF;
             break;
 
         case 0x03: // request state
@@ -528,7 +517,7 @@ __attribute__((externally_visible, regparm(1))) void c_int14_handler(struct inte
                 uint8_t status = inb(UART_LSR); // LSR
                 uint8_t modem = inb(UART_MSR);  // MSR
                 regs->ax    = ((uint16_t)status << 8) | modem;
-                regs->flags &= ~0x0001;
+                regs->flags &= ~ISR_FLAGS_CF;
             }
             break;
     }
@@ -550,26 +539,26 @@ __attribute__((externally_visible, regparm(1))) void c_int15_handler(struct inte
         case 0x24:  // A20 Gate Control
             if (al == 0x00) { // disable Gate A20
                 a20_disable();
-                regs->flags &= ~0x0001; // Success
+                regs->flags &= ~ISR_FLAGS_CF; // Success
             }else if (al == 0x01) { // enable Gate A20
                 a20_enable();
-                regs->flags &= ~0x0001; // Success
+                regs->flags &= ~ISR_FLAGS_CF; // Success
             } else if (al == 0x02) { // request if Gate A20 is opened
-                regs->ax = a20_is_enabled() ? 0x0001 : 0x0000;
-                regs->flags &= ~0x0001;
+                regs->ax = a20_is_enabled() ? ISR_FLAGS_CF : 0x0000;
+                regs->flags &= ~ISR_FLAGS_CF;
             } else {
                 regs->ax = 0x8600; // unknown AL-Subcode
-                regs->flags |= 0x0001;
+                regs->flags |= ISR_FLAGS_CF;
             }
             break;
 
         case 0x41:
             if (al == 0x01) {
                 regs->ax = 0x0000;
-                regs->flags &= ~0x0001;
+                regs->flags &= ~ISR_FLAGS_CF;
             } else {
                 regs->ax = 0x8600;
-                regs->flags |= 0x0001;
+                regs->flags |= ISR_FLAGS_CF;
             }
             break;
 
@@ -583,56 +572,56 @@ __attribute__((externally_visible, regparm(1))) void c_int15_handler(struct inte
             delay_us(usec);
 
             regs->ax = 0x0000;
-            regs->flags &= ~0x0001;
+            regs->flags &= ~ISR_FLAGS_CF;
             break;
         }
 
         case 0x87:
             // Move block to/from extended memory -> unsupported
             regs->ax = 0x8600;
-            regs->flags |= 0x0001;
+            regs->flags |= ISR_FLAGS_CF;
             break;
 
         case 0x88: {
             // Request Extended Memory Size (up to 64MB)
             //regs->ax = 1024; // TODO: implement the full 16 MB
             regs->ax = 0; // for Debugging: no HIMEM
-            regs->flags &= ~0x0001; // Clear Carry Flag (Success)
+            regs->flags &= ~ISR_FLAGS_CF; // Clear Carry Flag (Success)
             break;
         }
 
         case 0x90: // AH=90h: Device busy
         case 0x91: // AH=91h: Interrupt complete
             regs->ax = 0x0000;
-            regs->flags &= ~0x0001;
+            regs->flags &= ~ISR_FLAGS_CF;
             break;
 
         case 0xC0: {
             // Get Configuration Table
             // we do not support this for now
             regs->ax = 0x8600;      // AH = 0x86
-            regs->flags |= 0x0001;  // Set Carry Flag
+            regs->flags |= ISR_FLAGS_CF;  // Set Carry Flag
             break;
         }
 
         case 0xC1: // Get EBDA segment
             regs->es = BIOS_SEG;
             regs->ax = 0x0000;
-            regs->flags &= ~0x0001;
+            regs->flags &= ~ISR_FLAGS_CF;
             break;
 
         case 0xDA: {
             // E820 / alternative memory-APIs
             // we do not support this for now
             regs->ax = 0x8600;
-            regs->flags |= 0x0001;
+            regs->flags |= ISR_FLAGS_CF;
             break;
         }
 
         default:
             // Unbekannte Funktion -> Fehler (AH = 0x86, Carry Flag = 1)
             regs->ax = 0x8600;
-            regs->flags |= 0x0001; // Set Carry Flag
+            regs->flags |= ISR_FLAGS_CF; // Set Carry Flag
             break;
 
     }
@@ -675,7 +664,7 @@ __attribute__((externally_visible, regparm(1))) void c_int16_handler(struct inte
             break;
 
         default:
-            regs->flags |= 0x0040;
+            regs->flags |= ISR_FLAGS_ZF;
             break;
     }
 */
@@ -688,7 +677,7 @@ __attribute__((externally_visible, regparm(1))) void c_int17_handler(struct inte
     uart_putc('7');
 
     regs->ax = 0x3000; // timeout
-    regs->flags &= ~0x0001; // clear carray-flag on success
+    regs->flags &= ~ISR_FLAGS_CF; // clear carray-flag on success
 }
 
 // boot-process
@@ -736,7 +725,7 @@ __attribute__((externally_visible, regparm(1))) void c_int1a_handler(struct inte
             regs->cx = hi;
             regs->dx = lo;
             regs->ax = midnight;       // AL = midnight flag, AH = 0
-            regs->flags &= ~0x0001;    // CF=0
+            regs->flags &= ~ISR_FLAGS_CF;    // CF=0
 
             // Optional: clear IBM-compatible midnight-flag after reading
             writeFarByte(0x0000, BDA_MIDNIGHT_FLAG, 0);
@@ -748,13 +737,13 @@ __attribute__((externally_visible, regparm(1))) void c_int1a_handler(struct inte
             writeFarWord(0x0000, BDA_TIMER_COUNTER_HIGH, regs->cx);
             writeFarByte(0x0000, BDA_MIDNIGHT_FLAG, 0);
             regs->ax = 0x0000;
-            regs->flags &= ~0x0001;
+            regs->flags &= ~ISR_FLAGS_CF;
             break;
         }
 
         default:
             regs->ax = 0x8600;
-            regs->flags |= 0x0001;
+            regs->flags |= ISR_FLAGS_CF;
             break;
     }
 }

@@ -173,7 +173,7 @@ void kbd_init() {
     uint8_t pmu3 = read_sc300_cfg(0xAD);
     write_sc300_cfg(0xAD, pmu3 | SC300_XTKBDEN);
 
-    // initialize keyboard-buffer
+    // initialize keyboard-buffer (set both pointers to begin of buffer)
     writeFarWord(0x0000, BDA_KBD_HEAD, BDA_KBD_BUF_START);
     writeFarWord(0x0000, BDA_KBD_TAIL, BDA_KBD_BUF_START);
 
@@ -429,17 +429,10 @@ __attribute__((noreturn)) void bios_main() {
         if (c > 'z') c = 'A';
 
         // check BIOS Keyboard-Ringbuffer
-
-        char textbuffer[3];
-        uint8_to_hex(g_kbd_scancode, textbuffer);
-        lcd_putc_pos(6, 0, textbuffer[0], 0x07);
-        lcd_putc_pos(6, 1, textbuffer[1], 0x07);
-
-        /*
-        if (*BDA_KBD_HEAD != *BDA_KBD_TAIL) {
-            uint16_t* ptr = (uint16_t*)(uintptr_t)(*BDA_KBD_HEAD);
-            uint8_t scancode = (*ptr) >> 8;
-            char ascii = (*ptr) & 0xFF;
+        if (readFarWord(0x0000, BDA_KBD_HEAD) != readFarWord(0x0000, BDA_KBD_TAIL)) {
+            uint16_t keyboard_data = readFarWord(0x0000, BDA_KBD_HEAD);
+            char ascii = (keyboard_data >> 8) & 0xFF;
+            uint8_t scancode = keyboard_data & 0xFF;
 
             // display scancode and ASCII-character on LCD
             lcd_print_string_pos(7, 0, "Scancode: 0x", 0x07);
@@ -452,11 +445,10 @@ __attribute__((noreturn)) void bios_main() {
             lcd_putc_pos(7, 25, ascii ? ascii : '.', 0x07);
 
             // move head forward
-            uint16_t next_head = *BDA_KBD_HEAD + 2;
-            if (next_head >= BDA_KBD_BUF_END) next_head = BDA_KBD_BUF_START;
-            *BDA_KBD_HEAD = next_head;
+            uint16_t next_head = readFarWord(0x0000, BDA_KBD_HEAD) + sizeof(uint16_t);
+            if (next_head >= readFarWord(0x0000, BDA_KBD_BUF_END)) next_head = readFarWord(0x0000, BDA_KBD_BUF_START);
+            writeFarWord(0x0000, BDA_KBD_HEAD, next_head);
         }
-        */
 
         // poll UART for new characters
         if (inb(UART_LSR) & 0x01) {

@@ -6,7 +6,7 @@ The sources can be found here: https://github.com/Honneamise/TINY8086
 
 The goal is to produce a flat binary that can run without the need of a OS on any x86 machine
 
-![alt text](BIOS/tiny8086basic/tinybasic.jpg)
+![alt text](tinybasic.jpg)
 
 ---
 ## THE INTERPRETER

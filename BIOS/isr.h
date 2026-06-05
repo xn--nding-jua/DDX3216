@@ -14,8 +14,6 @@
 #define ISR_FLAGS_ZF    0x0040 // zero-flag
 #define ISR_FLAGS_SF    0x0080 // sign-flag
 
-extern volatile uint8_t g_kbd_scancode;
-
 // caution: when changing size of this struct, also update the code in start.s that adjusts the stackpointer (INT_FRAME_WORDS)
 struct interrupt_registers {
     uint16_t ds;
