@@ -33,6 +33,4 @@ static const char xt_to_ascii_shift[] = {
    ' '
 };
 
-
-
 #endif

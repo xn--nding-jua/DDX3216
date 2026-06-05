@@ -177,10 +177,10 @@ void kbd_init() {
     }
     if (scancode != 0xAA) {
         // keyboard did not respond correctly
-        lcd_print_string_pos(5, 16, "ERROR", 0x07);
+        lcd_print_string("ERROR\n", 0x07);
     }else{
         // keyboard sent the expected 0xAA
-        lcd_print_string_pos(5, 16, "OK", 0x07);
+        lcd_print_string("OK\n", 0x07);
 
         // initialize keyboard-buffer (set both pointers to begin of buffer)
         writeFarWord(0x0000, BDA_KBD_HEAD, BDA_KBD_BUF_START);
@@ -384,35 +384,35 @@ __attribute__((noreturn)) void bios_main() {
     //lcd_print_string_pos(1, 0, "RAM-Test...", 0x07);
 	//ram_test_and_setup(); // this function halts the CPU on any RAM-error
 
-    lcd_print_string_pos(2, 0, "Init PIC and IVT...", 0x07);
+    lcd_print_string("Init PIC and IVT...\n", 0x07);
     pic_init();
 	setup_ivt();
 	setup_bda();
 
-    lcd_print_string_pos(3, 0, "Init UART...", 0x07);
+    lcd_print_string("Init UART...\n", 0x07);
     uart_init(9600);
     pirq_init();
 	uart_interrupt_enable();
 	uart_print("AMD Elan SC300 BIOS v0.01\n");
 
-	lcd_print_string_pos(4, 0, "Init timer...", 0x07);
+	lcd_print_string("Init timer...\n", 0x07);
 	timer_init();
 
-    lcd_print_string_pos(5, 0, "Init keyboard...", 0x07);
+    lcd_print_string("Init keyboard...", 0x07); // no linefeed here
 	kbd_init();
 	
 	__asm__ volatile ("sti");
     setLEDs();
 
-    lcd_print_string_pos(6, 0, "Init PCMCIA / CF-Card...", 0x07);
+    lcd_print_string("Init PCMCIA / CF-Card...", 0x07); // no linefeed here
 	mms_init();
 	if (cfcard_init()) {
         // try to load DOS from CF-Card and boot it
-        lcd_print_string_pos(7, 0, "Booting from CF-Card...\n", 0x07);
+        lcd_print_string("Booting from CF-Card...\n", 0x07);
         boot_dos();
 	}else{
         // no CF-card found, launch BASIC instead
-        lcd_print_string_pos(7, 0, "No CF-Card. Booting BASIC...", 0x07);
+        lcd_print_string("No CF-Card. Booting BASIC...\n", 0x07);
         launch_basic();
     }
 

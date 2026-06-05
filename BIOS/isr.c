@@ -118,14 +118,14 @@ __attribute__((externally_visible, regparm(1))) void c_int09_handler(struct inte
                 uint8_t status_flags = readFarByte(0x0000, BDA_KBD_STATUS_FLAGS);
                 if (status_flags & (KBD_FLAG_LSHIFT | KBD_FLAG_RSHIFT)) {
                     if (scancode < sizeof(xt_to_ascii_shift)) {
-                        uint16_t rom_offset = (uint16_t)(uintptr_t)xt_to_ascii_shift[scancode];
+                        uint16_t rom_offset = (uint16_t)(uintptr_t)&xt_to_ascii_shift[scancode];
                         ascii = (char)readRomByte(rom_offset);
                     }else{
                         ascii = 0;
                     }
                 } else {
                     if (scancode < sizeof(xt_to_ascii_normal)) {
-                        uint16_t rom_offset = (uint16_t)(uintptr_t)xt_to_ascii_normal[scancode];
+                        uint16_t rom_offset = (uint16_t)(uintptr_t)&xt_to_ascii_normal[scancode];
                         ascii = (char)readRomByte(rom_offset);
                     }else{
                         ascii = 0;

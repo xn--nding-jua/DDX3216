@@ -287,10 +287,10 @@ bool cfcard_init() {
     // wait for CF-card
     uart_print("PCMCIA/CF: Wait for card...");
     if (!ide_wait_ready()) {
+        lcd_print_string("Timeout!\n", 0x07);
         uart_print("Timeout!\n");
         return false;
     }
-
 
     // read drive geometry from CF-card using IDENTIFY-Command into bootloader-buffer at 0x7C00
     if (!disk_read_identify_data()) {
@@ -329,6 +329,7 @@ bool cfcard_init() {
         }
     }
 
+    lcd_print_string("OK\n", 0x07);
     uart_print("OK\n");
     return true;
 }
