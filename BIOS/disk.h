@@ -71,20 +71,6 @@
 #define IDE_CMD_WRITE   0x30    // Write Sectors with Retry
 #define IDE_CMD_IDENT   0xEC    // Identify Drive
 
-// CF-Card geometry with 512MB (TODO: read this dynamically on PCMCIA-init)
-// CHS for BIOS-compatibility (DOS-Limit: 1024/16/63)
-#define CF_CYLINDERS    1024
-#define CF_HEADS        16
-#define CF_SECTORS      63
-#define CF_TOTAL_SECTS  ((uint32_t)CF_CYLINDERS * CF_HEADS * CF_SECTORS)
-
-// LBA-calculation based on CHS
-// LBA = (C × H_max + H) × S_max + (S - 1)
-//#define CHS_TO_LBA(c, h, s) (((uint32_t)(c) * CF_HEADS + (h)) * CF_SECTORS + ((s) - 1))
-#define CHS_TO_LBA(c, h, s) \
-    ((uint32_t)(c) * CF_HEADS * CF_SECTORS + \
-     (uint32_t)(h) * CF_SECTORS + \
-     (uint32_t)((s) - 1))
 
 void mms_init();
 bool cfcard_init();
@@ -92,6 +78,7 @@ bool ide_wait_ready();
 bool ide_wait_drq(void);
 uint8_t ide_read_bootsector();
 uint8_t ide_read_sector(uint32_t lba, uint16_t dest_seg, uint16_t offset);
+uint32_t disk_chs_to_lba(uint32_t c, uint32_t h, uint32_t s);
 
 struct __attribute__((packed)) disk_param_table {
     uint16_t cylinders;
@@ -101,13 +88,6 @@ struct __attribute__((packed)) disk_param_table {
     uint8_t  sectors_per_track;
     uint16_t reserved3;
     uint8_t  drive_type;
-};
-
-static const struct disk_param_table hd0_params = {
-    .cylinders       = CF_CYLINDERS,
-    .heads           = CF_HEADS,
-    .sectors_per_track = CF_SECTORS,
-    .drive_type      = 0x00,
 };
 
 struct __attribute__((packed)) disk_address_packet {

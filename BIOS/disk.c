@@ -28,6 +28,9 @@ CF-Karte acts like an IDE harddisk-drive
 └─────────────────┴───────────────────────────────────┘
 */
 
+// global variable for disk-parameters of the first harddisk (HD0)
+struct disk_param_table hd0_params;
+
 void mms_page_redirect(uint8_t MMS, uint8_t page, uint32_t address) {
     uint8_t bit_23      = (address >> 23) & 0x01; // bit 23
     uint8_t bit_22_21   = (address >> 21) & 0x03; // bits 22..21
@@ -128,6 +131,25 @@ void mms_init() {
 	write_sc300_cfg(CA24_CA25_CONTROL2, 0b00000000);
 
 	// from now on memory-addresses 0xD0000 to 0xEFFFF representing the first 128kB of PCMCIA-Card A
+}
+
+bool disk_read_identify_data() {
+    outb(IDE_COMMAND, IDE_CMD_IDENT);
+    // read 512 bytes of IDENTIFY-Data
+
+    // wait until data is ready (DRQ set)
+    if (!ide_wait_drq()) {
+        uart_print("ide_read_sector: DRQ timeout\n");
+        return false;
+    }
+
+    // read 512 bytes and IDE_DATA (0x1F0) delivers at 8-Bit access always Low-Byte
+    for (uint16_t i = 0; i < 512; i++) {
+        uint8_t data = inb(IDE_DATA);
+        writeFarByte(BASE_SEG, 0x7C00 + i, data);
+    }
+
+    return true;
 }
 
 bool cfcard_init() {
@@ -269,6 +291,44 @@ bool cfcard_init() {
         return false;
     }
 
+
+    // read drive geometry from CF-card using IDENTIFY-Command into bootloader-buffer at 0x7C00
+    if (!disk_read_identify_data()) {
+        // something went wrong during IDENTIFY-Command -> fallback with fixed geometry for 512MB CF-Card
+        uart_print("Failed to read IDENTIFY-Data, using fallback geometry for 512MB CF-Card\n");
+
+        // CF-Card geometry with 512MB
+        // CHS for BIOS-compatibility (DOS-Limit: 1024/16/63)
+        hd0_params.cylinders = 1024;
+        hd0_params.heads = 16;
+        hd0_params.sectors_per_track = 63;
+        hd0_params.drive_type = 0x00; // 0x00 = fixed disk, 0x80 = removable disk
+    }else{
+        // copy relevant parameters from IDENTIFY-Data to global variable
+        hd0_params.cylinders = readFarWord(BASE_SEG, 0x7C00 + (1 * sizeof(uint16_t))); // word 1: cylinders
+        hd0_params.heads = readFarByte(BASE_SEG, 0x7C00 + (3 * sizeof(uint16_t)));     // word 3: heads
+        hd0_params.sectors_per_track = readFarByte(BASE_SEG, 0x7C00 + (6 * sizeof(uint16_t))); // word 6: sectors per track
+        hd0_params.drive_type = 0x00;
+
+        // read LBA-sectors for max. 4GB disks
+        uint32_t lba_sectors = readFarWord(BASE_SEG, 0x7C00 + (60 * sizeof(uint16_t))); // word 60..61: total number of sectors (LBA)
+
+        // TODO: check if we have more than 1024 cylinders, 16 heads or 63 sectors per track and if so,
+        // recalculate the geometry to fit into the CHS limits of the BIOS (1024/16/63) and set hd0_params accordingly
+        if (hd0_params.cylinders > 1024) {
+            // recalculate geometry to fit into CHS limits of the BIOS
+            hd0_params.cylinders = 1024;
+            hd0_params.heads = (lba_sectors / (hd0_params.cylinders * hd0_params.sectors_per_track)) + 1;
+            if (hd0_params.heads > 16) {
+                hd0_params.heads = 16;
+                hd0_params.sectors_per_track = (lba_sectors / (hd0_params.cylinders * hd0_params.heads)) + 1;
+                if (hd0_params.sectors_per_track > 63) {
+                    hd0_params.sectors_per_track = 63;
+                }
+            }
+        }
+    }
+
     uart_print("OK\n");
     return true;
 }
@@ -372,4 +432,10 @@ uint8_t ide_read_sector(uint32_t lba, uint16_t dest_seg, uint16_t offset) {
     );
     */
     return 0x00; // no error
+}
+
+// LBA-calculation based on CHS
+// LBA = (C × H_max + H) × S_max + (S - 1)
+uint32_t disk_chs_to_lba(uint32_t c, uint32_t h, uint32_t s) {
+    return (c * (uint32_t)hd0_params.heads * (uint32_t)hd0_params.sectors_per_track) + (h * (uint32_t)hd0_params.sectors_per_track) + (s - 1);
 }

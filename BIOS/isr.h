@@ -32,11 +32,6 @@ struct interrupt_registers {
     uint16_t flags;
 };
 
-// some fake DiskParameterTable (DPT) for a dummy-floppy
-static const uint8_t fake_dpt[11] = {
-    0xDF, 0x02, 0x25, 0x02, 0x12, 0x1B, 0xFF, 0x54, 0xF6, 0x01, 0x08
-};
-
 void pirq_init();
 // hardware-interrupts
 __attribute__((externally_visible, regparm(1))) void c_int04_handler(struct interrupt_registers *regs);

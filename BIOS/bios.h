@@ -57,6 +57,8 @@ extern void isr_int1c(void);
 extern void isr_int_dummy(void);
 extern void launch_basic(void);
 
+extern struct disk_param_table hd0_params;
+
 // function prototypes
 void cpu_reset();
 void boot_dos();

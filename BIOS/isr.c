@@ -275,7 +275,7 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
             uint16_t dest_es         = regs->es; // segment of destination buffer
             uint8_t  sectors_done    = 0;
             uint8_t  error           = 0;
-            uint32_t lba             = CHS_TO_LBA(cylinder, head, sector);
+            uint32_t lba             = disk_chs_to_lba(cylinder, head, sector);
 
             // loop for all requested sectors
             for (uint8_t s = 0; s < sectors_to_read; s++) {
@@ -311,9 +311,9 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
             // what kind of drive is requested?
             if (dl >= 0x80) {
                 // harddisk / CF-Card
-                uint8_t  max_heads   = CF_HEADS - 1;
-                uint8_t  max_sectors = CF_SECTORS;       
-                uint16_t max_cyls    = CF_CYLINDERS - 1; 
+                uint8_t  max_heads   = hd0_params.heads - 1;
+                uint8_t  max_sectors = hd0_params.sectors_per_track;
+                uint16_t max_cyls    = hd0_params.cylinders - 1;
 
                 // CX-encoding:
                 // Bits 15-8 : Bits 7-0 of cylinders
@@ -345,7 +345,7 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
 
         case 0x15: // Get Disk Type
             // AH=03h: Fixed Disk with Sector-Count in CX:DX
-            uint32_t total = CF_TOTAL_SECTS;
+            uint32_t total = (uint32_t)hd0_params.cylinders * (uint32_t)hd0_params.heads * (uint32_t)hd0_params.sectors_per_track;
             regs->ax    = (0x03 << 8);
             regs->cx    = (uint16_t)(total >> 16);
             regs->dx    = (uint16_t)(total & 0xFFFF);
@@ -447,12 +447,12 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
             struct drive_params_ext params;
             params.size           = 0x1A;
             params.flags          = 0x0002;        // Bit 1: Geometrie gültig
-            params.cylinders      = CF_CYLINDERS;
-            params.heads          = CF_HEADS;
-            params.sectors        = CF_SECTORS;
-            params.total_low      = CF_TOTAL_SECTS;
-            params.total_high     = 0;
-            params.bytes_per_sect = 512;
+            params.cylinders      = hd0_params.cylinders;
+            params.heads          = hd0_params.heads;
+            params.sectors        = hd0_params.sectors_per_track;
+            params.total_low      = (uint32_t)hd0_params.cylinders * (uint32_t)hd0_params.heads * (uint32_t)hd0_params.sectors_per_track;
+            params.total_high     = 0; // we are not supporting disks larger than 4GB, so upper 32 Bit of total sectors is always zero
+            params.bytes_per_sect = 512; // we only support 512 bytes per sector, so this is fixed to 512
 
             // write structure in buffer of caller
             uint8_t *p = (uint8_t*)&params;
