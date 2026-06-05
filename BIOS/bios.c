@@ -152,26 +152,30 @@ void ram_test_and_setup() {
     }
 }
 
-static void kbd_wait_write() {
-	// check if write-buffer is full
-    while (inb(KBD_STATUS_PORT) & KBD_STATUS_IBF) {
-        __asm__ __volatile__("nop");
-    }
-}
-
-static void kbd_wait_ready(void) {
-    // hold clock low for at least one clock-cycle
-    uint8_t ctrl = inb(KBD_CTRL_PORT);
-    outb(KBD_CTRL_PORT, ctrl | KBD_CTRL_CLK_LOW);
-    // small delay
-    for (volatile int i = 0; i < 100; i++);
-    outb(KBD_CTRL_PORT, ctrl & ~KBD_CTRL_CLK_LOW);
-}
-
 void kbd_init() {
     // enable XT-Keyboard in SC300
     uint8_t pmu3 = read_sc300_cfg(0xAD);
     write_sc300_cfg(0xAD, pmu3 | SC300_XTKBDEN);
+
+    // check for 0xAA from keyboard
+    uint32_t timeout = 500000;
+    uint8_t scancode = inb(KBD_DATA_PORT);
+    while ((timeout > 0) || (scancode != 0xAA)) {
+        timeout--;
+        if (timeout == 0) {
+            // an error occured
+            break;
+        }
+        scancode = inb(KBD_DATA_PORT);
+
+        delay_1ms();
+    }
+    if (scancode != 0xAA) {
+        // keyboard did not respond correctly
+        lcd_print_string_pos(5, 16, "ERROR", 0x07);
+    }else{
+        lcd_print_string_pos(5, 16, "OK", 0x07);
+    }
 
     // initialize keyboard-buffer (set both pointers to begin of buffer)
     writeFarWord(0x0000, BDA_KBD_HEAD, BDA_KBD_BUF_START);
