@@ -68,8 +68,8 @@
 #define DDX3216_RS232_EN		(1 << 3) // SLIN#
 #define DDX3216_SPDI			(1 << 6) // ACK#
 
-#define IIR_PENDING             0x01 // 0 = Interrupt steht an, 1 = kein Interrupt
-#define IIR_REASON              0x0E // Bits 1-3 enthalten den Grund
+#define IIR_PENDING             0x01 // 0 = interrupt pending, 1 = no interrupt
+#define IIR_REASON              0x0E // Bits 1-3 contain the reason for the interrupt
 #define IIR_MS                  0x00 // Modem Status
 #define IIR_THRE                0x02 // Transmitter Holding Register Empty (Senden bereit)
 #define IIR_RDA                 0x04 // Receiver Data Available (Daten empfangen)

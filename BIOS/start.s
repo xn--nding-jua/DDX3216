@@ -695,6 +695,7 @@ launch_bootsector:
 .equ BIOS_INT15_GS,         0x0030
 .equ BIOS_INT15_FRAME,      0x0032
 
+.global isr_int04
 .global isr_int08
 .global isr_int09
 .global isr_int10
@@ -706,7 +707,6 @@ launch_bootsector:
 .global isr_int16
 .global isr_int17
 .global isr_int19
-.global isr_int0c
 .global isr_int1a
 .global isr_int1c
 .global isr_int_dummy
@@ -753,11 +753,11 @@ isr_int08:
 
     iretw
 
+isr_int04:
+    ISR_HW_ENTRY c_int04_handler // UART-interrupt
+
 isr_int09:
     ISR_HW_ENTRY c_int09_handler // keyboard-interrupt
-
-isr_int0c:
-    ISR_HW_ENTRY c_int0c_handler // UART-interrupt
 
 // software-interrupts without EOI
 isr_int10:

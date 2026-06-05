@@ -5,6 +5,11 @@
 	
 	mov, push, pop will control MEMR# and MEMW#
 	in, out will control IOR# and IOW#
+
+    Some interesting connections
+    - PGP0 is connected to the external WatchDog-Input WDI of the ADM699
+    - external UART INT0 and INT1 are connected to a single PIRQ0 (mapped to INT0Ch) and can trigger interrupts there
+
 */
 
 __asm__(".code16gcc\n"); // we are using -m16 compiler-switch so this line is redundant but keeping is safe
@@ -20,6 +25,7 @@ void setup_ivt() {
         set_ivt_entry((uint8_t)i, (uint16_t)(uintptr_t)isr_int_dummy, ROM_SEG);
     }
 
+    set_ivt_entry(0x04, (uint16_t)(uintptr_t)isr_int04, ROM_SEG);
     set_ivt_entry(0x08, (uint16_t)(uintptr_t)isr_int08, ROM_SEG);
     set_ivt_entry(0x09, (uint16_t)(uintptr_t)isr_int09, ROM_SEG);
     set_ivt_entry(0x10, (uint16_t)(uintptr_t)isr_int10, ROM_SEG);
@@ -31,7 +37,6 @@ void setup_ivt() {
     set_ivt_entry(0x16, (uint16_t)(uintptr_t)isr_int16, ROM_SEG);
     set_ivt_entry(0x17, (uint16_t)(uintptr_t)isr_int17, ROM_SEG);
     set_ivt_entry(0x19, (uint16_t)(uintptr_t)isr_int19, ROM_SEG);
-    set_ivt_entry(0x0c, (uint16_t)(uintptr_t)isr_int0c, ROM_SEG);
     set_ivt_entry(0x1a, (uint16_t)(uintptr_t)isr_int1a, ROM_SEG);
     set_ivt_entry(0x1c, (uint16_t)(uintptr_t)isr_int1c, ROM_SEG);
     set_ivt_entry(0x41, (uint16_t)(uintptr_t)&hd0_params, ROM_SEG);
@@ -174,21 +179,22 @@ void kbd_init() {
         // keyboard did not respond correctly
         lcd_print_string_pos(5, 16, "ERROR", 0x07);
     }else{
+        // keyboard sent the expected 0xAA
         lcd_print_string_pos(5, 16, "OK", 0x07);
+
+        // initialize keyboard-buffer (set both pointers to begin of buffer)
+        writeFarWord(0x0000, BDA_KBD_HEAD, BDA_KBD_BUF_START);
+        writeFarWord(0x0000, BDA_KBD_TAIL, BDA_KBD_BUF_START);
+
+        // clear keyboard-register and IRQ
+        uint8_t ctrl = inb(KBD_CTRL_PORT);
+        outb(KBD_CTRL_PORT, ctrl | KBD_CTRL_CLEAR);   // set Bit 7
+        outb(KBD_CTRL_PORT, ctrl & ~KBD_CTRL_CLEAR);  // clear Bit 7
+
+        // enable IRQ1 in PIC
+        uint8_t imr = inb(0x21);
+        outb(0x21, imr & ~(1 << 1));
     }
-
-    // initialize keyboard-buffer (set both pointers to begin of buffer)
-    writeFarWord(0x0000, BDA_KBD_HEAD, BDA_KBD_BUF_START);
-    writeFarWord(0x0000, BDA_KBD_TAIL, BDA_KBD_BUF_START);
-
-    // clear keyboard-register and IRQ
-    uint8_t ctrl = inb(KBD_CTRL_PORT);
-    outb(KBD_CTRL_PORT, ctrl | KBD_CTRL_CLEAR);   // set Bit 7
-    outb(KBD_CTRL_PORT, ctrl & ~KBD_CTRL_CLEAR);  // clear Bit 7
-
-    // enable IRQ1 in PIC
-    uint8_t imr = inb(0x21);
-    outb(0x21, imr & ~(1 << 1));
 }
 
 void pic_init() {
@@ -209,7 +215,7 @@ void pic_init() {
     outb(0xA1, 0x01);
 
     // OCW1: IRQ-Maske - alle außer Timer(0) und Keyboard(1) sperren
-    outb(0x21, 0xFC);   // 1111 1100: nur IRQ0+IRQ1 erlaubt
+    outb(0x21, 0b11111100);   // demask IRQ0 and IRQ1
     outb(0xA1, 0xFF);   // Slave komplett sperren
 }
 
@@ -271,10 +277,11 @@ void boot_dos() {
     /*
     Phase 1: Loading MBR into RAM at 0x7C00 (512 Bytes)
     Phase 2: MBR reads partitiontable, selects the active partition and load first sector into RAM at 0x7C00
-    IO.SYS must be the first file in Root-directory to be loaded into RAM now
+             IO.SYS must be the first file in Root-directory to be loaded into RAM when using DOS MBR
     Phase 3: First 3 Sectors of IO.SYS are loaded to RAM and system jumps to IO.SYS
     Phase 4: IO.SYS requests conventional memory via INT12h and loads more sectors to Segment 0x0000:0x0500 and later last segment at end of conv. memory
     Phase 5: IO.SYS loads MSDOS.SYS (60 - 80 sectors)
+    Phase 6: MSDOS.SYS loads COMMAND.COM and starts the shell -> DONE
     */
     uint8_t status = 0xFF;
     uint8_t retries = 3;
@@ -355,22 +362,6 @@ void setLEDs() {
 // main function
 // **********************************************************
 
-static void debug_print_ivt_entry(uint8_t int_no) {
-    uint16_t base = ((uint16_t)int_no) * 4;
-    uint16_t off = readFarWord(0x0000, base + 0);
-    uint16_t seg = readFarWord(0x0000, base + 2);
-
-    uart_print("IVT[");
-    uart_putc(int_no);
-    uart_print("] = ");
-    uart_putc(seg >> 8);
-    uart_putc(seg & 0xFF);
-    uart_putc(':');
-    uart_putc(off >> 8);
-    uart_putc(off & 0xFF);
-    uart_print("\n");
-}
-
 __attribute__((noreturn)) void bios_main() {
     if (readFarWord(0x0000, BDA_SOFT_RESET_FLAGS) == 0x1234) {
         // warm-boot
@@ -400,8 +391,8 @@ __attribute__((noreturn)) void bios_main() {
 
     lcd_print_string_pos(3, 0, "Init UART...", 0x07);
     uart_init(9600);
-    //pirq_init();
-	//uart_interrupt_enable();
+    pirq_init();
+	uart_interrupt_enable();
 	uart_print("AMD Elan SC300 BIOS v0.01\n");
 
 	lcd_print_string_pos(4, 0, "Init timer...", 0x07);
@@ -432,7 +423,7 @@ __attribute__((noreturn)) void bios_main() {
         c++;
         if (c > 'z') c = 'A';
 
-        // check BIOS Keyboard-Ringbuffer
+        // DEBUG: check BIOS Keyboard-Ringbuffer
         if (readFarWord(0x0000, BDA_KBD_HEAD) != readFarWord(0x0000, BDA_KBD_TAIL)) {
             uint16_t keyboard_data = readFarWord(0x0000, BDA_KBD_HEAD);
             char ascii = (keyboard_data >> 8) & 0xFF;
@@ -454,11 +445,13 @@ __attribute__((noreturn)) void bios_main() {
             writeFarWord(0x0000, BDA_KBD_HEAD, next_head);
         }
 
-        // poll UART for new characters
+        /*
+        // DEBUG: poll UART for new characters
         if (inb(UART_LSR) & 0x01) {
             char uart_c = inb(UART_RBR);
             uart_putc(uart_c); // echo back to sender
         }
+        */
 
         delay_1ms();
     }

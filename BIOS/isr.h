@@ -39,8 +39,8 @@ static const uint8_t fake_dpt[11] = {
 
 void pirq_init();
 // hardware-interrupts
+__attribute__((externally_visible, regparm(1))) void c_int04_handler(struct interrupt_registers *regs);
 __attribute__((externally_visible, regparm(1))) void c_int09_handler(struct interrupt_registers *regs);
-__attribute__((externally_visible, regparm(1))) void c_int0c_handler(struct interrupt_registers *regs);
 
 // software-interrupts
 __attribute__((externally_visible, regparm(1))) void c_int10_handler(struct interrupt_registers *regs);

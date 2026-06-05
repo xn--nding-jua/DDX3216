@@ -13,12 +13,53 @@ uint16_t g_old_ds;
 // **********************************************************
 
 void pirq_init() {
-    // map PIRQ0 (external UART) to IRQ4
+    // map PIRQ0 (external UART) to INT04
 
     // PIRQ Configuration Register (Index B2h)
     // Bits 7-4: PIRQ1, Bits 3-0: PIRQ0
-    // IRQ4 = 0b0100
-    write_sc300_cfg(0xB2, 0x40); // PIRQ0 -> IRQ4
+    //                      11110000 = PIRQ0
+    write_sc300_cfg(0xB2, 0b00000100); // PIRQ0 -> INT04. See page p5-80
+}
+
+// INT04 (PIRQ0 is mapped here)
+__attribute__((externally_visible, regparm(1))) void c_int04_handler(struct interrupt_registers *regs) {
+    uart_putc('I');
+    uart_putc('0');
+    uart_putc('4');
+
+	while (!(inb(UART_IIR) & IIR_PENDING)) {
+        uint8_t reason = inb(UART_IIR) & IIR_REASON;
+
+        switch (reason) {
+            case IIR_RLS:
+                // receiver line status (errors, break)
+                inb(UART_LSR); // LSR lesen löscht diesen Interrupt
+                break;
+
+            case IIR_RDA:
+                // receive data available
+                uint8_t c = inb(UART_RBR); // this resets the IRQ
+
+                // !!!DEBUG for TESTING!!!
+                if (c == 'R') {
+                    // on 'R' the CPU should reset
+                    cpu_reset();
+                }
+                break;
+
+            case IIR_TIMEOUT:
+                inb(UART_RBR); // this resets the IRQ
+                break;
+
+            case IIR_THRE:
+                // reading IIR or writing THR will reset this IRQ
+                break;
+
+            case IIR_MS:
+                inb(UART_MSR); // this resets the IRQ
+                break;
+        }
+    }
 }
 
 // INT 09h: keyboard-interrupt
@@ -125,59 +166,6 @@ __attribute__((externally_visible, regparm(1))) void c_int09_handler(struct inte
 
     // send End of Interrupt (EOI) to PIC
     outb(0x20, 0x20);
-}
-
-// INT04 (PIRQ0 is mapped here)
-__attribute__((externally_visible, regparm(1))) void c_int0c_handler(struct interrupt_registers *regs) {
-    uart_putc('I');
-    uart_putc('0');
-    uart_putc('C');
-
-/*
-	// store DS and reset it to 0
-	__asm__ volatile("movw %%ds, %0" : "=r"(g_old_ds));
-	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
-
-	while (!(inb(UART_IIR) & IIR_PENDING)) {
-        uint8_t reason = inb(UART_IIR) & IIR_REASON;
-
-        switch (reason) {
-            case IIR_RDA:
-            case IIR_TIMEOUT:
-                // receive data
-                // simulate a keyboard-pressing via UART
-                uint8_t c = inb(UART_BASE); // reading the data clears the RDA interrupt
-                
-                // put the received character into the keyboard-buffer
-                uint16_t tail = *BDA_KBD_TAIL;
-                uint16_t next_tail = tail + 2;
-                if (next_tail >= BDA_KBD_BUF_END) next_tail = BDA_KBD_BUF_START;
-                
-                if (next_tail != *BDA_KBD_HEAD) {
-                    uint16_t *ptr = (uint16_t*)(uintptr_t)(tail);
-                    *ptr = (uint16_t)c; // Scancode 0, ASCII = c
-                    *BDA_KBD_TAIL = next_tail;
-                }
-                break;
-
-            case IIR_RLS:
-                inb(UART_BASE + 5); // LSR lesen löscht diesen Interrupt
-                break;
-
-            case IIR_THRE:
-                // Sende-Puffer leer. Wenn wir keine Queue haben, 
-                // wird dieser Int durch das nächste Schreiben oder IIR-Lesen beruhigt.
-                break;
-                
-            case IIR_MS:
-                inb(UART_BASE + 6); // MSR lesen löscht diesen Interrupt
-                break;
-        }
-    }
-
-	// restore DS
-	__asm__ volatile("movw %0, %%ds" : : "r"(g_old_ds));
-*/
 }
 
 // INT 10h: Video-interrupt

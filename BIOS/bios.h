@@ -40,6 +40,7 @@
 
 // ISRs from Assembler-Part
 extern void launch_bootsector(void);
+extern void isr_int04(void);
 extern void isr_int08(void);
 extern void isr_int09(void);
 extern void isr_int10(void);
@@ -51,13 +52,13 @@ extern void isr_int15(void);
 extern void isr_int16(void);
 extern void isr_int17(void);
 extern void isr_int19(void);
-extern void isr_int0c(void);
 extern void isr_int1a(void);
 extern void isr_int1c(void);
 extern void isr_int_dummy(void);
 extern void launch_basic(void);
 
 // function prototypes
+void cpu_reset();
 void boot_dos();
 bool a20_is_enabled();
 void a20_enable();
