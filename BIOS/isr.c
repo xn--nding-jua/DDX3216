@@ -26,6 +26,7 @@ __attribute__((externally_visible, regparm(1))) void c_int04_handler(struct inte
     uart_putc('I');
     uart_putc('0');
     uart_putc('4');
+    lcd_print_string("I04", 0x07);
 
 	while (!(inb(UART_IIR) & IIR_PENDING)) {
         uint8_t reason = inb(UART_IIR) & IIR_REASON;
@@ -62,11 +63,27 @@ __attribute__((externally_visible, regparm(1))) void c_int04_handler(struct inte
     }
 }
 
+/*
+// INT 08h: keyboard-interrupt
+__attribute__((externally_visible, regparm(1))) void c_int08_handler(struct interrupt_registers *regs) {
+    lcd_print_string("I08\n", 0x07);
+
+    // send End of Interrupt (EOI) to PIC
+    outb(0x20, 0x20);
+}
+
+// INT 1Ch: keyboard-interrupt
+__attribute__((externally_visible, regparm(1))) void c_int1c_handler(struct interrupt_registers *regs) {
+    lcd_print_string("I1C\n", 0x07);
+}
+*/
+
 // INT 09h: keyboard-interrupt
 __attribute__((externally_visible, regparm(1))) void c_int09_handler(struct interrupt_registers *regs) {
     uart_putc('I');
     uart_putc('0');
     uart_putc('9');
+    lcd_print_string("I09", 0x07);
 
     // read scancode from keyboard-controller
 	uint8_t scancode = inb(KBD_DATA_PORT);
@@ -170,10 +187,6 @@ __attribute__((externally_visible, regparm(1))) void c_int09_handler(struct inte
 
 // INT 10h: Video-interrupt
 __attribute__((externally_visible, regparm(1))) void c_int10_handler(struct interrupt_registers *regs) {
-    uart_putc('I');
-    uart_putc('1');
-    uart_putc('0');
-
     // read registers first
     uint8_t ah = (uint8_t)(regs->ax >> 8);
     uint8_t al = (uint8_t)(regs->ax & 0xFF);
@@ -220,6 +233,7 @@ __attribute__((externally_visible, regparm(1))) void c_int11_handler(struct inte
     uart_putc('I');
     uart_putc('1');
     uart_putc('1');
+    lcd_print_string("I11", 0x07);
 
     //   Bitmask for Equipment Word:
     //   Bit 0: Floppy drive? (0 = No)
@@ -236,15 +250,35 @@ __attribute__((externally_visible, regparm(1))) void c_int12_handler(struct inte
     uart_putc('I');
     uart_putc('1');
     uart_putc('2');
+    lcd_print_string("I12", 0x07);
 
 	regs->ax = readFarWord(0x0000, BDA_MEM_SIZE);
 }
 
 // INT13h: disk-interrupt
 __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct interrupt_registers *regs) {
+    lcd_putc('.', 0x07);
+/*
     uart_putc('I');
     uart_putc('1');
     uart_putc('3');
+    lcd_print_string("I13", 0x07);
+    char textbuffer[5];
+    uint16_to_hex(regs->ax, textbuffer);
+    lcd_print_string_ram(textbuffer, 0x07);
+    uint16_to_hex(regs->bx, textbuffer);
+    lcd_print_string_ram(textbuffer, 0x07);
+    uint16_to_hex(regs->dx, textbuffer);
+    lcd_print_string_ram(textbuffer, 0x07);
+    uint16_to_hex(regs->es, textbuffer);
+    lcd_print_string_ram(textbuffer, 0x07);
+
+    uint16_t sp;
+    __asm__ volatile ("mov %%sp, %0" : "=r" (sp));
+    uint16_to_hex(sp, textbuffer);
+    lcd_print_string_ram(textbuffer, 0x07);
+    lcd_putc('\n', 0x07);
+*/
 
     // get registers
     uint8_t ah = (uint8_t)(regs->ax >> 8);
@@ -406,7 +440,7 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
             uint16_t sectors_done = 0;
             uint8_t  error        = 0;
 
-            for (uint16_t s = 0; s < sector_count; s++) {
+            for (uint32_t s = 0; s < sector_count; s++) {
                 uint32_t cur_lba    = lba + s;
                 uint32_t total_offset = (uint32_t)dest_offset + ((uint32_t)s * 512);
                 uint16_t cur_seg    = dest_segment + (uint16_t)((total_offset >> 4) & 0xF000);
@@ -476,6 +510,7 @@ __attribute__((externally_visible, regparm(1))) void c_int14_handler(struct inte
     uart_putc('I');
     uart_putc('1');
     uart_putc('4');
+    lcd_print_string("I14", 0x07);
 
     // get registers
     uint8_t ah = (uint8_t)(regs->ax >> 8);
@@ -516,6 +551,7 @@ __attribute__((externally_visible, regparm(1))) void c_int15_handler(struct inte
     uart_putc('I');
     uart_putc('1');
     uart_putc('5');
+    lcd_print_string("I15", 0x07);
 
     uint8_t ah = (uint8_t)(regs->ax >> 8);
     uint8_t al = (uint8_t)(regs->ax & 0xFF);
@@ -620,6 +656,7 @@ __attribute__((externally_visible, regparm(1))) void c_int16_handler(struct inte
     uart_putc('I');
     uart_putc('1');
     uart_putc('6');
+    lcd_print_string("I16", 0x07);
 
     uint8_t ah = regs->ax >> 8;
 /*
@@ -663,6 +700,7 @@ __attribute__((externally_visible, regparm(1))) void c_int17_handler(struct inte
     uart_putc('I');
     uart_putc('1');
     uart_putc('7');
+    lcd_print_string("I17", 0x07);
 
     regs->ax = 0x3000; // timeout
     regs->flags &= ~ISR_FLAGS_CF; // clear carray-flag on success
@@ -673,6 +711,7 @@ __attribute__((externally_visible, regparm(1))) void c_int19_handler(struct inte
     uart_putc('I');
     uart_putc('1');
     uart_putc('9');
+    lcd_print_string("I19", 0x07);
 
 /*
 	// store DS and reset it to 0
@@ -702,6 +741,8 @@ __attribute__((externally_visible, regparm(1))) void c_int1a_handler(struct inte
     uart_putc('I');
     uart_putc('1');
     uart_putc('A');
+    lcd_print_string("I1A", 0x07);
+
     uint8_t ah = (uint8_t)(regs->ax >> 8);
 
     switch (ah) {
@@ -736,13 +777,9 @@ __attribute__((externally_visible, regparm(1))) void c_int1a_handler(struct inte
     }
 }
 
-// periodic interrupt
-__attribute__((externally_visible, regparm(1))) void c_int1c_handler(struct interrupt_registers *regs) {
-    uart_putc('I');
-    uart_putc('1');
-    uart_putc('C');
-
-	// placeholder for user-program
+// INT29h: Fast Console Output
+__attribute__((externally_visible, regparm(1))) void c_int29_handler(struct interrupt_registers *regs) {
+    lcd_putc((char)(regs->ax & 0xFF), 0x07);
 }
 
 static uint8_t pic_read_isr_master(void) {
@@ -755,7 +792,63 @@ static uint8_t pic_read_irr_master(void) {
     return inb(0x20);
 }
 
+__attribute__((externally_visible, regparm(1))) void c_int_error_handler(struct interrupt_registers *regs) {
+    lcd_print_string("IEE", 0x07);
+}
+
 __attribute__((externally_visible, regparm(1))) void c_int_dummy_handler(struct interrupt_registers *regs) {
+    //lcd_print_string("I??", 0x07);
+
+    char buf[5];
+    
+    // IP und CS ausgeben
+    lcd_print_string_pos(4, 0, "IP=", 0x07);
+    uint16_to_hex(regs->ip, buf);
+    lcd_print_string_ram(buf, 0x07);
+    
+    lcd_print_string(" CS=", 0x07);
+    uint16_to_hex(regs->cs, buf);
+    lcd_print_string_ram(buf, 0x07);
+    
+    lcd_print_string(" FL=", 0x07);
+    uint16_to_hex(regs->flags, buf);
+    lcd_print_string_ram(buf, 0x07);
+
+    // PIC-Status
+    outb(0x20, 0x0B);       // ISR lesen
+    uint8_t isr = inb(0x20);
+    outb(0x20, 0x0A);       // IRR lesen
+    uint8_t irr = inb(0x20);
+    
+    lcd_print_string_pos(5, 0, "ISR=", 0x07);
+    uint8_to_hex(isr, buf);
+    lcd_print_string_ram(buf, 0x07);
+    lcd_print_string(" IRR=", 0x07);
+    uint8_to_hex(irr, buf);
+    lcd_print_string_ram(buf, 0x07);
+    
+    // IMR lesen
+    uint8_t imr = inb(0x21);
+    lcd_print_string(" IMR=", 0x07);
+    uint8_to_hex(imr, buf);
+    lcd_print_string_ram(buf, 0x07);
+    
+    // INT-Code
+    uint8_t opcode = readFarByte(regs->cs, regs->ip - 2);  // sollte 0xCD sein
+    uint8_t int_no = readFarByte(regs->cs, regs->ip - 1);  // INT-Nummer
+
+    lcd_print_string_pos(6, 0, "INT=", 0x07);
+    uint8_to_hex(int_no, buf);
+    lcd_print_string_ram(buf, 0x07);
+    uint8_to_hex(opcode, buf);
+    lcd_print_string(" OP=", 0x07);
+    lcd_print_string_ram(buf, 0x07);
+    
+    // EINFRIEREN für Analyse!
+    __asm__ volatile ("cli; hlt");
+
+    /*
+
     // this interrupt is not supposed to be called, but if it is called, we print some debug information and halt the system
 
     uart_print("DUMMY INT / EXCEPTION\n");
@@ -781,8 +874,8 @@ __attribute__((externally_visible, regparm(1))) void c_int_dummy_handler(struct 
     uart_putc(irr);
 
     uart_print("\nHALT\n");
-
     while (1) {
         __asm__ volatile ("cli; hlt");
     }
+    */
 }

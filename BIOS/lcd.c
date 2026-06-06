@@ -173,13 +173,13 @@ void lcd_putc_pos(int row, int col, char c, uint8_t attribute) {
 }
 
 // output whole string on LCD at current position
-void lcd_print_string(const char *str, uint8_t attribute) {
+void lcd_print_string(const char* str, uint8_t attribute) {
 	// Strings are placed in ROM so we have to take care of different memory-segments
 	// so we take the relative offset and use the readRomByte function
     uint16_t rom_offset = (uint16_t)(uintptr_t)str;
 
     while (1) {
-        char c = (char)readRomByte(rom_offset);
+        char c = (char)readRomByte(rom_offset++);
         
         if (c == '\0') {
             break;
@@ -190,7 +190,7 @@ void lcd_print_string(const char *str, uint8_t attribute) {
 }
 
 // output whole string on LCD at specific position
-void lcd_print_string_pos(int row, int col, const char *str, uint8_t attribute) {
+void lcd_print_string_pos(int row, int col, const char* str, uint8_t attribute) {
 	// set cursor at desired position
 	writeFarByte(BASE_SEG, BDA_CURSOR_POS_COL, col);
 	writeFarByte(BASE_SEG, BDA_CURSOR_POS_ROW, row);
@@ -199,14 +199,14 @@ void lcd_print_string_pos(int row, int col, const char *str, uint8_t attribute) 
 	lcd_print_string(str, attribute);
 }
 
-void lcd_print_string_ram(const char *str, uint8_t attribute) {
+void lcd_print_string_ram(const char* str, uint8_t attribute) {
     while (*str) {
         lcd_putc(*str, attribute);
         str++;
 	}
 }
 
-void lcd_print_string_ram_pos(int row, int col, const char *str, uint8_t attribute) {
+void lcd_print_string_ram_pos(int row, int col, const char* str, uint8_t attribute) {
 	// set cursor at desired position
 	writeFarByte(BASE_SEG, BDA_CURSOR_POS_COL, col);
 	writeFarByte(BASE_SEG, BDA_CURSOR_POS_ROW, row);

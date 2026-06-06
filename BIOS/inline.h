@@ -243,11 +243,13 @@ static inline void copyFarBlock(uint16_t srcSegment, uint16_t srcOffset, void* d
 // additional functions
 // ==========================================================
 static inline void delay_1us(void) {
+    // writing to IO takes between 22 and 26 clock-cycles
+    // at 33MHz this results in about 0.66 to 0.78 microseconds
     outb(0x80, 0x00);   // write 0x00 to port 0x80, which takes about 1 microsecond
 }
 
 static inline void delay_1ms(void) {
-    for (int i = 0; i < 1000; i++) {
+    for (int i = 0; i < 100; i++) {
         delay_1us();
     }
 }

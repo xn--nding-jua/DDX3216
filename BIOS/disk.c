@@ -297,7 +297,7 @@ bool cfcard_init() {
         // something went wrong during IDENTIFY-Command -> fallback with fixed geometry for 512MB CF-Card
         uart_print("Failed to read IDENTIFY-Data, using fallback geometry for 512MB CF-Card\n");
 
-        // CF-Card geometry with 512MB
+        // fixed CF-Card geometry with 512MB
         // CHS for BIOS-compatibility (DOS-Limit: 1024/16/63)
         hd0_params.cylinders = 1024;
         hd0_params.heads = 16;
@@ -313,7 +313,7 @@ bool cfcard_init() {
         // read LBA-sectors for max. 4GB disks
         uint32_t lba_sectors = readFarWord(BASE_SEG, 0x7C00 + (60 * sizeof(uint16_t))); // word 60..61: total number of sectors (LBA)
 
-        // TODO: check if we have more than 1024 cylinders, 16 heads or 63 sectors per track and if so,
+        // check if we have more than 1024 cylinders, 16 heads or 63 sectors per track and if so,
         // recalculate the geometry to fit into the CHS limits of the BIOS (1024/16/63) and set hd0_params accordingly
         if (hd0_params.cylinders > 1024) {
             // recalculate geometry to fit into CHS limits of the BIOS
@@ -327,6 +327,17 @@ bool cfcard_init() {
                 }
             }
         }
+
+        /*
+        // print geometry to LCD for debugging
+        char textbuffer[6];
+        uint16_to_dec(hd0_params.cylinders, textbuffer);
+        lcd_print_string_ram_pos(1, 0, textbuffer, 0x07);
+        uint16_to_dec(hd0_params.heads, textbuffer);
+        lcd_print_string_ram_pos(2, 0, textbuffer, 0x07);
+        uint16_to_dec(hd0_params.sectors_per_track, textbuffer);
+        lcd_print_string_ram_pos(3, 0, textbuffer, 0x07);
+        */
     }
 
     lcd_print_string("OK\n", 0x07);

@@ -9,7 +9,7 @@ setlocal enabledelayedexpansion
 set "CC=C:\Programme2\i686-elf-tools-windows\bin\i686-elf-gcc.exe"
 set "LD=C:\Programme2\i686-elf-tools-windows\bin\i686-elf-ld.exe"
 set "OBJCOPY=C:\Programme2\i686-elf-tools-windows\bin\i686-elf-objcopy.exe"
-set "CFLAGS=-march=i386 -m16 -O0 -ffreestanding -fno-toplevel-reorder -fno-omit-frame-pointer -fno-stack-protector -mpreferred-stack-boundary=2 -mno-80387 -nostdlib"
+set "CFLAGS=-march=i386 -m16 -O0 -ffreestanding -fno-toplevel-reorder -fno-stack-protector -mpreferred-stack-boundary=2 -mno-80387 -nostdlib"
 
 if not exist obj md obj
 if not exist bin md bin

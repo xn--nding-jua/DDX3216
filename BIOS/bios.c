@@ -21,7 +21,11 @@ __asm__(".code16gcc\n"); // we are using -m16 compiler-switch so this line is re
 // **********************************************************
 
 void setup_ivt() {
-    for (uint16_t i = 0; i < 256; i++) {
+    for (uint16_t i = 0; i < 8; i++) {
+        set_ivt_entry((uint8_t)i, (uint16_t)(uintptr_t)isr_int_error, ROM_SEG);
+    }
+
+    for (uint16_t i = 8; i < 256; i++) {
         set_ivt_entry((uint8_t)i, (uint16_t)(uintptr_t)isr_int_dummy, ROM_SEG);
     }
 
@@ -39,7 +43,13 @@ void setup_ivt() {
     set_ivt_entry(0x19, (uint16_t)(uintptr_t)isr_int19, ROM_SEG);
     set_ivt_entry(0x1a, (uint16_t)(uintptr_t)isr_int1a, ROM_SEG);
     set_ivt_entry(0x1c, (uint16_t)(uintptr_t)isr_int1c, ROM_SEG);
+    set_ivt_entry(0x29, (uint16_t)(uintptr_t)isr_int29, ROM_SEG);
     set_ivt_entry(0x41, (uint16_t)(uintptr_t)&hd0_params, ROM_SEG);
+
+
+    // spurious interrupts
+    set_ivt_entry(0x0F, (uint16_t)(uintptr_t)isr_spurious_irq7, ROM_SEG);
+    set_ivt_entry(0x77, (uint16_t)(uintptr_t)isr_spurious_irq15, ROM_SEG);
 }
 
 void setup_bda() {
@@ -75,8 +85,8 @@ void setup_bda() {
     writeFarWord(0x0000, 0x044E, 0x0000);  //  Start-Offset of VRAM for current page (in Bytes, relative to 0xB8000)
 
     // cursor position (8x Col/Row)
-    writeFarWord(0x0000, BDA_CURSOR_POS_COL, 0x0000);
-    writeFarWord(0x0000, BDA_CURSOR_POS_COL + 2, 0x0000);
+    //writeFarWord(0x0000, BDA_CURSOR_POS_COL, 0x0000);     // cursor-position is already be used
+    //writeFarWord(0x0000, BDA_CURSOR_POS_COL + 2, 0x0000); // cursor-position is already be used
     writeFarWord(0x0000, BDA_CURSOR_POS_COL + 4, 0x0000);
     writeFarWord(0x0000, BDA_CURSOR_POS_COL + 6, 0x0000);
     writeFarWord(0x0000, BDA_CURSOR_POS_COL + 8, 0x0000);
@@ -163,7 +173,7 @@ void kbd_init() {
     write_sc300_cfg(0xAD, pmu3 | SC300_XTKBDEN);
 
     // check for 0xAA from keyboard
-    uint32_t timeout = 500000;
+    /*    uint32_t timeout = 500;
     uint8_t scancode = inb(KBD_DATA_PORT);
     while ((timeout > 0) || (scancode != 0xAA)) {
         timeout--;
@@ -175,6 +185,8 @@ void kbd_init() {
 
         delay_1ms();
     }
+    */
+    uint8_t scancode = 0xAA; // DEBUG
     if (scancode != 0xAA) {
         // keyboard did not respond correctly
         lcd_print_string("ERROR\n", 0x07);
@@ -376,7 +388,8 @@ __attribute__((noreturn)) void bios_main() {
 
     lcd_init();
     lcd_clear();
-	lcd_print_string_pos(0, 0, "AMD Elan SC300 BIOS v0.01   . ", 0x07);
+    lcd_print_string_pos(0, 0, "AMD Elan SC300 BIOS v0.01   . ", 0x07);
+
     uint8_t version = read_sc300_cfg(0x64);
     lcd_putc_pos(0, 27, 'A' + (version & 0b00000111) - 1, 0x07);
     lcd_putc_pos(0, 29, '0' + ((version & 0b01111000) >> 3), 0x07);
@@ -389,19 +402,19 @@ __attribute__((noreturn)) void bios_main() {
 	setup_ivt();
 	setup_bda();
 
-    lcd_print_string("Init UART...\n", 0x07);
+    //lcd_print_string("Init UART...\n", 0x07);
     uart_init(9600);
-    pirq_init();
-	uart_interrupt_enable();
+    //pirq_init();
+	//uart_interrupt_enable();
 	uart_print("AMD Elan SC300 BIOS v0.01\n");
-
-	lcd_print_string("Init timer...\n", 0x07);
-	timer_init();
 
     lcd_print_string("Init keyboard...", 0x07); // no linefeed here
 	kbd_init();
 	
-	__asm__ volatile ("sti");
+	lcd_print_string("Init timer...\n", 0x07);
+	timer_init();
+
+    __asm__ volatile ("sti");
     setLEDs();
 
     lcd_print_string("Init PCMCIA / CF-Card...", 0x07); // no linefeed here

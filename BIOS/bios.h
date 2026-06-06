@@ -40,6 +40,8 @@
 
 // ISRs from Assembler-Part
 extern void launch_bootsector(void);
+extern void launch_basic(void);
+
 extern void isr_int04(void);
 extern void isr_int08(void);
 extern void isr_int09(void);
@@ -54,8 +56,13 @@ extern void isr_int17(void);
 extern void isr_int19(void);
 extern void isr_int1a(void);
 extern void isr_int1c(void);
+extern void isr_int29(void);
+
+
+extern void isr_spurious_irq7(void);
+extern void isr_spurious_irq15(void);
+extern void isr_int_error(void);
 extern void isr_int_dummy(void);
-extern void launch_basic(void);
 
 extern struct disk_param_table hd0_params;
 

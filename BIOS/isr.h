@@ -37,6 +37,9 @@ void pirq_init();
 __attribute__((externally_visible, regparm(1))) void c_int04_handler(struct interrupt_registers *regs);
 __attribute__((externally_visible, regparm(1))) void c_int09_handler(struct interrupt_registers *regs);
 
+//__attribute__((externally_visible, regparm(1))) void c_int08_handler(struct interrupt_registers *regs);
+//__attribute__((externally_visible, regparm(1))) void c_int1c_handler(struct interrupt_registers *regs);
+
 // software-interrupts
 __attribute__((externally_visible, regparm(1))) void c_int10_handler(struct interrupt_registers *regs);
 __attribute__((externally_visible, regparm(1))) void c_int11_handler(struct interrupt_registers *regs);
@@ -48,7 +51,8 @@ __attribute__((externally_visible, regparm(1))) void c_int16_handler(struct inte
 __attribute__((externally_visible, regparm(1))) void c_int17_handler(struct interrupt_registers *regs);
 __attribute__((externally_visible, regparm(1))) void c_int19_handler(struct interrupt_registers *regs);
 __attribute__((externally_visible, regparm(1))) void c_int1a_handler(struct interrupt_registers *regs);
-__attribute__((externally_visible, regparm(1))) void c_int1c_handler(struct interrupt_registers *regs);
+__attribute__((externally_visible, regparm(1))) void c_int29_handler(struct interrupt_registers *regs);
+__attribute__((externally_visible, regparm(1))) void c_int_error_handler(struct interrupt_registers *regs);
 __attribute__((externally_visible, regparm(1))) void c_int_dummy_handler(struct interrupt_registers *regs);
 
 #endif

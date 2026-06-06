@@ -436,6 +436,7 @@ launch_bootsector:
 
 .equ INT_FRAME_WORDS,  12
 
+
 .macro ISR_SAFE_STACK_ENTRY cfunc, save_old_ss, save_old_sp, save_old_fs, save_old_gs, save_frame_sp
     cli
 
@@ -529,7 +530,6 @@ launch_bootsector:
     // read original segment-configuration from memory
     mov ax, WORD PTR fs:[\save_old_ss]
     mov bx, WORD PTR fs:[\save_old_sp]
-    //sub bx, (INT_FRAME_WORDS * 2)          // adjust stackpointer to point to original register-frame on DOS-stack with the updated register-values
     mov cx, WORD PTR fs:[\save_old_gs]
     mov dx, WORD PTR fs:[\save_old_fs]
 
@@ -554,128 +554,6 @@ launch_bootsector:
 
     iretw
 .endm
-
-
-/*
-.macro ISR_SAFE_STACK_ENTRY cfunc, save_old_ss, save_old_sp, save_old_fs, save_old_gs, save_frame_sp
-    cli
-
-    push ax
-    push fs
-
-    // set FS to BIOS_SEG to safe variables
-    mov ax, BIOS_SEG
-    mov fs, ax
-
-    pop ax // AX contains old FS
-    mov WORD PTR fs:[\save_old_fs], ax
-    mov ax, gs
-    mov WORD PTR fs:[\save_old_gs], ax
-
-    pop ax // restore original AX
-
-    // safe registers to current caller-stack
-    push ax
-    push bx
-    push cx
-    push dx
-    push si
-    push di
-    push bp
-    push es
-    push ds
-    // IP, CS, FLAGS already on stack from interrupt
-
-    // safe old stack-state
-    mov ax, ss
-    mov WORD PTR fs:[\save_old_ss], ax
-    mov ax, sp
-    mov WORD PTR fs:[\save_old_sp], ax
-
-    // change stack to safe-BIOS-stack
-    mov ax, BIOS_SEG
-    mov ss, ax
-    mov sp, BIOS_STACK_TOP
-
-    // set segments for C to allow usage of near-pointer
-    mov ds, ax
-    mov es, ax
-
-    // reserve some space for register-frame on BIOS-stack
-    sub sp, (INT_FRAME_WORDS * 2)
-    mov di, sp
-    mov WORD PTR fs:[\save_frame_sp], di
-
-    // copy register-frame from DOS-Stack to BIOS-stack
-    mov ax, WORD PTR fs:[\save_old_ss]
-    mov gs, ax
-    mov si, WORD PTR fs:[\save_old_sp]
-    mov cx, INT_FRAME_WORDS
-
-1:  // local variables for copy-loop (direction to C-function)
-    mov ax, WORD PTR gs:[si]
-    mov WORD PTR [di], ax
-    add si, 2
-    add di, 2
-    loop 1b
-
-    // call C-Handler via regparm(1) -> Struct-Pointer is in AX/AX
-    mov ax, WORD PTR fs:[\save_frame_sp]
-    cld
-    call \cfunc
-
-    // for the case C has changed the segments: back to BIOS-stack
-    mov ax, BIOS_SEG
-    mov ds, ax
-    mov es, ax
-    mov fs, ax
-
-    // load framepointer from BIOS-stack
-    mov sp, WORD PTR fs:[\save_frame_sp]
-
-    // modify frame back to original DOS-stack
-    mov ax, WORD PTR fs:[\save_old_ss]
-    mov gs, ax
-
-    mov si, sp
-    mov di, WORD PTR fs:[\save_old_sp]
-    mov cx, INT_FRAME_WORDS
-
-2:  // local variables for copy-loop (direction to DOS-functions)
-    mov ax, WORD PTR [si]
-    mov WORD PTR gs:[di], ax
-    add si, 2
-    add di, 2
-    loop 2b
-
-    // read original segment-configuration from memory
-    mov ax, WORD PTR fs:[\save_old_ss]
-    mov bx, WORD PTR fs:[\save_old_sp]
-    mov cx, WORD PTR fs:[\save_old_gs]
-    mov dx, WORD PTR fs:[\save_old_fs]
-
-    mov gs, cx
-    mov fs, dx
-
-    // change back to original DOS-stack
-    cli
-    mov ss, ax
-    mov sp, bx
-
-    // pop registers from restored original stack
-    pop ds
-    pop es
-    pop bp
-    pop di
-    pop si
-    pop dx
-    pop cx
-    pop bx
-    pop ax
-
-    iretw
-.endm
-*/
 
 // ========================================================
 // Interrupt Service Routines
@@ -689,34 +567,43 @@ launch_bootsector:
 .equ BIOS_SW_ISR_GS,        0x0026
 .equ BIOS_SW_ISR_FRAME,     0x0028
 
-.equ BIOS_INT15_SS,         0x002A
-.equ BIOS_INT15_SP,         0x002C
-.equ BIOS_INT15_FS,         0x002E
-.equ BIOS_INT15_GS,         0x0030
-.equ BIOS_INT15_FRAME,      0x0032
+.equ BIOS_INT08_ISR_SS,         0x002A
+.equ BIOS_INT08_ISR_SP,         0x002C
+.equ BIOS_INT08_ISR_FS,         0x002E
+.equ BIOS_INT08_ISR_GS,         0x0030
+.equ BIOS_INT08_ISR_FRAME,      0x0032
 
-.global isr_int04
+.equ BIOS_INT10_ISR_SS,         0x0034
+.equ BIOS_INT10_ISR_SP,         0x0036
+.equ BIOS_INT10_ISR_FS,         0x0038
+.equ BIOS_INT10_ISR_GS,         0x003A
+.equ BIOS_INT10_ISR_FRAME,      0x003C
+
+.equ BIOS_INT13_ISR_SS,         0x003E
+.equ BIOS_INT13_ISR_SP,         0x0040
+.equ BIOS_INT13_ISR_FS,         0x0042
+.equ BIOS_INT13_ISR_GS,         0x0044
+.equ BIOS_INT13_ISR_FRAME,      0x0046
+
+.equ BIOS_INT15_ISR_SS,         0x0048
+.equ BIOS_INT15_ISR_SP,         0x004A
+.equ BIOS_INT15_ISR_FS,         0x004C
+.equ BIOS_INT15_ISR_GS,         0x004E
+.equ BIOS_INT15_ISR_FRAME,      0x0050
+
+.equ BIOS_INT1C_ISR_SS,         0x0052
+.equ BIOS_INT1C_ISR_SP,         0x0054
+.equ BIOS_INT1C_ISR_FS,         0x0056
+.equ BIOS_INT1C_ISR_GS,         0x0058
+.equ BIOS_INT1C_ISR_FRAME,      0x005A
+
+// timer-interrupts
 .global isr_int08
-.global isr_int09
-.global isr_int10
-.global isr_int11
-.global isr_int12
-.global isr_int13
-.global isr_int14
-.global isr_int15
-.global isr_int16
-.global isr_int17
-.global isr_int19
-.global isr_int1a
-.global isr_int1c
-.global isr_int_dummy
-
-// hardware-interrupts with EOI
 isr_int08:
     push ax
-    push bx
     push ds
 
+    // set DS to 0x0000 to access BDA at 0x0000:0x0400
     xor ax, ax
     mov ds, ax
 
@@ -740,6 +627,7 @@ isr_int08:
     mov BYTE PTR ds:[0x0470], 1     // overflow-flag in BDA
 2:
     pop ds
+    pop ax
 
     // set EOI before INT1C
     mov al, 0x20
@@ -748,56 +636,117 @@ isr_int08:
     // call user-interrupt INT 1C
     int 0x1C
 
-    pop bx
-    pop ax
-
     iretw
 
+.global isr_int1c
+isr_int1c:
+    iretw
+
+
+// hardware-interrupts with EOI
+
+.global isr_int04
 isr_int04:
     ISR_HW_ENTRY c_int04_handler // UART-interrupt
 
+.global isr_int09
 isr_int09:
     ISR_HW_ENTRY c_int09_handler // keyboard-interrupt
 
+
+
 // software-interrupts without EOI
+
+.global isr_int10
 isr_int10:
-    ISR_SW_ENTRY c_int10_handler
+    ISR_SAFE_STACK_ENTRY c_int10_handler, BIOS_INT10_ISR_SS, BIOS_INT10_ISR_SP, BIOS_INT10_ISR_FS, BIOS_INT10_ISR_GS, BIOS_INT10_ISR_FRAME
 
+.global isr_int11
 isr_int11:
-    ISR_SW_ENTRY c_int11_handler
+    ISR_SAFE_STACK_ENTRY c_int11_handler, BIOS_SW_ISR_SS, BIOS_SW_ISR_SP, BIOS_SW_ISR_FS, BIOS_SW_ISR_GS, BIOS_SW_ISR_FRAME
 
+.global isr_int12
 isr_int12:
-    ISR_SW_ENTRY c_int12_handler
+    ISR_SAFE_STACK_ENTRY c_int12_handler, BIOS_SW_ISR_SS, BIOS_SW_ISR_SP, BIOS_SW_ISR_FS, BIOS_SW_ISR_GS, BIOS_SW_ISR_FRAME
 
+.global isr_int13
 isr_int13:
-    ISR_SAFE_STACK_ENTRY c_int13_handler, BIOS_SW_ISR_SS, BIOS_SW_ISR_SP, BIOS_SW_ISR_FS, BIOS_SW_ISR_GS, BIOS_SW_ISR_FRAME
+    ISR_SAFE_STACK_ENTRY c_int13_handler, BIOS_INT13_ISR_SS, BIOS_INT13_ISR_SP, BIOS_INT13_ISR_FS, BIOS_INT13_ISR_GS, BIOS_INT13_ISR_FRAME
 
+.global isr_int14
 isr_int14:
-    ISR_SW_ENTRY c_int14_handler
+    ISR_SAFE_STACK_ENTRY c_int14_handler, BIOS_SW_ISR_SS, BIOS_SW_ISR_SP, BIOS_SW_ISR_FS, BIOS_SW_ISR_GS, BIOS_SW_ISR_FRAME
 
+.global isr_int15
 isr_int15:
-//    ISR_SW_ENTRY c_int15_handler
-    ISR_SAFE_STACK_ENTRY c_int15_handler, BIOS_INT15_SS, BIOS_INT15_SP, BIOS_INT15_FS, BIOS_INT15_GS, BIOS_INT15_FRAME
-    // TODO: check if we can move the stack-variables to general BIOS_SW_ISR_xxx lateron
+    ISR_SAFE_STACK_ENTRY c_int15_handler, BIOS_INT15_ISR_SS, BIOS_INT15_ISR_SP, BIOS_INT15_ISR_FS, BIOS_INT15_ISR_GS, BIOS_INT15_ISR_FRAME
 
+.global isr_int16
 isr_int16:
-    ISR_SW_ENTRY c_int16_handler
+    ISR_SAFE_STACK_ENTRY c_int16_handler, BIOS_SW_ISR_SS, BIOS_SW_ISR_SP, BIOS_SW_ISR_FS, BIOS_SW_ISR_GS, BIOS_SW_ISR_FRAME
 
+.global isr_int17
 isr_int17:
-    ISR_SW_ENTRY c_int17_handler
+    ISR_SAFE_STACK_ENTRY c_int17_handler, BIOS_SW_ISR_SS, BIOS_SW_ISR_SP, BIOS_SW_ISR_FS, BIOS_SW_ISR_GS, BIOS_SW_ISR_FRAME
 
+.global isr_int19
 isr_int19:
-    ISR_SW_ENTRY c_int19_handler
+    ISR_SAFE_STACK_ENTRY c_int19_handler, BIOS_SW_ISR_SS, BIOS_SW_ISR_SP, BIOS_SW_ISR_FS, BIOS_SW_ISR_GS, BIOS_SW_ISR_FRAME
 
+.global isr_int1a
 isr_int1a:
-    ISR_SW_ENTRY c_int1a_handler
+    ISR_SAFE_STACK_ENTRY c_int1a_handler, BIOS_SW_ISR_SS, BIOS_SW_ISR_SP, BIOS_SW_ISR_FS, BIOS_SW_ISR_GS, BIOS_SW_ISR_FRAME
 
-isr_int1c:
-    ISR_SW_ENTRY c_int1c_handler
+.global isr_int29
+isr_int29:
+    ISR_SAFE_STACK_ENTRY c_int29_handler, BIOS_SW_ISR_SS, BIOS_SW_ISR_SP, BIOS_SW_ISR_FS, BIOS_SW_ISR_GS, BIOS_SW_ISR_FRAME
 
+// special interrupts
+.global isr_spurious_irq7
+isr_spurious_irq7:
+    // Spurious IRQ7: Kein EOI senden!
+    // PIC ISR-Register prüfen ob wirklich Spurious
+    push ax
+    mov al, 0x0B        // OCW3: Read ISR
+    out 0x20, al
+    in al, 0x20         // ISR lesen
+    test al, 0x80       // Bit 7 = IRQ7?
+    jnz 1f              // Echter IRQ7: EOI senden
+    // Spurious: Kein EOI!
+    pop ax
+    iretw
+1:  mov al, 0x20        // Echter IRQ7: EOI
+    out 0x20, al
+    pop ax
+    iretw
+
+.global isr_spurious_irq15
+isr_spurious_irq15:
+    // Spurious IRQ15: EOI nur an Master senden!
+    push ax
+    mov al, 0x0B
+    out 0xA0, al        // Slave ISR lesen
+    in al, 0xA0
+    test al, 0x80
+    jnz 1f
+    // Spurious: Nur Master-EOI
+    mov al, 0x20
+    out 0x20, al
+    pop ax
+    iretw
+1:  mov al, 0x20
+    out 0xA0, al        // Slave EOI
+    out 0x20, al        // Master EOI
+    pop ax
+    iretw
+
+.global isr_int_error
+isr_int_error:
+    ISR_SAFE_STACK_ENTRY c_int_error_handler, BIOS_SW_ISR_SS, BIOS_SW_ISR_SP, BIOS_SW_ISR_FS, BIOS_SW_ISR_GS, BIOS_SW_ISR_FRAME 
+
+.global isr_int_dummy
 isr_int_dummy:
-    ISR_SW_ENTRY c_int_dummy_handler
-
+    ISR_SAFE_STACK_ENTRY c_int_dummy_handler, BIOS_SW_ISR_SS, BIOS_SW_ISR_SP, BIOS_SW_ISR_FS, BIOS_SW_ISR_GS, BIOS_SW_ISR_FRAME 
 
 // ========================================================
 // FUNCTIONS FOR TINY8086 BASIC
