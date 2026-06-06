@@ -404,8 +404,8 @@ __attribute__((noreturn)) void bios_main() {
 
     //lcd_print_string("Init UART...\n", 0x07);
     uart_init(9600);
-    //pirq_init();
-	//uart_interrupt_enable();
+    pirq_init();
+	uart_interrupt_enable();
 	uart_print("AMD Elan SC300 BIOS v0.01\n");
 
     lcd_print_string("Init keyboard...", 0x07); // no linefeed here

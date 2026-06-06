@@ -55,6 +55,7 @@
 
 // segment-addresses
 .equ ROM_SEG,         0xF000    // Segment where the ROM is mapped and where the BIOS code is located
+.equ BASIC_SEG,       0x2000    // Segment for tiny8086basic
 .equ BIOS_SEG,        0x9C00    // Segment for global variables and stack during interrupts
 .equ BIOS_STACK_TOP,  0x4000    // STACK-Pointer is 0x9C00 + 0x4000 = 0x9C000 + 0x4000 = 0xA0000
 .equ BOOT_STACK_SEG,  0x0000    // only during initialization. Will be changed later to 0x9C00
@@ -316,8 +317,6 @@ halt:
     jmp     halt
 
 
-.code16gcc
-
 // ========================================================
 // Launching Bootsector
 // ========================================================
@@ -342,13 +341,13 @@ launch_bootsector:
 
 
 
-
 // ========================================================
 // GNU-Assembler Macros for ISR-Entries
 // ========================================================
 .macro ISR_HW_ENTRY cfunc
     // store all 16-bit registers
-    .code16
+    cld
+
     push ax
     push bx
     push cx
@@ -358,7 +357,6 @@ launch_bootsector:
     push bp
     push es
     push ds
-    .code16gcc
 
     // prepare segments for C-code: set DataSegment to BIOS_SEG to access global variables
     mov ax, BIOS_SEG
@@ -371,7 +369,9 @@ launch_bootsector:
     cld
 
     // call the C-Interrupt-Handler
+    .code16gcc
     call \cfunc
+    .code16
 
     // force stackpointer back to original value
     mov sp, bp
@@ -381,7 +381,6 @@ launch_bootsector:
     out 0x20, al
 
     // restore all registers in inverted order
-    .code16
     pop ds
     pop es
     pop bp
@@ -391,14 +390,14 @@ launch_bootsector:
     pop cx
     pop bx
     pop ax
-    .code16gcc
 
     iretw
 .endm
 
 .macro ISR_SW_ENTRY cfunc
     // store all 16-bit registers
-    .code16
+    cld
+
     push ax
     push bx
     push cx
@@ -408,7 +407,6 @@ launch_bootsector:
     push bp
     push es
     push ds
-    .code16gcc
 
     // prepare segments for C-code: set DataSegment to BIOS_SEG to access global variables
     mov ax, BIOS_SEG
@@ -421,13 +419,14 @@ launch_bootsector:
     cld
 
     // call the C-Interrupt-Handler
+    .code16gcc
     call \cfunc
+    .code16
 
     // force stackpointer back to original value
     mov sp, bp
 
     // restore all registers in inverted order
-    .code16
     pop ds
     pop es
     pop bp
@@ -437,7 +436,6 @@ launch_bootsector:
     pop cx
     pop bx
     pop ax
-    .code16gcc
 
     iretw
 .endm
@@ -446,31 +444,25 @@ launch_bootsector:
 
 
 .macro ISR_SAFE_STACK_ENTRY cfunc, save_old_ss, save_old_sp, save_old_fs, save_old_gs, save_frame_sp
+    cld
     cli
 
-    .code16
     push ax
     push fs
-    .code16gcc
 
     // set FS to BIOS_SEG to safe variables
     mov ax, BIOS_SEG
     mov fs, ax
 
-    .code16
     pop ax // AX contains old FS
-    .code16gcc
     mov WORD PTR fs:[\save_old_fs], ax
 
     mov ax, gs
     mov WORD PTR fs:[\save_old_gs], ax
 
-    .code16
     pop ax // restore original AX
-    .code16gcc
 
     // safe registers to current caller-stack
-    .code16
     push ax
     push bx
     push cx
@@ -480,7 +472,6 @@ launch_bootsector:
     push bp
     push es
     push ds
-    .code16gcc
     // IP, CS, FLAGS already on stack from interrupt
 
     // safe old stack-state
@@ -519,7 +510,9 @@ launch_bootsector:
     // call C-Handler via regparm(1) -> Struct-Pointer is in AX
     mov ax, WORD PTR fs:[\save_frame_sp]
     cld
+    .code16gcc
     call \cfunc
+    .code16
 
     // for the case C has changed the segments: back to BIOS-stack
     mov ax, BIOS_SEG
@@ -558,7 +551,6 @@ launch_bootsector:
     mov sp, bx
 
     // pop registers from restored original stack
-    .code16
     pop ds
     pop es
     pop bp
@@ -568,7 +560,6 @@ launch_bootsector:
     pop cx
     pop bx
     pop ax
-    .code16gcc
 
     iretw
 .endm
@@ -609,19 +600,25 @@ launch_bootsector:
 .equ BIOS_INT15_ISR_GS,         0x004E
 .equ BIOS_INT15_ISR_FRAME,      0x0050
 
-.equ BIOS_INT1C_ISR_SS,         0x0052
-.equ BIOS_INT1C_ISR_SP,         0x0054
-.equ BIOS_INT1C_ISR_FS,         0x0056
-.equ BIOS_INT1C_ISR_GS,         0x0058
-.equ BIOS_INT1C_ISR_FRAME,      0x005A
+.equ BIOS_INT1A_ISR_SS,         0x0052
+.equ BIOS_INT1A_ISR_SP,         0x0054
+.equ BIOS_INT1A_ISR_FS,         0x0056
+.equ BIOS_INT1A_ISR_GS,         0x0058
+.equ BIOS_INT1A_ISR_FRAME,      0x005A
+
+.equ BIOS_INT1C_ISR_SS,         0x005C
+.equ BIOS_INT1C_ISR_SP,         0x005E
+.equ BIOS_INT1C_ISR_FS,         0x0061
+.equ BIOS_INT1C_ISR_GS,         0x0063
+.equ BIOS_INT1C_ISR_FRAME,      0x0065
 
 // timer-interrupts
 .global isr_int08
 isr_int08:
-    .code16
+    cld
+
     push ax
     push ds
-    .code16gcc
 
     // set DS to 0x0000 to access BDA at 0x0000:0x0400
     xor ax, ax
@@ -646,10 +643,8 @@ isr_int08:
     mov WORD PTR ds:[0x046E], ax
     mov BYTE PTR ds:[0x0470], 1     // overflow-flag in BDA
 2:
-    .code16
     pop ds
     pop ax
-    .code16gcc
 
     // set EOI before INT1C
     mov al, 0x20
@@ -663,7 +658,6 @@ isr_int08:
 .global isr_int1c
 isr_int1c:
     iretw
-
 
 // hardware-interrupts with EOI
 
@@ -717,7 +711,7 @@ isr_int19:
 
 .global isr_int1a
 isr_int1a:
-    ISR_SAFE_STACK_ENTRY c_int1a_handler, BIOS_SW_ISR_SS, BIOS_SW_ISR_SP, BIOS_SW_ISR_FS, BIOS_SW_ISR_GS, BIOS_SW_ISR_FRAME
+    ISR_SAFE_STACK_ENTRY c_int1a_handler, BIOS_INT1A_ISR_SS, BIOS_INT1A_ISR_SP, BIOS_INT1A_ISR_FS, BIOS_INT1A_ISR_GS, BIOS_INT1A_ISR_FRAME
 
 .global isr_int29
 isr_int29:
@@ -729,9 +723,7 @@ isr_int29:
 isr_spurious_irq7:
     // Spurious IRQ7: dont send EOI here
     // check PIC ISR-register if it is really spurious
-    .code16
     push ax
-    .code16gcc
     
     mov al, 0x0B        // OCW3: Read ISR
     out 0x20, al
@@ -741,18 +733,15 @@ isr_spurious_irq7:
     
     // its spurious: dont send EOI
     
-    .code16
     pop ax
-    .code16gcc
 
     iretw
+
 1:
     mov al, 0x20        // Echter IRQ7: EOI
     out 0x20, al
 
-    .code16
     pop ax
-    .code16gcc
     
     iretw
 
@@ -760,9 +749,7 @@ isr_spurious_irq7:
 isr_spurious_irq15:
     // Spurious IRQ15: send EOI only to master
 
-    .code16
     push ax
-    .code16gcc
 
     mov al, 0x0B
     out 0xA0, al        // read slave ISR
@@ -774,9 +761,7 @@ isr_spurious_irq15:
     mov al, 0x20
     out 0x20, al
 
-    .code16
     pop ax
-    .code16gcc
 
     iretw
 
@@ -785,9 +770,7 @@ isr_spurious_irq15:
     out 0xA0, al        // Slave EOI
     out 0x20, al        // Master EOI
 
-    .code16
     pop ax
-    .code16gcc
 
     iretw
 
@@ -802,29 +785,28 @@ isr_int_dummy:
 // ========================================================
 // FUNCTIONS FOR TINY8086 BASIC
 // ========================================================
+
 .global launch_basic
 launch_basic:
-        // copy BASIC from ROM to RAM (0x2000:0x0000)
-        call copy_basic_to_ram
-    
-        // basic uses an own stack at 0x1000:0x0000 that it will initialize by its own
+    // copy BASIC from ROM to RAM (0x2000:0x0000)
+    call copy_basic_to_ram
 
-        // jump to BASIC in RAM at 0x2000:0x0000
-        jmp 0x2000:0x0000
+    // basic uses an own stack at 0x1000:0x0000 that it will initialize by its own
+
+    // jump to BASIC in RAM at 0x2000:0x0000
+    ljmp BASIC_SEG, 0x0000
 
 copy_basic_to_ram:
-    .code16
     push ds
     push es
-    .code16gcc
     
     // get the source from ROM
-    mov ax, 0xF000               // BIOS-Segment
+    mov ax, ROM_SEG              // BIOS-Segment
     mov ds, ax
-    mov si, basic_binary         // offset of BASIC in ROM
+    mov si, offset basic_binary  // offset of BASIC in ROM
     
     // destination in RAM
-    mov ax, 0x2000               // destination-segment
+    mov ax, BASIC_SEG            // destination-segment
     mov es, ax
     xor di, di                   // Offset 0x0000
     
@@ -833,12 +815,15 @@ copy_basic_to_ram:
     cld                          // clear direction flag (copy forwards)
     rep movsw                    // copy DS:SI to ES:DI
     
-    .code16
     pop es
     pop ds
-    .code16gcc
+
     ret
 
 .align 16
 basic_binary:
     .incbin "bin/basic.bin"
+
+// ========================================================
+// END OF TINY8086 BASIC
+// ========================================================

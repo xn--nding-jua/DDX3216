@@ -44,7 +44,7 @@ __attribute__((externally_visible, regparm(1))) void c_int04_handler(struct inte
                 // !!!DEBUG for TESTING!!!
                 if (c == 'R') {
                     // on 'R' the CPU should reset
-                    cpu_reset();
+                    cpu_reset(); // IMPORTANT: REMOVE WHEN EVERYTHING IS WORKING SOMEDAY!!!
                 }
                 break;
 
@@ -233,7 +233,6 @@ __attribute__((externally_visible, regparm(1))) void c_int11_handler(struct inte
     uart_putc('I');
     uart_putc('1');
     uart_putc('1');
-    lcd_print_string("I11", 0x07);
 
     //   Bitmask for Equipment Word:
     //   Bit 0: Floppy drive? (0 = No)
@@ -250,7 +249,6 @@ __attribute__((externally_visible, regparm(1))) void c_int12_handler(struct inte
     uart_putc('I');
     uart_putc('1');
     uart_putc('2');
-    lcd_print_string("I12", 0x07);
 
 	regs->ax = readFarWord(0x0000, BDA_MEM_SIZE);
 }
@@ -510,16 +508,18 @@ __attribute__((externally_visible, regparm(1))) void c_int14_handler(struct inte
     uart_putc('I');
     uart_putc('1');
     uart_putc('4');
-    lcd_print_string("I14", 0x07);
+
+    char textbuffer[5];
+    uint16_to_hex(regs->ax, textbuffer);
+    lcd_print_string_ram(textbuffer, 0x07);
 
     // get registers
     uint8_t ah = (uint8_t)(regs->ax >> 8);
     uint8_t al = (uint8_t)(regs->ax & 0xFF);
 
 	switch (ah) {
-        case 0x00: // initializing (not implemented)
-			// we are initializing the UART with fixed 38400 Baud for now. But later we
-			// could use this to switch between different speeds and settings
+        case 0x00: // initializing
+            // DOS wants to initalize with ax = 2400 Baud, no parity, 1 stopbit and 8 databits
             regs->ax    = 0x0000;
             regs->flags &= ~ISR_FLAGS_CF;
             break;
@@ -546,18 +546,18 @@ __attribute__((externally_visible, regparm(1))) void c_int14_handler(struct inte
     }
 }
 
-// Detecting Memory
+// multi-purpose Interrupt 15
 __attribute__((externally_visible, regparm(1))) void c_int15_handler(struct interrupt_registers *regs) {
     uart_putc('I');
     uart_putc('1');
     uart_putc('5');
     lcd_print_string("I15", 0x07);
+    char textbuffer[6];
+    uint16_to_hex(regs->ax, textbuffer);
+    lcd_print_string_ram(textbuffer, 0x07);
 
     uint8_t ah = (uint8_t)(regs->ax >> 8);
     uint8_t al = (uint8_t)(regs->ax & 0xFF);
-
-    uart_putc(ah);
-    uart_putc(al);
 
     switch (ah) {
         case 0x24:  // A20 Gate Control
@@ -577,9 +577,9 @@ __attribute__((externally_visible, regparm(1))) void c_int15_handler(struct inte
             break;
 
         case 0x41:
-            if (al == 0x01) {
-                regs->ax = 0x0000;
-                regs->flags &= ~ISR_FLAGS_CF;
+            if (al == 0x01) { // wait for event
+                regs->ax = 0x8600; // not supported (for now)
+                regs->flags |= ISR_FLAGS_CF;
             } else {
                 regs->ax = 0x8600;
                 regs->flags |= ISR_FLAGS_CF;
@@ -658,6 +658,10 @@ __attribute__((externally_visible, regparm(1))) void c_int16_handler(struct inte
     uart_putc('6');
     lcd_print_string("I16", 0x07);
 
+    char textbuffer[5];
+    uint16_to_hex(regs->ax, textbuffer);
+    lcd_print_string_ram(textbuffer, 0x07);
+
     uint8_t ah = regs->ax >> 8;
 /*
     switch (ah) {
@@ -695,14 +699,19 @@ __attribute__((externally_visible, regparm(1))) void c_int16_handler(struct inte
 */
 }
 
-// this interrupt is called by DOS to request next char from ringbuffer
+// parallel printer
 __attribute__((externally_visible, regparm(1))) void c_int17_handler(struct interrupt_registers *regs) {
     uart_putc('I');
     uart_putc('1');
     uart_putc('7');
-    lcd_print_string("I17", 0x07);
 
-    regs->ax = 0x3000; // timeout
+    char textbuffer[5];
+    uint16_to_hex(regs->ax, textbuffer);
+    lcd_print_string_ram(textbuffer, 0x07);
+
+    // DOS sends AH = 0x01 to initialize the printer port
+
+    regs->ax = 0x0100; // AH = 0x01 = Timeout error
     regs->flags &= ~ISR_FLAGS_CF; // clear carray-flag on success
 }
 
@@ -741,19 +750,19 @@ __attribute__((externally_visible, regparm(1))) void c_int1a_handler(struct inte
     uart_putc('I');
     uart_putc('1');
     uart_putc('A');
-    lcd_print_string("I1A", 0x07);
+    lcd_print_string("I1A", 0x7F);
 
     uint8_t ah = (uint8_t)(regs->ax >> 8);
 
     switch (ah) {
         case 0x00: { // Get system time
-            uint16_t lo = readFarWord(0x0000, BDA_TIMER_COUNTER_LOW);
-            uint16_t hi = readFarWord(0x0000, BDA_TIMER_COUNTER_HIGH);
+            uint16_t timer_lo = readFarWord(0x0000, BDA_TIMER_COUNTER_LOW);
+            uint16_t timer_hi = readFarWord(0x0000, BDA_TIMER_COUNTER_HIGH);
             uint8_t midnight = readFarByte(0x0000, BDA_MIDNIGHT_FLAG);
 
-            regs->cx = hi;
-            regs->dx = lo;
-            regs->ax = midnight;       // AL = midnight flag, AH = 0
+            regs->cx = timer_hi;
+            regs->dx = timer_lo;
+            regs->ax = 0x0000 | midnight;       // AL = midnight flag, AH = 0
             regs->flags &= ~ISR_FLAGS_CF;    // CF=0
 
             // Optional: clear IBM-compatible midnight-flag after reading
@@ -766,6 +775,17 @@ __attribute__((externally_visible, regparm(1))) void c_int1a_handler(struct inte
             writeFarWord(0x0000, BDA_TIMER_COUNTER_HIGH, regs->cx);
             writeFarByte(0x0000, BDA_MIDNIGHT_FLAG, 0);
             regs->ax = 0x0000;
+            regs->flags &= ~ISR_FLAGS_CF;
+            break;
+        }
+
+        case 0x02: { // Read RTC
+            uint16_t hour = 0;
+            uint8_t min = 0;
+            uint16_t sec = 0;
+
+            regs->cx = (hour << 8) | min;
+            regs->dx = (sec << 8);
             regs->flags &= ~ISR_FLAGS_CF;
             break;
         }
@@ -794,11 +814,14 @@ static uint8_t pic_read_irr_master(void) {
 
 __attribute__((externally_visible, regparm(1))) void c_int_error_handler(struct interrupt_registers *regs) {
     lcd_print_string("IEE", 0x07);
+
+    // EINFRIEREN für Analyse!
+    __asm__ volatile ("cli; hlt");
 }
 
 __attribute__((externally_visible, regparm(1))) void c_int_dummy_handler(struct interrupt_registers *regs) {
-    //lcd_print_string("I??", 0x07);
-
+    lcd_print_string("I??", 0x07);
+    /*
     char buf[5];
     
     // IP und CS ausgeben
@@ -846,6 +869,7 @@ __attribute__((externally_visible, regparm(1))) void c_int_dummy_handler(struct 
     
     // EINFRIEREN für Analyse!
     __asm__ volatile ("cli; hlt");
+    */
 
     /*
 
