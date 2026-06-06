@@ -316,7 +316,7 @@ halt:
     jmp     halt
 
 
-
+.code16gcc
 
 // ========================================================
 // Launching Bootsector
@@ -348,6 +348,7 @@ launch_bootsector:
 // ========================================================
 .macro ISR_HW_ENTRY cfunc
     // store all 16-bit registers
+    .code16
     push ax
     push bx
     push cx
@@ -357,6 +358,7 @@ launch_bootsector:
     push bp
     push es
     push ds
+    .code16gcc
 
     // prepare segments for C-code: set DataSegment to BIOS_SEG to access global variables
     mov ax, BIOS_SEG
@@ -379,6 +381,7 @@ launch_bootsector:
     out 0x20, al
 
     // restore all registers in inverted order
+    .code16
     pop ds
     pop es
     pop bp
@@ -388,12 +391,14 @@ launch_bootsector:
     pop cx
     pop bx
     pop ax
+    .code16gcc
 
     iretw
 .endm
 
 .macro ISR_SW_ENTRY cfunc
     // store all 16-bit registers
+    .code16
     push ax
     push bx
     push cx
@@ -403,6 +408,7 @@ launch_bootsector:
     push bp
     push es
     push ds
+    .code16gcc
 
     // prepare segments for C-code: set DataSegment to BIOS_SEG to access global variables
     mov ax, BIOS_SEG
@@ -421,6 +427,7 @@ launch_bootsector:
     mov sp, bp
 
     // restore all registers in inverted order
+    .code16
     pop ds
     pop es
     pop bp
@@ -430,6 +437,7 @@ launch_bootsector:
     pop cx
     pop bx
     pop ax
+    .code16gcc
 
     iretw
 .endm
@@ -440,22 +448,29 @@ launch_bootsector:
 .macro ISR_SAFE_STACK_ENTRY cfunc, save_old_ss, save_old_sp, save_old_fs, save_old_gs, save_frame_sp
     cli
 
+    .code16
     push ax
     push fs
+    .code16gcc
 
     // set FS to BIOS_SEG to safe variables
     mov ax, BIOS_SEG
     mov fs, ax
 
+    .code16
     pop ax // AX contains old FS
+    .code16gcc
     mov WORD PTR fs:[\save_old_fs], ax
 
     mov ax, gs
     mov WORD PTR fs:[\save_old_gs], ax
 
+    .code16
     pop ax // restore original AX
+    .code16gcc
 
     // safe registers to current caller-stack
+    .code16
     push ax
     push bx
     push cx
@@ -465,6 +480,7 @@ launch_bootsector:
     push bp
     push es
     push ds
+    .code16gcc
     // IP, CS, FLAGS already on stack from interrupt
 
     // safe old stack-state
@@ -542,6 +558,7 @@ launch_bootsector:
     mov sp, bx
 
     // pop registers from restored original stack
+    .code16
     pop ds
     pop es
     pop bp
@@ -551,6 +568,7 @@ launch_bootsector:
     pop cx
     pop bx
     pop ax
+    .code16gcc
 
     iretw
 .endm
@@ -600,8 +618,10 @@ launch_bootsector:
 // timer-interrupts
 .global isr_int08
 isr_int08:
+    .code16
     push ax
     push ds
+    .code16gcc
 
     // set DS to 0x0000 to access BDA at 0x0000:0x0400
     xor ax, ax
@@ -626,8 +646,10 @@ isr_int08:
     mov WORD PTR ds:[0x046E], ax
     mov BYTE PTR ds:[0x0470], 1     // overflow-flag in BDA
 2:
+    .code16
     pop ds
     pop ax
+    .code16gcc
 
     // set EOI before INT1C
     mov al, 0x20
@@ -702,42 +724,71 @@ isr_int29:
     ISR_SAFE_STACK_ENTRY c_int29_handler, BIOS_SW_ISR_SS, BIOS_SW_ISR_SP, BIOS_SW_ISR_FS, BIOS_SW_ISR_GS, BIOS_SW_ISR_FRAME
 
 // special interrupts
+
 .global isr_spurious_irq7
 isr_spurious_irq7:
-    // Spurious IRQ7: Kein EOI senden!
-    // PIC ISR-Register prüfen ob wirklich Spurious
+    // Spurious IRQ7: dont send EOI here
+    // check PIC ISR-register if it is really spurious
+    .code16
     push ax
+    .code16gcc
+    
     mov al, 0x0B        // OCW3: Read ISR
     out 0x20, al
-    in al, 0x20         // ISR lesen
+    in al, 0x20         // read ISR
     test al, 0x80       // Bit 7 = IRQ7?
-    jnz 1f              // Echter IRQ7: EOI senden
-    // Spurious: Kein EOI!
+    jnz 1f              // Echter IRQ7: send EOI
+    
+    // its spurious: dont send EOI
+    
+    .code16
     pop ax
+    .code16gcc
+
     iretw
-1:  mov al, 0x20        // Echter IRQ7: EOI
+1:
+    mov al, 0x20        // Echter IRQ7: EOI
     out 0x20, al
+
+    .code16
     pop ax
+    .code16gcc
+    
     iretw
 
 .global isr_spurious_irq15
 isr_spurious_irq15:
-    // Spurious IRQ15: EOI nur an Master senden!
+    // Spurious IRQ15: send EOI only to master
+
+    .code16
     push ax
+    .code16gcc
+
     mov al, 0x0B
-    out 0xA0, al        // Slave ISR lesen
+    out 0xA0, al        // read slave ISR
     in al, 0xA0
     test al, 0x80
     jnz 1f
-    // Spurious: Nur Master-EOI
+
+    // spurious: just master
     mov al, 0x20
     out 0x20, al
+
+    .code16
     pop ax
+    .code16gcc
+
     iretw
-1:  mov al, 0x20
+
+1:
+    mov al, 0x20
     out 0xA0, al        // Slave EOI
     out 0x20, al        // Master EOI
+
+    .code16
     pop ax
+    .code16gcc
+
     iretw
 
 .global isr_int_error
@@ -762,8 +813,10 @@ launch_basic:
         jmp 0x2000:0x0000
 
 copy_basic_to_ram:
+    .code16
     push ds
     push es
+    .code16gcc
     
     // get the source from ROM
     mov ax, 0xF000               // BIOS-Segment
@@ -780,8 +833,10 @@ copy_basic_to_ram:
     cld                          // clear direction flag (copy forwards)
     rep movsw                    // copy DS:SI to ES:DI
     
+    .code16
     pop es
     pop ds
+    .code16gcc
     ret
 
 .align 16
