@@ -94,9 +94,9 @@ start:
     mov ax, 0xFF00
     mov ds, ax
     
-    mov ax, 0x00F0
+    mov ax, BOOT_STACK_SEG
     mov ss, ax
-    mov sp, 0x0100
+    mov sp, BOOT_STACK_TOP
     
     // ---------------------------------------------------------
     // setup internal registers of the SC300 using
@@ -499,6 +499,7 @@ launch_bootsector:
     mov gs, ax
     mov si, WORD PTR fs:[\save_old_sp]
     mov cx, INT_FRAME_WORDS
+    cld
 
 1:  // local variables for copy-loop (direction to C-function)
     mov ax, WORD PTR gs:[si]
@@ -509,7 +510,6 @@ launch_bootsector:
 
     // call C-Handler via regparm(1) -> Struct-Pointer is in AX
     mov ax, WORD PTR fs:[\save_frame_sp]
-    cld
     .code16gcc
     call \cfunc
     .code16
@@ -528,6 +528,7 @@ launch_bootsector:
     mov gs, ax
     mov di, WORD PTR fs:[\save_old_sp]
     mov cx, INT_FRAME_WORDS
+    cld
 
 2:  // local variables for copy-loop (direction to DOS-functions)
     mov ax, WORD PTR [si]

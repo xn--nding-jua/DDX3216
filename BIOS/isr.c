@@ -11,6 +11,10 @@ uint16_t g_old_ds;
 // **********************************************************
 // Interrupt functions
 // **********************************************************
+// list of interrupts see here:
+// https://grandidierite.github.io/bios-interrupts
+// https://en.wikipedia.org/wiki/BIOS_interrupt_call
+// 
 
 void pirq_init() {
     // map PIRQ0 (external UART) to INT04
@@ -385,9 +389,6 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
             break;
 
         case 0x41: // Extensions Present
-            //regs->ax = 0x0100;     // AH = 01h (Invalid function)
-            //regs->flags |= ISR_FLAGS_CF; // Carry Set = not supported
-
             // TEST: LBA-Support
             // check for magic word 0x55AA
             if (regs->bx != 0x55AA) {
@@ -577,13 +578,14 @@ __attribute__((externally_visible, regparm(1))) void c_int15_handler(struct inte
             break;
 
         case 0x41:
-            if (al == 0x01) { // wait for event
-                regs->ax = 0x8600; // not supported (for now)
-                regs->flags |= ISR_FLAGS_CF;
-            } else {
-                regs->ax = 0x8600;
-                regs->flags |= ISR_FLAGS_CF;
-            }
+            // the following functions are rarely documented and are related to the IBM Micro Channel
+            // we do not support this
+
+            // DOS hangs after this interrupt. AX=0x4101 which stands for
+            // "Wait for External Event"
+
+            regs->ax = 0x8600;
+            regs->flags |= ISR_FLAGS_CF;
             break;
 
         case 0x86: {

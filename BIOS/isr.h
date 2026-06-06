@@ -15,7 +15,7 @@
 #define ISR_FLAGS_SF    0x0080 // sign-flag
 
 // caution: when changing size of this struct, also update the code in start.s that adjusts the stackpointer (INT_FRAME_WORDS)
-struct interrupt_registers {
+struct __attribute__((packed)) interrupt_registers {
     uint16_t ds;
     uint16_t es;
     uint16_t bp;
