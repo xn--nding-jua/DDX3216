@@ -36,10 +36,9 @@ For the first tests I've implemented a very basic Bootsector that implements a v
 But as I'm close to boot DOS 6.22 on this machine I will not work on these bootdisks anymore.
 
 ## Download x86-GCC-Compiler and -assembler:
-https://github.com/lordmilko/i686-elf-tools/releases/tag/15.2.0
+https://github.com/lordmilko/i686-elf-tools/releases/tag/7.1.0
 
-For the first tests I used NASM:
-Download:
+For the tiny8086 BASIC-interpreter I'm using NASM:
 * https://www.nasm.us https://www.nasm.us/pub/nasm/releasebuilds/3.01
 
 Documentation:

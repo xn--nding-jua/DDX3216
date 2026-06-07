@@ -272,7 +272,6 @@ bool cfcard_init() {
 	delay_1us();
     outb(REGA_BASE, 0x00);
 	
-
     uart_print("PCMCIA/CF: Card soft reset\n");
     // CF-Card software-reset via IDE-Register
     outb(IDE_DEV_CTRL, 0x06);   // SRST=1, nIEN=1
@@ -295,14 +294,18 @@ bool cfcard_init() {
     // read drive geometry from CF-card using IDENTIFY-Command into bootloader-buffer at 0x7C00
     if (!disk_read_identify_data()) {
         // something went wrong during IDENTIFY-Command -> fallback with fixed geometry for 512MB CF-Card
-        uart_print("Failed to read IDENTIFY-Data, using fallback geometry for 512MB CF-Card\n");
+        uart_print("Failed to read IDENTIFY-Data!\n");
+        lcd_print_string("ERROR\n", 0x07);
+        return false;
 
+        /*
         // fixed CF-Card geometry with 512MB
         // CHS for BIOS-compatibility (DOS-Limit: 1024/16/63)
         hd0_params.cylinders = 1024;
         hd0_params.heads = 16;
         hd0_params.sectors_per_track = 63;
         hd0_params.drive_type = 0x00; // 0x00 = fixed disk, 0x80 = removable disk
+        */
     }else{
         // copy relevant parameters from IDENTIFY-Data to global variable
         hd0_params.cylinders = readFarWord(BASE_SEG, 0x7C00 + (1 * sizeof(uint16_t))); // word 1: cylinders

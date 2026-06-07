@@ -39,8 +39,8 @@
 
 
 // ISRs from Assembler-Part
-extern void launch_bootsector(void);
-extern void launch_basic(void);
+extern void launch_bootsector(void) __attribute__((cdecl));
+extern void launch_basic(void) __attribute__((cdecl));
 
 extern void isr_int04(void);
 extern void isr_int08(void);

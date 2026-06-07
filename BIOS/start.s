@@ -317,6 +317,7 @@ halt:
     jmp     halt
 
 
+
 // ========================================================
 // Launching Bootsector
 // ========================================================
@@ -789,13 +790,29 @@ isr_int_dummy:
 
 .global launch_basic
 launch_basic:
+    cli
+
     // copy BASIC from ROM to RAM (0x2000:0x0000)
     call copy_basic_to_ram
 
-    // basic uses an own stack at 0x1000:0x0000 that it will initialize by its own
+    // basic uses an own stack at 0x1000:0x0000
+    mov     ax, 0x1000           // STACK_SEG ist 1000h
+    mov     ss, ax        
+    mov     ax, 0xFFFF           // STACK_OFF ist 0FFFFh
+    mov     sp, ax
+    mov     bp, ax
+
+    // set DataSegment to desired Segment
+    mov     ax, BASIC_SEG        // PROG_SEG ist 2000h
+    mov     ds, ax
+    mov     es, ax
+
+    sti
 
     // jump to BASIC in RAM at 0x2000:0x0000
-    ljmp BASIC_SEG, 0x0000
+    jmp 0x2000:0x0000
+
+    ret
 
 copy_basic_to_ram:
     push ds

@@ -325,20 +325,6 @@ void boot_dos() {
     
     uart_print("Booting from CF-Card...\n");
     launch_bootsector();
-
-    __asm__ __volatile__ (
-        /* set DataSegment to 0x0000 */
-        "xorw %%ax, %%ax\n\t"
-        "movw %%ax, %%ds\n\t"
-        "movw %%ax, %%es\n\t"
-        /* set first drive (0x80) to DL */
-        "movb $0x80, %%dl\n\t"
-        /* far-jump to 0x7C00 */
-        "ljmp $0x0000, $0x7C00\n\t"
-        : /* no output-register */
-        : /* no input-register */
-        : "ax", "dx" /* we will overwrite AX and DX */
-    );
 }
 
 // this is a test-function to fill 8-Bit Shift Register IC73 to control some LEDs
@@ -402,7 +388,7 @@ __attribute__((noreturn)) void bios_main() {
 	setup_ivt();
 	setup_bda();
 
-    //lcd_print_string("Init UART...\n", 0x07);
+    lcd_print_string("Init UART...\n", 0x07);
     uart_init(9600);
     pirq_init();
 	uart_interrupt_enable();
@@ -419,13 +405,14 @@ __attribute__((noreturn)) void bios_main() {
 
     lcd_print_string("Init PCMCIA / CF-Card...", 0x07); // no linefeed here
 	mms_init();
-	if (cfcard_init()) {
+    if (cfcard_init()) {
         // try to load DOS from CF-Card and boot it
         lcd_print_string("Booting from CF-Card...\n", 0x07);
         boot_dos();
 	}else{
         // no CF-card found, launch BASIC instead
         lcd_print_string("No CF-Card. Booting BASIC...\n", 0x07);
+        lcd_clear();
         launch_basic();
     }
 

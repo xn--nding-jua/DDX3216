@@ -6,8 +6,6 @@
 
 #include "isr.h"
 
-uint16_t g_old_ds;
-
 // **********************************************************
 // Interrupt functions
 // **********************************************************
@@ -41,7 +39,7 @@ __attribute__((externally_visible, regparm(1))) void c_int04_handler(struct inte
                 inb(UART_LSR); // LSR lesen löscht diesen Interrupt
                 break;
 
-            case IIR_RDA:
+            case IIR_RDA: {
                 // receive data available
                 uint8_t c = inb(UART_RBR); // this resets the IRQ
 
@@ -51,6 +49,7 @@ __attribute__((externally_visible, regparm(1))) void c_int04_handler(struct inte
                     cpu_reset(); // IMPORTANT: REMOVE WHEN EVERYTHING IS WORKING SOMEDAY!!!
                 }
                 break;
+            }
 
             case IIR_TIMEOUT:
                 inb(UART_RBR); // this resets the IRQ
@@ -68,7 +67,7 @@ __attribute__((externally_visible, regparm(1))) void c_int04_handler(struct inte
 }
 
 /*
-// INT 08h: keyboard-interrupt
+// INT 08h: timer-interrupt
 __attribute__((externally_visible, regparm(1))) void c_int08_handler(struct interrupt_registers *regs) {
     lcd_print_string("I08\n", 0x07);
 
@@ -76,7 +75,7 @@ __attribute__((externally_visible, regparm(1))) void c_int08_handler(struct inte
     outb(0x20, 0x20);
 }
 
-// INT 1Ch: keyboard-interrupt
+// INT 1Ch: user-timer-interrupt
 __attribute__((externally_visible, regparm(1))) void c_int1c_handler(struct interrupt_registers *regs) {
     lcd_print_string("I1C\n", 0x07);
 }
@@ -131,7 +130,7 @@ __attribute__((externally_visible, regparm(1))) void c_int09_handler(struct inte
             case 0x38: // Alt
                 writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, readFarByte(0x0000, BDA_KBD_STATUS_FLAGS) | KBD_FLAG_ALT);
                 break;
-            default:
+            default: {
                 // regular key, put scancode into keyboard-buffer
                 char ascii = 0;
 
@@ -182,6 +181,7 @@ __attribute__((externally_visible, regparm(1))) void c_int09_handler(struct inte
                 }
 
                 break;
+            }
         }
     }
 
@@ -379,7 +379,7 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
             break;
         }
 
-        case 0x15: // Get Disk Type
+        case 0x15: { // Get Disk Type
             // AH=03h: Fixed Disk with Sector-Count in CX:DX
             uint32_t total = (uint32_t)hd0_params.cylinders * (uint32_t)hd0_params.heads * (uint32_t)hd0_params.sectors_per_track;
             regs->ax    = (0x03 << 8);
@@ -387,6 +387,7 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
             regs->dx    = (uint16_t)(total & 0xFFFF);
             regs->flags &= ~ISR_FLAGS_CF;
             break;
+        }
 
         case 0x41: // Extensions Present
             // TEST: LBA-Support
@@ -406,7 +407,7 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
             regs->flags &= ~ISR_FLAGS_CF;    // CF=0: Extensions available
             break;
 
-        case 0x42: // Extended Read Sectors
+        case 0x42: { // Extended Read Sectors
             // DAP is at DS:SI
             uint16_t dap_segment = regs->ds;
             uint16_t dap_offset  = regs->si;
@@ -464,8 +465,9 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
                 regs->flags |= ISR_FLAGS_CF;
             }
             break;
+        }
 
-        case 0x48: // Get Drive Parameters Extended
+        case 0x48: { // Get Drive Parameters Extended
             uint16_t buf_segment = regs->ds;
             uint16_t buf_offset  = regs->si;
 
@@ -496,6 +498,7 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
             regs->ax    = 0x0000;
             regs->flags &= ~ISR_FLAGS_CF;
             break;
+        }
 
         default:
             regs->ax = (0x01 << 8);
@@ -665,29 +668,28 @@ __attribute__((externally_visible, regparm(1))) void c_int16_handler(struct inte
     lcd_print_string_ram(textbuffer, 0x07);
 
     uint8_t ah = regs->ax >> 8;
-/*
+
     switch (ah) {
         case 0x00: // Read key, blocking
-            while (*BDA_KBD_HEAD == *BDA_KBD_TAIL) {
-                __asm__ volatile ("sti\n hlt\n cli"); // halt CPU until next interrupt
+            while (readFarWord(0x0000, BDA_KBD_HEAD) == readFarWord(0x0000, BDA_KBD_TAIL)) {
+                __asm__ volatile ("sti\n hlt\n cli"); // halt CPU until next keyboard-interrupt
             }
             
-            uint16_t head = *BDA_KBD_HEAD;
-            uint16_t val = *(uint16_t*)(uintptr_t)(head);
+            uint16_t head = readFarWord(0x0000, BDA_KBD_HEAD);
+            regs->ax = readFarWord(0x0000, head);
             
+            // increment head
             uint16_t next_head = head + 2;
             if (next_head >= BDA_KBD_BUF_END) next_head = BDA_KBD_BUF_START;
-            *BDA_KBD_HEAD = next_head;
+            writeFarWord(0x0000, BDA_KBD_HEAD, next_head);
 
-            regs->ax = val;
             break;
 
         case 0x01: // Check key
-            if (*BDA_KBD_HEAD != *BDA_KBD_TAIL) {
+            if (readFarWord(0x0000, BDA_KBD_HEAD) != readFarWord(0x0000, BDA_KBD_TAIL)) {
                 // Key in buffer -> delete ZF
                 __asm__ volatile ("andw $0xFFBF, 6(%%bp)" ::: "memory");
-                uint16_t val = *(uint16_t*)(uintptr_t)(*BDA_KBD_HEAD);
-                regs->ax = val;
+                regs->ax = readFarWord(0x0000, readFarWord(0x0000, BDA_KBD_HEAD));
             } else {
                 // buffer empty -> set ZF
                 __asm__ volatile ("orw  $0x0040, 6(%%bp)" ::: "memory");
@@ -698,7 +700,6 @@ __attribute__((externally_visible, regparm(1))) void c_int16_handler(struct inte
             regs->flags |= ISR_FLAGS_ZF;
             break;
     }
-*/
 }
 
 // parallel printer
@@ -724,9 +725,7 @@ __attribute__((externally_visible, regparm(1))) void c_int19_handler(struct inte
     uart_putc('9');
     lcd_print_string("I19", 0x07);
 
-/*
-	// store DS and reset it to 0
-	__asm__ volatile("movw %%ds, %0" : "=r"(g_old_ds));
+	// reset DS to 0
 	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
 
     // disable interrupts
@@ -744,7 +743,6 @@ __attribute__((externally_visible, regparm(1))) void c_int19_handler(struct inte
     boot_dos();
     
     while(1) { __asm__("hlt"); }
-*/
 }
 
 // INT 1Ah for RTC access
@@ -817,12 +815,14 @@ static uint8_t pic_read_irr_master(void) {
 __attribute__((externally_visible, regparm(1))) void c_int_error_handler(struct interrupt_registers *regs) {
     lcd_print_string("IEE", 0x07);
 
-    // EINFRIEREN für Analyse!
     __asm__ volatile ("cli; hlt");
 }
 
 __attribute__((externally_visible, regparm(1))) void c_int_dummy_handler(struct interrupt_registers *regs) {
     lcd_print_string("I??", 0x07);
+
+    __asm__ volatile ("cli; hlt");
+
     /*
     char buf[5];
     
