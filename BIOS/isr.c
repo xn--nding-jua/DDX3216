@@ -377,7 +377,7 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
                 regs->ax = 0x0100;  // AH=01 = Invalid Command
                 regs->bx = 0x0000;
                 regs->cx = 0x0000;
-                regs->dx = 0x0000;  // DL=0 = keine weiteren Drives!
+                regs->dx = 0x0000;  // DL=0 = no more drives
 
                 regs->flags |= ISR_FLAGS_CF;              
             }else{
@@ -385,24 +385,35 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
                 regs->ax = 0x0100; // AH = 01h (Invalid Command / Drive Not Ready)
                 regs->bx = 0x0000;
                 regs->cx = 0x0000;
-                regs->dx = 0x0000;      // <--- Sagt dem MBR: 0 Diskettenlaufwerke installiert!
+                regs->dx = 0x0000;      // zero floppy-drives available
                 regs->flags |= ISR_FLAGS_CF;  // Set Carry Flag = Fehler!
             }
             break;
         }
 
         case 0x15: { // Get Disk Type
-            // AH=03h: Fixed Disk with Sector-Count in CX:DX
-            uint32_t total = (uint32_t)hd0_params.cylinders * (uint32_t)hd0_params.heads * (uint32_t)hd0_params.sectors_per_track;
-            regs->ax    = (0x03 << 8);
-            regs->cx    = (uint16_t)(total >> 16);
-            regs->dx    = (uint16_t)(total & 0xFFFF);
-            regs->flags &= ~ISR_FLAGS_CF;
+            if (dl == 0x80) {
+                // HDD #0
+                uint32_t total = (uint32_t)hd0_params.cylinders * (uint32_t)hd0_params.heads * (uint32_t)hd0_params.sectors_per_track;
+                regs->ax    = (0x03 << 8);
+                regs->cx    = (uint16_t)(total >> 16);
+                regs->dx    = (uint16_t)(total & 0xFFFF);
+                regs->flags &= ~ISR_FLAGS_CF;
+            }else if (dl >= 0x81) {
+                // HDD #1 or more
+                regs->ax    = (0x00 << 8);    // AH = 00h (Drive not present)
+                regs->flags |= ISR_FLAGS_CF;  // Set Carry = Fehler / Nicht vorhanden
+            }else{
+                // floppy drive
+                regs->ax    = (0x00 << 8);    // AH = 00h (Drive not present)
+                regs->flags |= ISR_FLAGS_CF;  // Set Carry = Fehler / Nicht vorhanden
+            }
             break;
         }
 
         case 0x41: // Extensions Present
-            // TEST: LBA-Support
+            // LBA-Support
+
             // check for magic word 0x55AA
             if (regs->bx != 0x55AA) {
                 regs->flags |= ISR_FLAGS_CF;  // CF=1: Fehler
