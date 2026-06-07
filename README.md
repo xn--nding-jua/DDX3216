@@ -22,14 +22,15 @@ This is a screenshot of the boot-process:
 ![alt text](Documentation/firstboot.jpg)
 
 These things are already working:
-[x] Assembler-part that initializes the CPU and the most important parts like DRAM and SRAM
-[x] external UART to communicate with a PC via RS232-cable
-[x] LCD-display via the 4-bit LCD-interface of the SC300
-[x] CF-card-interface to load the bootsector
-[x] Bootsector successully calls INT13, INT10 and INT15 and loads IO.SYS of DOS 6.22
-
+* [x] Assembler-part that initializes the CPU and the most important parts like DRAM and SRAM
+* [x] external UART to communicate with a PC via RS232-cable
+* [x] LCD-display via the 4-bit LCD-interface of the SC300
+* [x] CF-card-interface to load the bootsector
+* [x] Bootsector successully calls INT13, INT10 and INT15 and loads IO.SYS of DOS 6.22
 
 With date of 31th of May IO.SYS is loaded successfully and shows "Starting MS-DOS..." but then the system stopps loading MSDOS.SYS. Maybe the disk-parameters are not send to IO.SYS correctly or another problem with the interrupts are still present. I'm working on this.
+
+![alt text](Documentation/booting_dos.jpg)
 
 ## Bootsectors
 For the first tests I've implemented a very basic Bootsector that implements a very simple and short assembler-part that calls a C-function. Within C the external UART is used to output some demo-text. Actually there are two versions: a very simple bootdisk that stays in real-mode and a more advanced one that enables the protected mode that allows use to use the flat-memory-model of the 386-CPU.
