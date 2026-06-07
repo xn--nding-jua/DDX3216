@@ -331,19 +331,23 @@ bool cfcard_init() {
             }
         }
 
-        /*
         // print geometry to LCD for debugging
         char textbuffer[6];
         uint16_to_dec(hd0_params.cylinders, textbuffer);
-        lcd_print_string_ram_pos(1, 0, textbuffer, 0x07);
-        uint16_to_dec(hd0_params.heads, textbuffer);
-        lcd_print_string_ram_pos(2, 0, textbuffer, 0x07);
-        uint16_to_dec(hd0_params.sectors_per_track, textbuffer);
-        lcd_print_string_ram_pos(3, 0, textbuffer, 0x07);
-        */
+        lcd_print_string("C", 0x07);
+        lcd_print_string_ram(textbuffer, 0x07);
+
+        uint8_to_dec(hd0_params.heads, textbuffer);
+        lcd_print_string("H", 0x07);
+        lcd_print_string_ram(textbuffer, 0x07);
+
+        uint8_to_dec(hd0_params.sectors_per_track, textbuffer);
+        lcd_print_string("S", 0x07);
+        lcd_print_string_ram(textbuffer, 0x07);
+        lcd_putc('\n', 0x07);
     }
 
-    lcd_print_string("OK\n", 0x07);
+    //lcd_print_string("OK\n", 0x07);
     uart_print("OK\n");
     return true;
 }

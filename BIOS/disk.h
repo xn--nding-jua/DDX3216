@@ -80,7 +80,7 @@ uint8_t ide_read_bootsector();
 uint8_t ide_read_sector(uint32_t lba, uint16_t dest_seg, uint16_t offset);
 uint32_t disk_chs_to_lba(uint32_t c, uint32_t h, uint32_t s);
 
-struct __attribute__((packed)) disk_param_table {
+struct disk_param_table {
     uint16_t cylinders;
     uint8_t  heads;
     uint16_t reserved1;
@@ -88,9 +88,9 @@ struct __attribute__((packed)) disk_param_table {
     uint8_t  sectors_per_track;
     uint16_t reserved3;
     uint8_t  drive_type;
-};
+} __attribute__((packed));
 
-struct __attribute__((packed)) disk_address_packet {
+struct disk_address_packet {
     uint8_t  size;          // +0x00: Strukturgröße (0x10)
     uint8_t  reserved;      // +0x01: immer 0x00
     uint16_t sector_count;  // +0x02: Anzahl Sektoren
@@ -98,9 +98,9 @@ struct __attribute__((packed)) disk_address_packet {
     uint16_t dest_segment;  // +0x06: Ziel-Segment
     uint32_t lba_low;       // +0x08: LBA Bits 31:0
     uint32_t lba_high;      // +0x0C: LBA Bits 63:32 (bei uns immer 0)
-};
+} __attribute__((packed));
 
-struct __attribute__((packed)) drive_params_ext {
+struct drive_params_ext {
     uint16_t size;            // +0x00: Strukturgröße (0x1A)
     uint16_t flags;           // +0x02: Info-Flags
     uint32_t cylinders;       // +0x04: Anzahl Zylinder
@@ -109,6 +109,6 @@ struct __attribute__((packed)) drive_params_ext {
     uint32_t total_low;       // +0x10: Gesamtsektoren (Low)
     uint32_t total_high;      // +0x14: Gesamtsektoren (High)
     uint16_t bytes_per_sect;  // +0x18: Bytes pro Sektor
-};
+} __attribute__((packed));
 
 #endif

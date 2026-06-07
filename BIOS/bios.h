@@ -75,17 +75,17 @@ void a20_disable();
 
 static const char hex_chars[] = "0123456789ABCDEF";
 
-struct __attribute__((packed)) ivt_entry {
+struct ivt_entry {
     uint16_t offset;
     uint16_t segment;
-};
+} __attribute__((packed));
 
-struct __attribute__((packed)) sCursorPos {
+struct sCursorPos {
     uint8_t col;
     uint8_t row;
-};
+} __attribute__((packed));
 
-struct __attribute__((packed)) bios_parameter_block {
+struct bios_parameter_block {
     uint8_t  jmp_boot[3];         // 0x00: Assembler-Jump-Command (z.B. 0xEB 0x3C 0x90)
     char     oem_name[8];         // 0x03: Name of the OEM (z.B. "MSDOS5.0")
     
@@ -110,12 +110,12 @@ struct __attribute__((packed)) bios_parameter_block {
     uint32_t volume_id;           // 0x27: Serialnumber of the volume (z.B. 0x12345678)
     char     volume_label[11];    // 0x2B: Name of Device (e.g. "NO NAME    ")
     char     file_system_type[8]; // 0x36: "FAT12   " or "FAT16   "
-};
+} __attribute__((packed));
 
-struct __attribute__((packed)) boot_sector {
+struct boot_sector {
     struct bios_parameter_block bpb;             // head of sector
     uint8_t                     boot_code[448];  // The actual bootloader code (e.g. DOS bootloader)
     uint16_t                    signature;       // Must be 0xAA55
-};
+} __attribute__((packed));
 
 #endif

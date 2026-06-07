@@ -403,7 +403,7 @@ __attribute__((noreturn)) void bios_main() {
     __asm__ volatile ("sti");
     setLEDs();
 
-    lcd_print_string("Init PCMCIA / CF-Card...", 0x07); // no linefeed here
+    lcd_print_string("Init CF-Card...", 0x07); // no linefeed here
 	mms_init();
     if (cfcard_init()) {
         // try to load DOS from CF-Card and boot it
