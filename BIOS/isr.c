@@ -260,6 +260,7 @@ __attribute__((externally_visible, regparm(1))) void c_int12_handler(struct inte
 // INT13h: disk-interrupt
 __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct interrupt_registers *regs) {
     lcd_putc('.', 0x07);
+
 /*
     uart_putc('I');
     uart_putc('1');
@@ -270,11 +271,14 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
     lcd_print_string_ram(textbuffer, 0x07);
     uint16_to_hex(regs->bx, textbuffer);
     lcd_print_string_ram(textbuffer, 0x07);
+    uint16_to_hex(regs->cx, textbuffer);
+    lcd_print_string_ram(textbuffer, 0x07);
     uint16_to_hex(regs->dx, textbuffer);
     lcd_print_string_ram(textbuffer, 0x07);
     uint16_to_hex(regs->es, textbuffer);
     lcd_print_string_ram(textbuffer, 0x07);
-
+*/
+/*
     uint16_t sp;
     __asm__ volatile ("mov %%sp, %0" : "=r" (sp));
     uint16_to_hex(sp, textbuffer);
@@ -345,7 +349,7 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
 
         case 0x08: { // Get Drive Parameters
             // what kind of drive is requested?
-            if (dl >= 0x80) {
+            if (dl == 0x80) {
                 // harddisk / CF-Card
                 uint8_t  max_heads   = hd0_params.heads - 1;
                 uint8_t  max_sectors = hd0_params.sectors_per_track;
@@ -368,9 +372,17 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
                 regs->di = 0x0000;
 
                 regs->flags &= ~ISR_FLAGS_CF;
+            }else if (dl >= 0x81) {
+                // we do not support more drives
+                regs->ax = 0x0100;  // AH=01 = Invalid Command
+                regs->bx = 0x0000;
+                regs->cx = 0x0000;
+                regs->dx = 0x0000;  // DL=0 = keine weiteren Drives!
+
+                regs->flags |= ISR_FLAGS_CF;              
             }else{
                 // floppy
-                regs->ax = (0x01 << 8); // AH = 01h (Invalid Command / Drive Not Ready)
+                regs->ax = 0x0100; // AH = 01h (Invalid Command / Drive Not Ready)
                 regs->bx = 0x0000;
                 regs->cx = 0x0000;
                 regs->dx = 0x0000;      // <--- Sagt dem MBR: 0 Diskettenlaufwerke installiert!
@@ -587,8 +599,18 @@ __attribute__((externally_visible, regparm(1))) void c_int15_handler(struct inte
             // DOS hangs after this interrupt. AX=0x4101 which stands for
             // "Wait for External Event"
 
-            regs->ax = 0x8600;
-            regs->flags |= ISR_FLAGS_CF;
+            switch(al) {
+                case 0x01: {
+                    regs->ax = 0x0000;
+                    regs->flags &= ~ISR_FLAGS_CF; 
+                    break;
+                }
+                default:
+                    regs->ax = 0x8600;
+                    regs->flags |= ISR_FLAGS_CF;
+                    break;
+            }
+
             break;
 
         case 0x86: {

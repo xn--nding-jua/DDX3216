@@ -301,17 +301,33 @@ bool cfcard_init() {
         /*
         // fixed CF-Card geometry with 512MB
         // CHS for BIOS-compatibility (DOS-Limit: 1024/16/63)
-        hd0_params.cylinders = 1024;
-        hd0_params.heads = 16;
+        hd0_params.cylinders         = 1014;
+        hd0_params.heads             = 16;
+        hd0_params.reduced_write_cyl = 0xFFFF;  // no Precompensation
+        hd0_params.write_precomp_cyl = 0xFFFF;  // no Reduced Write
+        hd0_params.max_ecc_burst     = 0x0B;    // standard-value that DOS expects
+        hd0_params.control_byte      = 0x08;    // must be 8 when 16 heads
+        hd0_params.timeout_drive     = 0x00;
+        hd0_params.timeout_format    = 0x00;
+        hd0_params.timeout_check     = 0x00;
+        hd0_params.landing_zone      = 1013;
         hd0_params.sectors_per_track = 63;
-        hd0_params.drive_type = 0x00; // 0x00 = fixed disk, 0x80 = removable disk
+        hd0_params.reserved          = 0x00;
         */
     }else{
         // copy relevant parameters from IDENTIFY-Data to global variable
-        hd0_params.cylinders = readFarWord(BASE_SEG, 0x7C00 + (1 * sizeof(uint16_t))); // word 1: cylinders
-        hd0_params.heads = readFarByte(BASE_SEG, 0x7C00 + (3 * sizeof(uint16_t)));     // word 3: heads
-        hd0_params.sectors_per_track = readFarByte(BASE_SEG, 0x7C00 + (6 * sizeof(uint16_t))); // word 6: sectors per track
-        hd0_params.drive_type = 0x00;
+        hd0_params.cylinders          = readFarWord(BASE_SEG, 0x7C00 + (1 * sizeof(uint16_t))); // word 1: cylinders
+        hd0_params.heads              = readFarByte(BASE_SEG, 0x7C00 + (3 * sizeof(uint16_t)));     // word 3: heads
+        hd0_params.reduced_write_cyl  = 0xFFFF;  // no Precompensation
+        hd0_params.write_precomp_cyl  = 0xFFFF;  // no Reduced Write
+        hd0_params.max_ecc_burst      = 0x0B;    // standard-value that DOS expects
+        hd0_params.control_byte       = 0x08;    // must be 8 on 16 heads
+        hd0_params.timeout_drive      = 0x00;
+        hd0_params.timeout_format     = 0x00;
+        hd0_params.timeout_check      = 0x00;
+        hd0_params.landing_zone       = hd0_params.cylinders - 1;    // last cylinder
+        hd0_params.sectors_per_track  = readFarByte(BASE_SEG, 0x7C00 + (6 * sizeof(uint16_t))); // word 6: sectors per track
+        hd0_params.reserved           = 0x00;
 
         // read LBA-sectors for max. 4GB disks
         uint32_t lba_sectors = readFarWord(BASE_SEG, 0x7C00 + (60 * sizeof(uint16_t))); // word 60..61: total number of sectors (LBA)

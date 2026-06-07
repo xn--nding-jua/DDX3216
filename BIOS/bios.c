@@ -44,8 +44,9 @@ void setup_ivt() {
     set_ivt_entry(0x1a, (uint16_t)(uintptr_t)isr_int1a, ROM_SEG);
     set_ivt_entry(0x1c, (uint16_t)(uintptr_t)isr_int1c, ROM_SEG);
     set_ivt_entry(0x29, (uint16_t)(uintptr_t)isr_int29, ROM_SEG);
-    set_ivt_entry(0x41, (uint16_t)(uintptr_t)&hd0_params, ROM_SEG);
-
+    
+    // Disk Parameter Table
+    set_ivt_entry(0x41, (uint16_t)(uintptr_t)&hd0_params, BIOS_SEG);
 
     // spurious interrupts
     set_ivt_entry(0x0F, (uint16_t)(uintptr_t)isr_spurious_irq7, ROM_SEG);

@@ -83,11 +83,16 @@ uint32_t disk_chs_to_lba(uint32_t c, uint32_t h, uint32_t s);
 struct disk_param_table {
     uint16_t cylinders;
     uint8_t  heads;
-    uint16_t reserved1;
-    uint16_t reserved2;
+    uint16_t reduced_write_cyl; // reserved
+    uint16_t write_precomp_cyl; // reserved
+    uint8_t  max_ecc_burst;
+    uint8_t  control_byte;
+    uint8_t  timeout_drive;
+    uint8_t  timeout_format;
+    uint8_t  timeout_check;
+    uint16_t landing_zone;
     uint8_t  sectors_per_track;
-    uint16_t reserved3;
-    uint8_t  drive_type;
+    uint8_t  reserved;
 } __attribute__((packed));
 
 struct disk_address_packet {
