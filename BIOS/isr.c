@@ -222,7 +222,7 @@ __attribute__((externally_visible, regparm(1))) void c_int10_handler(struct inte
         case 0x0F: // get Current Video Mode
             // AH = Columns (40), AL = Video Mode (00h), BH = Page (0)
             // number of rows is set in BDA and not returned via INT10h, because DOS will ignore the returned value anyway and would always assume 25 rows
-            regs->ax = (40 << 8) | 0x00; // 40x25 char in grayscale-text mode
+            regs->ax = ((uint16_t)40 << 8) | 0x00; // 40x25 char in grayscale-text mode
             regs->bx = 0x0000; // BH = 0
             break;
 
@@ -328,20 +328,57 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
 
                 error = ide_read_sector(cur_lba, dest_es, cur_offset);
                 if (error != 0x00) {
+                    lcd_print_string("IDE ERROR", 0x07);
                     break;
                 }
 
                 sectors_done++;
             }
 
+            /*
+            // check last two bytes at SEG 0x9B80, Offset 0x0200 -> should be 0xAA55 = MagicByte
+            if (regs->es == 0x9B80) {
+                uint16_t val = readFarWord(0x9B80, 0x0200 + 510);
+                char buf[5];
+                uint16_to_hex(val, buf);
+                lcd_print_string_ram(buf, 0x07);
+            }
+            */
+            
+            /*
+            // check BPB in bootsector: SEG 0x9B80, Offset 0x0200 + 24...27
+            if (regs->es == 0x0070) {
+                uint16_t val = readFarWord(0x0070, 0x014E + 24);
+                char buf[5];
+                uint16_to_hex(val, buf);
+                lcd_print_string_ram(buf, 0x07);
+
+                val = readFarWord(0x0070, 0x014E + 26);
+                uint16_to_hex(val, buf);
+                lcd_print_string_ram(buf, 0x07);
+            }
+            */
+            
+            /*
+            // reading name of formatter
+            if (regs->es == 0x0070) {
+                char oem_name[9];
+                for (int i = 0; i < 8; i++) {
+                    oem_name[i] = (char)readFarByte(0x0070, 0x014E + 3 + i); 
+                }
+                oem_name[8] = '\0';
+                lcd_print_string_ram(oem_name, 0x07); 
+            } 
+            */          
+
             // return answer
             if (error == 0) {
                 // success: AH = 00h (Success), AL = number of read sectors
-                regs->ax = (0x00 << 8) | sectors_done; 
+                regs->ax = 0x0000 | sectors_done; 
                 regs->flags &= ~ISR_FLAGS_CF; // clear carray-flag on success
             } else {
                 // error occurred
-                regs->ax = (error << 8) | sectors_done;
+                regs->ax = ((uint16_t)error << 8) | sectors_done;
                 regs->flags |= ISR_FLAGS_CF;  // set carry flag on error
             }
             break;
@@ -365,7 +402,7 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
                 regs->ax = 0x0000; // Return-Code = Success
                 regs->bx = 0x0000; // Drive type (AT/PS2 floppies only)
                 regs->cx = ((uint16_t)ch_val << 8) | cl_val; // 15..6 = logical last index of cylinders = number of cylinders - 1 / 5..0 logical last index of sectors per track = number of sectors (starts at 1!)
-                regs->dx =  ((uint16_t)max_heads << 8) | 0x01; // DL = number of hard-disk-drives / DH = logical last index of heads = numer of heads - 1
+                regs->dx = ((uint16_t)max_heads << 8) | 0x01; // DL = number of hard-disk-drives / DH = logical last index of heads = numer of heads - 1
 
                 // set ES and DI to zero (pointer to drive parameter table, but only for floppies)
                 regs->es = 0x0000;
@@ -395,17 +432,17 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
             if (dl == 0x80) {
                 // HDD #0
                 uint32_t total = (uint32_t)hd0_params.cylinders * (uint32_t)hd0_params.heads * (uint32_t)hd0_params.sectors_per_track;
-                regs->ax    = (0x03 << 8);
+                regs->ax    = ((uint16_t)0x03 << 8);
                 regs->cx    = (uint16_t)(total >> 16);
                 regs->dx    = (uint16_t)(total & 0xFFFF);
                 regs->flags &= ~ISR_FLAGS_CF;
             }else if (dl >= 0x81) {
                 // HDD #1 or more
-                regs->ax    = (0x00 << 8);    // AH = 00h (Drive not present)
+                regs->ax    = 0x0000;    // AH = 00h (Drive not present)
                 regs->flags |= ISR_FLAGS_CF;  // Set Carry = Fehler / Nicht vorhanden
             }else{
                 // floppy drive
-                regs->ax    = (0x00 << 8);    // AH = 00h (Drive not present)
+                regs->ax    = 0x0000;    // AH = 00h (Drive not present)
                 regs->flags |= ISR_FLAGS_CF;  // Set Carry = Fehler / Nicht vorhanden
             }
             break;
@@ -417,13 +454,13 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
             // check for magic word 0x55AA
             if (regs->bx != 0x55AA) {
                 regs->flags |= ISR_FLAGS_CF;  // CF=1: Fehler
-                regs->ax = (0x01 << 8);
+                regs->ax = 0x0100;
                 break;
             }
 
             // enable LBA-support
             regs->bx    = 0xAA55;      // send back magic word
-            regs->ax    = (0x30 << 8); // AH = Version 3.0
+            regs->ax    = 0x3000;      // AH = Version 3.0
             regs->cx    = 0x0007;      // Bit 0: Extended Disk Access
                                        // Bit 1: Removable Drive Support
                                        // Bit 2: EDD (Enhanced Disk Drive)
@@ -444,14 +481,14 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
 
             // check the structure
             if (dap.size != 0x10) {
-                regs->ax    = (0x01 << 8); // bad data
+                regs->ax    = 0x0100; // bad data
                 regs->flags |= ISR_FLAGS_CF;
                 break;
             }
 
             // 64-bit LBA: upper 32 Bit must be 0 (CF-Card < 4GB)
             if (dap.lba_high != 0) {
-                regs->ax    = (0x01 << 8); // LBA out of border
+                regs->ax    = 0x0100; // LBA out of border
                 regs->flags |= ISR_FLAGS_CF;
                 break;
             }
@@ -484,7 +521,7 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
                 regs->ax    = 0x0000; // Return-Code = Success
                 regs->flags &= ~ISR_FLAGS_CF;
             } else {
-                regs->ax    = (error << 8);
+                regs->ax    = ((uint16_t)error << 8);
                 regs->flags |= ISR_FLAGS_CF;
             }
             break;
@@ -497,7 +534,7 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
             // check buffer-size (first two bytes)
             uint16_t buf_size = readFarWord(buf_segment, buf_offset);
             if (buf_size < 0x1A) {
-                regs->ax    = (0x01 << 8);
+                regs->ax    = 0x0100;
                 regs->flags |= ISR_FLAGS_CF;
                 break;
             }
@@ -524,7 +561,7 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
         }
 
         default:
-            regs->ax = (0x01 << 8);
+            regs->ax = 0x0100;
             regs->flags |= ISR_FLAGS_CF; // Carry Set
             break;
     }
@@ -647,7 +684,7 @@ __attribute__((externally_visible, regparm(1))) void c_int15_handler(struct inte
         case 0x88: {
             // Request Extended Memory Size (up to 64MB)
             //regs->ax = 1024; // TODO: implement the full 16 MB
-            regs->ax = 0; // for Debugging: no HIMEM
+            regs->ax = 0x0000; // for Debugging: no HIMEM
             regs->flags &= ~ISR_FLAGS_CF; // Clear Carry Flag (Success)
             break;
         }

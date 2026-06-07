@@ -21,7 +21,7 @@
 #include "helper.h"
 #include "keyboard.h"
 
-#define BIOS_RESERVED_KB        16
+#define BIOS_RESERVED_KB        16 // 16kB are reserved for our BIOS (global variables and stack)
 #define BIOS_CONVENTIONAL_KB    (640 - BIOS_RESERVED_KB)
 
 #define BIOS_SEG                0x9C00
