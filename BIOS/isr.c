@@ -23,53 +23,13 @@ void pirq_init() {
     write_sc300_cfg(0xB2, 0b00000100); // PIRQ0 -> INT04. See page p5-80
 }
 
-// INT04 (PIRQ0 is mapped here)
-__attribute__((externally_visible, regparm(1))) void c_int04_handler(struct interrupt_registers *regs) {
-    uart_putc('I');
-    uart_putc('0');
-    uart_putc('4');
-    lcd_print_string("I04", 0x07);
-
-	while (!(inb(UART_IIR) & IIR_PENDING)) {
-        uint8_t reason = inb(UART_IIR) & IIR_REASON;
-
-        switch (reason) {
-            case IIR_RLS:
-                // receiver line status (errors, break)
-                inb(UART_LSR); // LSR lesen löscht diesen Interrupt
-                break;
-
-            case IIR_RDA: {
-                // receive data available
-                uint8_t c = inb(UART_RBR); // this resets the IRQ
-
-                // !!!DEBUG for TESTING!!!
-                if (c == 'R') {
-                    // on 'R' the CPU should reset
-                    cpu_reset(); // IMPORTANT: REMOVE WHEN EVERYTHING IS WORKING SOMEDAY!!!
-                }
-                break;
-            }
-
-            case IIR_TIMEOUT:
-                inb(UART_RBR); // this resets the IRQ
-                break;
-
-            case IIR_THRE:
-                // reading IIR or writing THR will reset this IRQ
-                break;
-
-            case IIR_MS:
-                inb(UART_MSR); // this resets the IRQ
-                break;
-        }
-    }
-}
-
 /*
-// INT 08h: timer-interrupt
+// IRQ0 -> INT 08h: timer-interrupt
 __attribute__((externally_visible, regparm(1))) void c_int08_handler(struct interrupt_registers *regs) {
-    lcd_print_string("I08\n", 0x07);
+    #if BIOS_DEBUG == 1
+        uart_print_string("I08\n");
+        lcd_print_string("I08\n", 0x07);
+    #endif
 
     // send End of Interrupt (EOI) to PIC
     outb(0x20, 0x20);
@@ -77,16 +37,19 @@ __attribute__((externally_visible, regparm(1))) void c_int08_handler(struct inte
 
 // INT 1Ch: user-timer-interrupt
 __attribute__((externally_visible, regparm(1))) void c_int1c_handler(struct interrupt_registers *regs) {
-    lcd_print_string("I1C\n", 0x07);
+    #if BIOS_DEBUG == 1
+        uart_print_string("I1C\n");
+        lcd_print_string("I1C\n", 0x07);
+    #endif
 }
 */
 
-// INT 09h: keyboard-interrupt
+// IRQ1 -> INT 09h: keyboard-interrupt
 __attribute__((externally_visible, regparm(1))) void c_int09_handler(struct interrupt_registers *regs) {
-    uart_putc('I');
-    uart_putc('0');
-    uart_putc('9');
-    lcd_print_string("I09", 0x07);
+    #if BIOS_DEBUG == 1
+        uart_print_string("I09\n");
+        lcd_print_string("I09", 0x07);
+    #endif
 
     // read scancode from keyboard-controller
 	uint8_t scancode = inb(KBD_DATA_PORT);
@@ -184,9 +147,49 @@ __attribute__((externally_visible, regparm(1))) void c_int09_handler(struct inte
             }
         }
     }
+}
 
-    // send End of Interrupt (EOI) to PIC
-    outb(0x20, 0x20);
+// INT04 (PIRQ0 is mapped here)
+__attribute__((externally_visible, regparm(1))) void c_int0c_handler(struct interrupt_registers *regs) {
+    #if BIOS_DEBUG == 1
+        uart_print_string("I0C\n");
+        lcd_print_string("I0C", 0x07);
+    #endif
+
+	while (!(inb(UART_IIR) & IIR_PENDING)) {
+        uint8_t reason = inb(UART_IIR) & IIR_REASON;
+
+        switch (reason) {
+            case IIR_RLS:
+                // receiver line status (errors, break)
+                inb(UART_LSR); // LSR lesen löscht diesen Interrupt
+                break;
+
+            case IIR_RDA: {
+                // receive data available
+                uint8_t c = inb(UART_RBR); // this resets the IRQ
+
+                // !!!DEBUG for TESTING!!!
+                if (c == 'R') {
+                    // on 'R' the CPU should reset
+                    cpu_reset(); // IMPORTANT: REMOVE WHEN EVERYTHING IS WORKING SOMEDAY!!!
+                }
+                break;
+            }
+
+            case IIR_TIMEOUT:
+                inb(UART_RBR); // this resets the IRQ
+                break;
+
+            case IIR_THRE:
+                // reading IIR or writing THR will reset this IRQ
+                break;
+
+            case IIR_MS:
+                inb(UART_MSR); // this resets the IRQ
+                break;
+        }
+    }
 }
 
 // INT 10h: Video-interrupt
@@ -197,6 +200,10 @@ __attribute__((externally_visible, regparm(1))) void c_int10_handler(struct inte
 
     switch (ah) {
         case 0x0E: // write character
+            #if BIOS_DEBUG == 1
+                uart_putc(al);
+            #endif
+
             // write char to display and handle control-characters like newline, carriage return, backspace, etc. internally
             lcd_putc(al, 0x07); // light gray on black
             
@@ -234,9 +241,12 @@ __attribute__((externally_visible, regparm(1))) void c_int10_handler(struct inte
 
 // INT 11h: Get Equipment List
 __attribute__((externally_visible, regparm(1))) void c_int11_handler(struct interrupt_registers *regs) {
-    uart_putc('I');
-    uart_putc('1');
-    uart_putc('1');
+    #if BIOS_DEBUG == 1
+        uart_print_string("I11\n");
+        uart_print_string("BDA_EQUIPMENT_WORD = ");
+        uart_print_uint16(readFarWord(0x0000, BDA_EQUIPMENT_WORD), true);
+        uart_putc('\n');
+    #endif
 
     //   Bitmask for Equipment Word:
     //   Bit 0: Floppy drive? (0 = No)
@@ -250,41 +260,39 @@ __attribute__((externally_visible, regparm(1))) void c_int11_handler(struct inte
 
 // INT 12h: Get Memory Size
 __attribute__((externally_visible, regparm(1))) void c_int12_handler(struct interrupt_registers *regs) {
-    uart_putc('I');
-    uart_putc('1');
-    uart_putc('2');
+    #if BIOS_DEBUG == 1
+        uart_print_string("I12\n");
+        uart_print_string("BDA_MEM_SIZE = ");
+        uart_print_uint16(readFarWord(0x0000, BDA_MEM_SIZE), true);
+        uart_putc('\n');
+    #endif
 
+    delay_1ms(); // we seem to have timing-issues when loading DOS without this line
 	regs->ax = readFarWord(0x0000, BDA_MEM_SIZE);
 }
 
 // INT13h: disk-interrupt
 __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct interrupt_registers *regs) {
-    lcd_putc('.', 0x07);
+    #if BIOS_DEBUG == 1
+        uart_print_string("I13\n");
+        uart_print_string("AX=");
+        uart_print_uint16(regs->ax, true);
+        uart_print_string("BX=");
+        uart_print_uint16(regs->bx, true);
+        uart_print_string("CX=");
+        uart_print_uint16(regs->cx, true);
+        uart_print_string("DX=");
+        uart_print_uint16(regs->dx, true);
+        uart_print_string("ES=");
+        uart_print_uint16(regs->es, true);
+        uart_print_string("SP=");
+        uint16_t sp;
+        __asm__ volatile ("mov %%sp, %0" : "=r" (sp));
+        uart_print_uint16(sp, true);
+        uart_putc('\n');
 
-/*
-    uart_putc('I');
-    uart_putc('1');
-    uart_putc('3');
-    lcd_print_string("I13", 0x07);
-    char textbuffer[5];
-    uint16_to_hex(regs->ax, textbuffer);
-    lcd_print_string_ram(textbuffer, 0x07);
-    uint16_to_hex(regs->bx, textbuffer);
-    lcd_print_string_ram(textbuffer, 0x07);
-    uint16_to_hex(regs->cx, textbuffer);
-    lcd_print_string_ram(textbuffer, 0x07);
-    uint16_to_hex(regs->dx, textbuffer);
-    lcd_print_string_ram(textbuffer, 0x07);
-    uint16_to_hex(regs->es, textbuffer);
-    lcd_print_string_ram(textbuffer, 0x07);
-*/
-/*
-    uint16_t sp;
-    __asm__ volatile ("mov %%sp, %0" : "=r" (sp));
-    uint16_to_hex(sp, textbuffer);
-    lcd_print_string_ram(textbuffer, 0x07);
-    lcd_putc('\n', 0x07);
-*/
+        lcd_putc('.', 0x07);
+    #endif
 
     // get registers
     uint8_t ah = (uint8_t)(regs->ax >> 8);
@@ -304,12 +312,13 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
             outb(IDE_DEV_CTRL, 0x02);
             ide_wait_ready();
             regs->ax = 0x0000; // Return-Code = Success
+            regs->flags &= ~ISR_FLAGS_CF;
             break;
         
         case 0x02: { // Read Sectors
             uint8_t  sectors_to_read = al;
             uint8_t  sector          = cl & 0b00111111;
-            uint16_t cylinder        = ((uint16_t)(cl & 0b11000000) << 2) | ch;
+            uint16_t cylinder        = (((uint16_t)(cl & 0b11000000)) << 2) | (uint16_t)ch;
             uint8_t  head            = dh;
             uint16_t dest_bx         = regs->bx; // offset within ES
             uint16_t dest_es         = regs->es; // segment of destination buffer
@@ -319,12 +328,8 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
 
             // loop for all requested sectors
             for (uint8_t s = 0; s < sectors_to_read; s++) {
-                uint32_t cur_lba = lba + s;
-
-                // moving offset within ES (BX + s * 512)
-                uint16_t cur_offset  = dest_bx + ((uint16_t)s * 512);
-
-                uint16_t cur_seg     = dest_es;
+                uint32_t cur_lba     = lba + (uint32_t)s;
+                uint16_t cur_offset  = dest_bx + ((uint16_t)s * 512); // moving offset within ES: (BX + s * 512)
 
                 error = ide_read_sector(cur_lba, dest_es, cur_offset);
                 if (error != 0x00) {
@@ -335,51 +340,54 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
                 sectors_done++;
             }
 
-            /*
-            // check last two bytes at SEG 0x9B80, Offset 0x0200 -> should be 0xAA55 = MagicByte
-            if (regs->es == 0x9B80) {
-                uint16_t val = readFarWord(0x9B80, 0x0200 + 510);
-                char buf[5];
-                uint16_to_hex(val, buf);
-                lcd_print_string_ram(buf, 0x07);
-            }
-            */
-            
-            /*
-            // check BPB in bootsector: SEG 0x9B80, Offset 0x0200 + 24...27
-            if (regs->es == 0x0070) {
-                uint16_t val = readFarWord(0x0070, 0x014E + 24);
-                char buf[5];
-                uint16_to_hex(val, buf);
-                lcd_print_string_ram(buf, 0x07);
-
-                val = readFarWord(0x0070, 0x014E + 26);
-                uint16_to_hex(val, buf);
-                lcd_print_string_ram(buf, 0x07);
-            }
-            */
-            
-            /*
-            // reading name of formatter
-            if (regs->es == 0x0070) {
-                char oem_name[9];
-                for (int i = 0; i < 8; i++) {
-                    oem_name[i] = (char)readFarByte(0x0070, 0x014E + 3 + i); 
+            delay_1ms();
+            #if BIOS_DEBUG == 1
+                // check last two bytes at SEG 0x9B80, Offset 0x0200 -> should be 0xAA55 = MagicByte
+                if (regs->es == 0x9B80) {
+                    uart_print_string("Last two bytes of SEG 0x9B80 = ");
+                    uart_print_uint16(readFarWord(0x9B80, 0x0200 + 510), true);
+                    uart_putc('\n');
                 }
-                oem_name[8] = '\0';
-                lcd_print_string_ram(oem_name, 0x07); 
-            } 
-            */          
+                
+                // check BPB in bootsector: SEG 0x9B80, Offset 0x0200 + 24...27
+                if (regs->es == 0x0070) {
+                    uart_print_string("BPB at 0x014E + 24 = 0x");
+                    uart_print_uint16(readFarWord(0x0070, 0x014E + 24), true);
+                    uart_print_string(" and at 0x014E + 26 = 0x");
+                    uart_print_uint16(readFarWord(0x0070, 0x014E + 26), true);
+                    uart_putc('\n');
+                }
+                
+                // reading name of formatter
+                if (regs->es == 0x0070) {
+                    char oem_name[9];
+                    for (int i = 0; i < 8; i++) {
+                        oem_name[i] = (char)readFarByte(0x0070, 0x014E + 3 + i); 
+                    }
+                    oem_name[8] = '\0';
+
+                    uart_print_string("OEM Name of Disk-Formatter: ");
+                    uart_print_string_ram(oem_name);
+                    uart_putc('\n');
+                } 
+            #endif
 
             // return answer
             if (error == 0) {
                 // success: AH = 00h (Success), AL = number of read sectors
-                regs->ax = 0x0000 | sectors_done; 
+                regs->ax = 0x0000 | sectors_done;
                 regs->flags &= ~ISR_FLAGS_CF; // clear carray-flag on success
+                delay_1ms();
+                #if BIOS_DEBUG == 1
+                    uart_print_string("Read ");
+                    uart_print_uint16(sectors_done, false);
+                    uart_print_string(" sectors!\n");
+                #endif
             } else {
                 // error occurred
                 regs->ax = ((uint16_t)error << 8) | sectors_done;
                 regs->flags |= ISR_FLAGS_CF;  // set carry flag on error
+                lcd_print_string("IDE ERROR\n", 0x07);
             }
             break;
         }
@@ -388,21 +396,21 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
             // what kind of drive is requested?
             if (dl == 0x80) {
                 // harddisk / CF-Card
-                uint8_t  max_heads   = hd0_params.heads - 1;
-                uint8_t  max_sectors = hd0_params.sectors_per_track;
-                uint16_t max_cyls    = hd0_params.cylinders - 1;
+                uint16_t max_cyl_idx    = hd0_params.cylinders - 1;     // cylinder-index is 0-based
+                uint8_t  max_head_idx   = hd0_params.heads - 1;         // head-index is 0-based
+                uint8_t  max_sector     = hd0_params.sectors_per_track; // sectors are 1-based
 
                 // CX-encoding:
                 // Bits 15-8 : Bits 7-0 of cylinders
                 // Bits 7-6  : Bits 9-8 of cylinders
                 // Bits 5-0  : sectors per track
-                uint8_t cl_val = (uint8_t)((max_cyls >> 2) & 0b11000000) | (uint8_t)(max_sectors & 0b00111111);
-                uint8_t ch_val = (uint8_t)(max_cyls & 0xFF); // low(!) eight bits of cylinder-number
+                uint8_t cl_val = (uint8_t)((max_cyl_idx >> 2) & 0b11000000) | (uint8_t)(max_sector & 0b00111111);
+                uint8_t ch_val = (uint8_t)(max_cyl_idx & 0xFF); // low(!) eight bits of cylinder-number
                 
                 regs->ax = 0x0000; // Return-Code = Success
                 regs->bx = 0x0000; // Drive type (AT/PS2 floppies only)
                 regs->cx = ((uint16_t)ch_val << 8) | cl_val; // 15..6 = logical last index of cylinders = number of cylinders - 1 / 5..0 logical last index of sectors per track = number of sectors (starts at 1!)
-                regs->dx = ((uint16_t)max_heads << 8) | 0x01; // DL = number of hard-disk-drives / DH = logical last index of heads = numer of heads - 1
+                regs->dx = ((uint16_t)max_head_idx << 8) | 0x01; // DL = number of hard-disk-drives / DH = logical last index of heads = numer of heads - 1
 
                 // set ES and DI to zero (pointer to drive parameter table, but only for floppies)
                 regs->es = 0x0000;
@@ -432,7 +440,7 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
             if (dl == 0x80) {
                 // HDD #0
                 uint32_t total = (uint32_t)hd0_params.cylinders * (uint32_t)hd0_params.heads * (uint32_t)hd0_params.sectors_per_track;
-                regs->ax    = ((uint16_t)0x03 << 8);
+                regs->ax    = 0x0300 | (regs->ax & 0x00FF);
                 regs->cx    = (uint16_t)(total >> 16);
                 regs->dx    = (uint16_t)(total & 0xFFFF);
                 regs->flags &= ~ISR_FLAGS_CF;
@@ -501,12 +509,11 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
             uint8_t  error        = 0;
 
             for (uint32_t s = 0; s < sector_count; s++) {
-                uint32_t cur_lba    = lba + s;
                 uint32_t total_offset = (uint32_t)dest_offset + ((uint32_t)s * 512);
                 uint16_t cur_seg    = dest_segment + (uint16_t)((total_offset >> 4) & 0xF000);
                 uint16_t cur_offset = (uint16_t)(total_offset & 0xFFFF);
 
-                error = ide_read_sector(cur_lba + s, dest_segment, cur_offset);                
+                error = ide_read_sector(lba + s, dest_segment, cur_offset);                
                 if (error != 0x00) {
                     break;
                 }
@@ -533,20 +540,14 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
 
             // check buffer-size (first two bytes)
             uint16_t buf_size = readFarWord(buf_segment, buf_offset);
-            if (buf_size < 0x1A) {
-                regs->ax    = 0x0100;
-                regs->flags |= ISR_FLAGS_CF;
-                break;
-            }
 
             struct drive_params_ext params;
-            params.size           = 0x1A;
-            params.flags          = 0x0002;        // Bit 1: Geometrie gültig
+            params.size           = buf_size;
+            params.flags          = 0x0002;        // Bit 1: LBA supported
             params.cylinders      = hd0_params.cylinders;
             params.heads          = hd0_params.heads;
             params.sectors        = hd0_params.sectors_per_track;
-            params.total_low      = (uint32_t)hd0_params.cylinders * (uint32_t)hd0_params.heads * (uint32_t)hd0_params.sectors_per_track;
-            params.total_high     = 0; // we are not supporting disks larger than 4GB, so upper 32 Bit of total sectors is always zero
+            params.total          = (uint64_t)hd0_params.cylinders * (uint64_t)hd0_params.heads * (uint64_t)hd0_params.sectors_per_track;
             params.bytes_per_sect = 512; // we only support 512 bytes per sector, so this is fixed to 512
 
             // write structure in buffer of caller
@@ -569,13 +570,9 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
 
 // uart-interrupt
 __attribute__((externally_visible, regparm(1))) void c_int14_handler(struct interrupt_registers *regs) {
-    uart_putc('I');
-    uart_putc('1');
-    uart_putc('4');
-
-    char textbuffer[5];
-    uint16_to_hex(regs->ax, textbuffer);
-    lcd_print_string_ram(textbuffer, 0x07);
+    #if BIOS_DEBUG == 1
+        uart_print_string("I14\n");
+    #endif
 
     // get registers
     uint8_t ah = (uint8_t)(regs->ax >> 8);
@@ -584,6 +581,9 @@ __attribute__((externally_visible, regparm(1))) void c_int14_handler(struct inte
 	switch (ah) {
         case 0x00: // initializing
             // DOS wants to initalize with ax = 2400 Baud, no parity, 1 stopbit and 8 databits
+
+            // the desired port is stored in register DX
+            // DOS initializes from 0x03 downto 0x00
             regs->ax    = 0x0000;
             regs->flags &= ~ISR_FLAGS_CF;
             break;
@@ -612,13 +612,12 @@ __attribute__((externally_visible, regparm(1))) void c_int14_handler(struct inte
 
 // multi-purpose Interrupt 15
 __attribute__((externally_visible, regparm(1))) void c_int15_handler(struct interrupt_registers *regs) {
-    uart_putc('I');
-    uart_putc('1');
-    uart_putc('5');
-    lcd_print_string("I15", 0x07);
-    char textbuffer[6];
-    uint16_to_hex(regs->ax, textbuffer);
-    lcd_print_string_ram(textbuffer, 0x07);
+    #if BIOS_DEBUG == 1
+        uart_print_string("I15\n");
+
+        lcd_print_string("I15", 0x07);
+        lcd_print_uint16(regs->ax, true);
+    #endif
 
     uint8_t ah = (uint8_t)(regs->ax >> 8);
     uint8_t al = (uint8_t)(regs->ax & 0xFF);
@@ -683,7 +682,7 @@ __attribute__((externally_visible, regparm(1))) void c_int15_handler(struct inte
 
         case 0x88: {
             // Request Extended Memory Size (up to 64MB)
-            //regs->ax = 1024; // TODO: implement the full 16 MB
+            //regs->ax = 16 * 1024;
             regs->ax = 0x0000; // for Debugging: no HIMEM
             regs->flags &= ~ISR_FLAGS_CF; // Clear Carry Flag (Success)
             break;
@@ -697,9 +696,13 @@ __attribute__((externally_visible, regparm(1))) void c_int15_handler(struct inte
 
         case 0xC0: {
             // Get Configuration Table
+
+            regs->es = 0xF000;
+            regs->bx = (uint16_t)(uintptr_t)&sysconfig; // pointer to config. TODO: check if this is correct
+
             // we do not support this for now
-            regs->ax = 0x8600;      // AH = 0x86
-            regs->flags |= ISR_FLAGS_CF;  // Set Carry Flag
+            regs->ax = 0x0000;
+            regs->flags &= ~ISR_FLAGS_CF;  // Set Carry Flag
             break;
         }
 
@@ -717,6 +720,22 @@ __attribute__((externally_visible, regparm(1))) void c_int15_handler(struct inte
             break;
         }
 
+        case 0xE8: {
+            switch (al) {
+                case 0x20:
+                    // memmap
+                    break;
+                case 0x01:
+                    // memsize2
+                    break;
+            }
+            break;
+            }
+        case 0x8A: {
+            // memsize3
+            break;
+            }
+
         default:
             // Unbekannte Funktion -> Fehler (AH = 0x86, Carry Flag = 1)
             regs->ax = 0x8600;
@@ -728,14 +747,13 @@ __attribute__((externally_visible, regparm(1))) void c_int15_handler(struct inte
 
 // this interrupt is called by DOS to request next char from ringbuffer
 __attribute__((externally_visible, regparm(1))) void c_int16_handler(struct interrupt_registers *regs) {
-    uart_putc('I');
-    uart_putc('1');
-    uart_putc('6');
-    lcd_print_string("I16", 0x07);
+    #if BIOS_DEBUG == 1
+        uart_print_string("I16\n");
+        lcd_print_string("I16", 0x07);
+        lcd_print_uint16(regs->ax, true);
+    #endif
 
-    char textbuffer[5];
-    uint16_to_hex(regs->ax, textbuffer);
-    lcd_print_string_ram(textbuffer, 0x07);
+/*
 
     uint8_t ah = regs->ax >> 8;
 
@@ -753,6 +771,8 @@ __attribute__((externally_visible, regparm(1))) void c_int16_handler(struct inte
             if (next_head >= BDA_KBD_BUF_END) next_head = BDA_KBD_BUF_START;
             writeFarWord(0x0000, BDA_KBD_HEAD, next_head);
 
+            regs->flags &= ~ISR_FLAGS_ZF;
+
             break;
 
         case 0x01: // Check key
@@ -764,36 +784,39 @@ __attribute__((externally_visible, regparm(1))) void c_int16_handler(struct inte
                 // buffer empty -> set ZF
                 __asm__ volatile ("orw  $0x0040, 6(%%bp)" ::: "memory");
             }
+            regs->flags &= ~ISR_FLAGS_ZF;
+
             break;
 
         default:
             regs->flags |= ISR_FLAGS_ZF;
             break;
     }
+
+*/
+
+    regs->flags &= ~ISR_FLAGS_ZF;
 }
 
 // parallel printer
 __attribute__((externally_visible, regparm(1))) void c_int17_handler(struct interrupt_registers *regs) {
-    uart_putc('I');
-    uart_putc('1');
-    uart_putc('7');
-
-    char textbuffer[5];
-    uint16_to_hex(regs->ax, textbuffer);
-    lcd_print_string_ram(textbuffer, 0x07);
+    #if BIOS_DEBUG == 1
+        uart_print_string("I17\n");
+    #endif
 
     // DOS sends AH = 0x01 to initialize the printer port
+    // in AL the desired port is given
 
-    regs->ax = 0x0100; // AH = 0x01 = Timeout error
+    regs->ax = 0x0000;
     regs->flags &= ~ISR_FLAGS_CF; // clear carray-flag on success
 }
 
 // boot-process
 __attribute__((externally_visible, regparm(1))) void c_int19_handler(struct interrupt_registers *regs) {
-    uart_putc('I');
-    uart_putc('1');
-    uart_putc('9');
-    lcd_print_string("I19", 0x07);
+    #if BIOS_DEBUG == 1
+        uart_print_string("I19\n");
+        lcd_print_string("I19", 0x07);
+    #endif
 
 	// reset DS to 0
 	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
@@ -817,10 +840,10 @@ __attribute__((externally_visible, regparm(1))) void c_int19_handler(struct inte
 
 // INT 1Ah for RTC access
 __attribute__((externally_visible, regparm(1))) void c_int1a_handler(struct interrupt_registers *regs) {
-    uart_putc('I');
-    uart_putc('1');
-    uart_putc('A');
-    lcd_print_string("I1A", 0x7F);
+    #if BIOS_DEBUG == 1
+        uart_print_string("I1A\n");
+        lcd_print_string("I1A", 0x7F);
+    #endif
 
     uint8_t ah = (uint8_t)(regs->ax >> 8);
 
@@ -869,7 +892,12 @@ __attribute__((externally_visible, regparm(1))) void c_int1a_handler(struct inte
 
 // INT29h: Fast Console Output
 __attribute__((externally_visible, regparm(1))) void c_int29_handler(struct interrupt_registers *regs) {
-    lcd_putc((char)(regs->ax & 0xFF), 0x07);
+    #if BIOS_DEBUG == 1
+        uart_print_string("INT29\n");
+        uart_putc(regs->ax & 0xFF);
+        lcd_print_string("INT29\n", 0x07);
+        lcd_putc((char)(regs->ax & 0xFF), 0x07);
+    #endif
 }
 
 static uint8_t pic_read_isr_master(void) {
@@ -883,17 +911,19 @@ static uint8_t pic_read_irr_master(void) {
 }
 
 __attribute__((externally_visible, regparm(1))) void c_int_error_handler(struct interrupt_registers *regs) {
+    uart_print_string("IEE\n");
     lcd_print_string("IEE", 0x07);
 
     __asm__ volatile ("cli; hlt");
 }
 
 __attribute__((externally_visible, regparm(1))) void c_int_dummy_handler(struct interrupt_registers *regs) {
+    uart_print_string("I??\n");
     lcd_print_string("I??", 0x07);
 
     __asm__ volatile ("cli; hlt");
 
-    /*
+/*
     char buf[5];
     
     // IP und CS ausgeben
@@ -941,37 +971,34 @@ __attribute__((externally_visible, regparm(1))) void c_int_dummy_handler(struct 
     
     // EINFRIEREN für Analyse!
     __asm__ volatile ("cli; hlt");
-    */
-
-    /*
 
     // this interrupt is not supposed to be called, but if it is called, we print some debug information and halt the system
 
-    uart_print("DUMMY INT / EXCEPTION\n");
+    uart_print_string("DUMMY INT / EXCEPTION\n");
 
-    uart_print("CS=");
+    uart_print_string("CS=");
     uart_putc(regs->cs >> 8);
     uart_putc(regs->cs & 0xFF);
 
-    uart_print(" IP=");
+    uart_print_string(" IP=");
     uart_putc(regs->ip >> 8);
     uart_putc(regs->ip & 0xFF);
 
-    uart_print(" AX=");
+    uart_print_string(" AX=");
     uart_putc(regs->ax >> 8);
     uart_putc(regs->ax & 0xFF);
 
     uint8_t isr = pic_read_isr_master();
     uint8_t irr = pic_read_irr_master();
 
-    uart_print(" PIC ISR=");
+    uart_print_string(" PIC ISR=");
     uart_putc(isr);
-    uart_print(" IRR=");
+    uart_print_string(" IRR=");
     uart_putc(irr);
 
-    uart_print("\nHALT\n");
+    uart_print_string("\nHALT\n");
     while (1) {
         __asm__ volatile ("cli; hlt");
     }
-    */
+*/
 }

@@ -17,6 +17,7 @@ void lcd_scroll_up();
 void lcd_putc(char c, uint8_t attribute);
 void lcd_putc_pos(int row, int col, char c, uint8_t attribute);
 void lcd_print_string(const char *str, uint8_t attribute);
+void lcd_print_uint16(uint16_t value, bool asHex);
 void lcd_print_string_pos(int row, int col, const char *str, uint8_t attribute);
 void lcd_print_string_ram(const char *str, uint8_t attribute);
 void lcd_print_string_ram_pos(int row, int col, const char *str, uint8_t attribute);

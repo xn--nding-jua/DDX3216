@@ -29,6 +29,7 @@ CF-Karte acts like an IDE harddisk-drive
 */
 
 // global variable for disk-parameters of the first harddisk (HD0)
+struct floppy_param_table fd0_params;
 struct disk_param_table hd0_params;
 
 void mms_page_redirect(uint8_t MMS, uint8_t page, uint32_t address) {
@@ -139,7 +140,7 @@ bool disk_read_identify_data() {
 
     // wait until data is ready (DRQ set)
     if (!ide_wait_drq()) {
-        uart_print("ide_read_sector: DRQ timeout\n");
+        uart_print_string("ide_read_sector: DRQ timeout\n");
         return false;
     }
 
@@ -172,6 +173,20 @@ bool cfcard_init() {
     // I/O-addresses 0x1F0-0x1F7 for IO-Read/Write in TrueIDE-Mode
 	// I/O-addresses 0x3A4 for REGA#
 
+    // initialize the floppy-disk-parameter-table at this opportunity
+	fd0_params.steprate = 0xDF;               // Step rate 2ms, head unload time 240ms
+	fd0_params.head_loadtime = 0x02;          // Head load time 4 ms, non-DMA mode 0
+	fd0_params.delay = 0x25;                  // Byte delay until motor turned off
+	fd0_params.bytes_per_sector = 0x02;       // 512 bytes per sector
+	fd0_params.sectors_per_track = 18;        // 18 sectors per track (1.44MB)
+	fd0_params.gap_between_sectors = 0x1B;    // Gap between sectors for 3.5" floppy
+	fd0_params.data_length = 0xFF;            // Data length (ignored)
+	fd0_params.gap_length = 0x54;             // Gap length when formatting
+	fd0_params.fomat_filler = 0xF6;           // Format filler byte
+	fd0_params.head_settle_time = 0x0F;       // Head settle time (1 ms)
+	fd0_params.motor_start = 0x08;            // Motor start time in 1/8 seconds
+
+
     // enable PCMCIA reset
     uint8_t b4 = read_sc300_cfg(PCMCIA_CARD_RESET);
     write_sc300_cfg(PCMCIA_CARD_RESET, b4 | PCMCIA_CARESET); // set bit 2 = CARESET
@@ -181,7 +196,7 @@ bool cfcard_init() {
     // CF-card needs about 50ms to initialize after reset, so wait a bit
     for (volatile uint32_t i = 0; i < 50000; i++);
 
-    uart_print("PCMCIA/CF: Configuring Cardslot\n");
+    uart_print_string("PCMCIA/CF: Configuring Cardslot\n");
 
     // enable 16-bit mode for PCMCIA using two 8-bit cycles (see page 5-18 in programming reference manual)
     // IOIS16# is tied to HIGH, so we are using 8-bit access
@@ -211,7 +226,7 @@ bool cfcard_init() {
     write_sc300_cfg(IO_WAIT_STATE_CTRL, 0b01111100); // 2 SYSCLK WaitStates for HDD and IO, select HighSpeed mode
 
     // check if card is present (see page 5-68 in programming reference manual)
-    //uart_print("Socket A-Status:");
+    //uart_print_string("Socket A-Status:");
     //uart_putc(read_sc300_cfg(PCMCIA_SOCKET_A_STATUS));
 
     // configure VPPA-pin (here only bits 9...2 are set)
@@ -272,7 +287,7 @@ bool cfcard_init() {
 	delay_1us();
     outb(REGA_BASE, 0x00);
 	
-    uart_print("PCMCIA/CF: Card soft reset\n");
+    uart_print_string("PCMCIA/CF: Card soft reset\n");
     // CF-Card software-reset via IDE-Register
     outb(IDE_DEV_CTRL, 0x06);   // SRST=1, nIEN=1
     for (volatile uint16_t i = 0; i < 10000; i++);
@@ -284,17 +299,17 @@ bool cfcard_init() {
     for (volatile uint32_t i = 0; i < 10000; i++);
 
     // wait for CF-card
-    uart_print("PCMCIA/CF: Wait for card...");
+    uart_print_string("PCMCIA/CF: Wait for card...");
     if (!ide_wait_ready()) {
         lcd_print_string("Timeout!\n", 0x07);
-        uart_print("Timeout!\n");
+        uart_print_string("Timeout!\n");
         return false;
     }
 
     // read drive geometry from CF-card using IDENTIFY-Command into bootloader-buffer at 0x7C00
     if (!disk_read_identify_data()) {
         // something went wrong during IDENTIFY-Command -> fallback with fixed geometry for 512MB CF-Card
-        uart_print("Failed to read IDENTIFY-Data!\n");
+        uart_print_string("Failed to read IDENTIFY-Data!\n");
         lcd_print_string("ERROR\n", 0x07);
         return false;
 
@@ -316,17 +331,17 @@ bool cfcard_init() {
         */
     }else{
         // copy relevant parameters from IDENTIFY-Data to global variable
-        hd0_params.cylinders          = readFarWord(BASE_SEG, 0x7C00 + (1 * sizeof(uint16_t))); // word 1: cylinders
+        hd0_params.cylinders          = readFarWord(BASE_SEG, 0x7C00 + (1 * sizeof(uint16_t)));     // word 1: cylinders
         hd0_params.heads              = readFarByte(BASE_SEG, 0x7C00 + (3 * sizeof(uint16_t)));     // word 3: heads
-        hd0_params.reduced_write_cyl  = 0xFFFF;  // no Precompensation
-        hd0_params.write_precomp_cyl  = 0xFFFF;  // no Reduced Write
-        hd0_params.max_ecc_burst      = 0x0B;    // standard-value that DOS expects
-        hd0_params.control_byte       = 0x08;    // must be 8 on 16 heads
+        hd0_params.reduced_write_cyl  = 0x00;        // no Precompensation
+        hd0_params.write_precomp_cyl  = 0x00;        // no Reduced Write
+        hd0_params.max_ecc_burst      = 0x00;        // standard-value that DOS expects
+        hd0_params.control_byte       = 0b11000000;  // disable retries (bit 7), disable ECC (bit 6)
         hd0_params.timeout_drive      = 0x00;
         hd0_params.timeout_format     = 0x00;
         hd0_params.timeout_check      = 0x00;
-        hd0_params.landing_zone       = hd0_params.cylinders - 1;    // last cylinder
-        hd0_params.sectors_per_track  = readFarByte(BASE_SEG, 0x7C00 + (6 * sizeof(uint16_t))); // word 6: sectors per track
+        hd0_params.landing_zone       = 0x00;
+        hd0_params.sectors_per_track  = readFarByte(BASE_SEG, 0x7C00 + (6 * sizeof(uint16_t)));     // word 6: sectors per track
         hd0_params.reserved           = 0x00;
 
         // read LBA-sectors for max. 4GB disks
@@ -347,6 +362,24 @@ bool cfcard_init() {
             }
         }
 
+        
+// ========================= DEBUG =========================
+// data for debug purposes
+hd0_params.cylinders          = 507;        // total numbers of cylinders
+hd0_params.heads              = 32;         // total numbers of heads
+hd0_params.reduced_write_cyl  = 0x00;       // starting reduced-write current cylinder
+hd0_params.write_precomp_cyl  = 0x00;       // starting write precompensation cylinder
+hd0_params.max_ecc_burst      = 0x00;       // maximum ECC data burst length
+hd0_params.control_byte       = 0b11000000; // disable retries (bit 7), disable ECC (bit 6)
+hd0_params.timeout_drive      = 0x00;       // standard timeout value
+hd0_params.timeout_format     = 0x00;       // timeout value for format drive
+hd0_params.timeout_check      = 0x00;       // timeout value for check drive
+hd0_params.landing_zone       = 0x00;       // landing-zone (might be number of cylinders - 1 ???)
+hd0_params.sectors_per_track  = 63;         // total numbers of sectors per track
+hd0_params.reserved           = 0x00;       // reserved
+// ========================= DEBUG END =========================
+
+
         // print geometry to LCD for debugging
         char textbuffer[6];
         uint16_to_dec(hd0_params.cylinders, textbuffer);
@@ -364,7 +397,7 @@ bool cfcard_init() {
     }
 
     //lcd_print_string("OK\n", 0x07);
-    uart_print("OK\n");
+    uart_print_string("OK\n");
     return true;
 }
 
@@ -379,7 +412,7 @@ bool ide_wait_ready() {
         uint8_t status = inb(IDE_ALT_STATUS);
 
         if (status & IDE_SR_ERR) {
-            uart_print("Error!\n");
+            uart_print_string("Error!\n");
             return false;
         }
         if (!(status & IDE_SR_BSY) && (status & IDE_SR_DRDY)) {
@@ -390,7 +423,7 @@ bool ide_wait_ready() {
         for (volatile uint32_t d = 0; d < 10; d++);
     }
 
-    uart_print("Timeout!\n");
+    uart_print_string("Timeout!\n");
     return false;
 }
 
@@ -425,7 +458,7 @@ uint8_t ide_read_bootsector() {
 uint8_t ide_read_sector(uint32_t lba, uint16_t dest_seg, uint16_t offset) {
     // wait until drive is ready
     if (!ide_wait_ready()) {
-        uart_print("ide_read_sector: Drive not ready\n");
+        uart_print_string("ide_read_sector: Drive not ready\n");
         return 0xAA;
     }
 
@@ -439,7 +472,7 @@ uint8_t ide_read_sector(uint32_t lba, uint16_t dest_seg, uint16_t offset) {
 
     // wait until data is ready (DRQ set)
     if (!ide_wait_drq()) {
-        uart_print("ide_read_sector: DRQ timeout\n");
+        uart_print_string("ide_read_sector: DRQ timeout\n");
         return 0xBB;
     }
 
@@ -449,28 +482,11 @@ uint8_t ide_read_sector(uint32_t lba, uint16_t dest_seg, uint16_t offset) {
         writeFarByte(dest_seg, offset + i, data);
     }
 
-    /*
-    __asm__ __volatile__ (
-        "pushw %%es\n\t"
-        "movw  %0, %%es\n\t"        // ES = dest_seg (einmalig!)
-        "movw  %1, %%di\n\t"        // DI = offset
-        "movw  $512, %%cx\n\t"      // Zähler: 512 Bytes
-        "movw  %2, %%dx\n\t"        // DX = IDE_DATA Port (0x1F0)
-    "1:\n\t"
-        "inb   %%dx, %%al\n\t"      // 1 Byte lesen
-        "stosb\n\t"                 // ES:[DI]++ = AL
-        "loop  1b\n\t"              // CX--; wenn != 0 -> Sprung
-        "popw  %%es\n\t"
-        :
-        : "r"(dest_seg), "r"(offset), "i"(IDE_DATA)
-        : "ax", "cx", "dx", "di", "memory"
-    );
-    */
     return 0x00; // no error
 }
 
 // LBA-calculation based on CHS
 // LBA = (C × H_max + H) × S_max + (S - 1)
 uint32_t disk_chs_to_lba(uint32_t c, uint32_t h, uint32_t s) {
-    return (c * (uint32_t)hd0_params.heads * (uint32_t)hd0_params.sectors_per_track) + (h * (uint32_t)hd0_params.sectors_per_track) + (s - 1);
+    return (c * (uint32_t)hd0_params.heads + h) * (uint32_t)hd0_params.sectors_per_track + s - 1;
 }

@@ -30,7 +30,7 @@ void uart_putc(char c) {
     outb(UART_THR, (uint8_t)c);
 }
 
-void uart_print(const char* str) {
+void uart_print_string(const char* str) {
 	// Strings are placed in ROM so we have to take care of different memory-segments
 	// so we take the relative offset and use the readRomByte function
     uint16_t rom_offset = (uint16_t)(uintptr_t)str;
@@ -49,7 +49,17 @@ void uart_print(const char* str) {
     }
 }
 
-void uart_print_ram(const char* str) {
+void uart_print_uint16(uint16_t value, bool asHex) {
+	char textbuffer[6];
+	if (asHex) {
+		uint16_to_hex(value, textbuffer); // needs only 5 chars
+	} else {
+		uint16_to_dec(value, textbuffer); // needs 6 chars
+	}
+	uart_print_string_ram(textbuffer);
+}
+
+void uart_print_string_ram(const char* str) {
     while (*str) {
         uart_putc(*str);
         str++;

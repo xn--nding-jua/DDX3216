@@ -116,7 +116,7 @@ sc300_init:
     // mandatory: 1 0 x x 0 0 0 x -> 0x80
     mov     al, 0x44
     out     CFG_ADDR, al
-    mov     al, 0x90            // Bit7=1, Bit4=1 (DISDEN suggested)
+    mov     al, 0b10010000      // Bit7=1, Bit4=1 (DISDEN suggested)
     out     CFG_DATA, al
 
     // Index 0x51 (ROM CFG2): Bits 3:2 = 00
@@ -125,33 +125,23 @@ sc300_init:
     mov     al, 0x00
     out     CFG_DATA, al
 
-    // Index 0x60 (Command Delay): Bit5=0, Bit2=0
-    // 0 x 0 x 0 x x x -> both Bits 5 und 2 = 0
+    // Index 0x60 (Waitstates to maximum (default)):
     mov     al, 0x60
     out     CFG_ADDR, al
-    mov     al, 0x00
+    mov     al, 0b00000000
     out     CFG_DATA, al
 
-    // Index 0x62 (MMS Wait State 1): Bit7=0
+    // Index 0x62 (MMS Wait State to 5 (default)):
     mov     al, 0x62
     out     CFG_ADDR, al
-    mov     al, 0x00
-    out     CFG_DATA, al
-
-    // Index 0x63 (Wait State Control): Bit1=0
-    // for 33 MHz: Bits 6:5 setzen, Bit 1=0
-    // 33 MHz: x 1 1 x x x 0 x -> 0x60 | recommended 0x0C
-    // Standard (no specific frequency): Bit1=0
-    mov     al, 0x63
-    out     CFG_ADDR, al
-    mov     al, 0x0C            // suggested: Bits 3:2 = 11 (INTIOWAIT, 16IOWAIT)
+    mov     al, 0b00000000
     out     CFG_DATA, al
 
     // Index 0x64 (Version): 1 0 0 x 1 1 x x -> 0x8C
     // Bit7=1, Bits 6:5=00, Bit4=0(EPMODE), Bits 3:2=11
     mov     al, 0x64
     out     CFG_ADDR, al
-    mov     al, 0x8C
+    mov     al, 0b10001100
     out     CFG_DATA, al
 
     // Index 0x6A: reserved - must be 0x00
@@ -163,7 +153,7 @@ sc300_init:
     // Index 0x6B (Misc2): 0 x x 1 x x x x -> Bit4=1
     mov     al, 0x6B
     out     CFG_ADDR, al
-    mov     al, 0x10            // Bit4=1
+    mov     al, 0b00000100     // Bit4=1
     out     CFG_DATA, al
 
     // Index 0x74 (MMSB Control): Bits 5:4 = 00
@@ -183,7 +173,7 @@ sc300_init:
     // suggested: 256ms Restart-time (XST=110b = Bits 2:0 = 6)
     mov     al, 0x8F
     out     CFG_ADDR, al
-    mov     al, 0x86            // Bit7=1, XST=110b (256ms PLL-Restart)
+    mov     al, 0b10000110       // Bit7=1, XST=110b (256ms PLL-Restart)
     out     CFG_DATA, al
 
     // Index 0x93: reserved - must be 0x00
@@ -200,16 +190,15 @@ sc300_init:
 
     // Index 0xB1 (Function Enable 2): Bit5=0
     // for 33 MHz: HSPLLFQ = 10b (66MHz CLK2) -> Bits 4:3 = 10
-    // x x 0 1 0 x x x -> 0x08 for 33 MHz
     mov     al, 0xB1
     out     CFG_ADDR, al
-    mov     al, 0x08            // 33 MHz: HSPLLFQ = 10b
+    mov     al, 0b00010000      // 33 MHz: HSPLLFQ = 10b
     out     CFG_DATA, al
 
     // Index 0xB4 (PCMCIA Card Reset): Bit7=0 (Standard DRAM), Bit6=1 (muss!)
     mov     al, 0xB4
     out     CFG_ADDR, al
-    mov     al, 0x40            // Bit6 must be 1 sein!
+    mov     al, 0b01000000      // Bit6 must be 1!
     out     CFG_DATA, al
 
     // additional mandatory settings for 33-MHz:
@@ -223,19 +212,19 @@ sc300_init:
     // Index 0x62 (MMS Wait State 1): 0 x x 1 x x x x -> Bit4=1 for 33MHz
     mov     al, 0x62
     out     CFG_ADDR, al
-    mov     al, 0x10            // Bit4=1 (MISOUT) for 33 MHz
+    mov     al, 0b00010000      // Bit4=1 (MISOUT) for 33 MHz
     out     CFG_DATA, al
 
     // Index 0x63 (Wait State Control): x 1 1 x x x 0 x -> Bits 6:5=11 for 33MHz
     mov     al, 0x63
     out     CFG_ADDR, al
-    mov     al, 0x6C            // Bits 6:5=11 + Bits 3:2=11 (suggested)
+    mov     al, 0b01101100      // Bits 6:5=11 + Bits 3:2=11 (suggested)
     out     CFG_DATA, al
 
     // Index 0x65 (ROM CFG1): xx1x xxxx -> Bit5=1 (PFWS) for 33 MHz
     mov     al, 0x65
     out     CFG_ADDR, al
-    mov     al, 0x20            // Bit5=1 (PFWS for 33 MHz Pflicht), ENROMF=1 inverted!
+    mov     al, 0b00100000      // Bit5=1 (PFWS for 33 MHz Pflicht), ENROMF=1 inverted!
     // Attention: Bit0 (ENROMF) reads back inverted, we write a "0" to enable it
     out     CFG_DATA, al
 
@@ -317,7 +306,6 @@ halt:
     jmp     halt
 
 
-
 // ========================================================
 // Launching Bootsector
 // ========================================================
@@ -392,7 +380,7 @@ launch_bootsector:
     pop bx
     pop ax
 
-    iretw
+    iret
 .endm
 
 .macro ISR_SW_ENTRY cfunc
@@ -438,7 +426,7 @@ launch_bootsector:
     pop bx
     pop ax
 
-    iretw
+    iret
 .endm
 
 .equ INT_FRAME_WORDS,  12
@@ -563,7 +551,7 @@ launch_bootsector:
     pop bx
     pop ax
 
-    iretw
+    iret
 .endm
 
 // ========================================================
@@ -572,11 +560,11 @@ launch_bootsector:
 // we leave 0x0100 bytes at segment 0x9C00 for the following variables
 
 # storage for old register-values during safe-stack-ISR
-.equ BIOS_SW_ISR_SS,        0x0020
-.equ BIOS_SW_ISR_SP,        0x0022
-.equ BIOS_SW_ISR_FS,        0x0024
-.equ BIOS_SW_ISR_GS,        0x0026
-.equ BIOS_SW_ISR_FRAME,     0x0028
+.equ BIOS_SW_ISR_SS,            0x0020
+.equ BIOS_SW_ISR_SP,            0x0022
+.equ BIOS_SW_ISR_FS,            0x0024
+.equ BIOS_SW_ISR_GS,            0x0026
+.equ BIOS_SW_ISR_FRAME,         0x0028
 
 .equ BIOS_INT08_ISR_SS,         0x002A
 .equ BIOS_INT08_ISR_SP,         0x002C
@@ -607,12 +595,6 @@ launch_bootsector:
 .equ BIOS_INT1A_ISR_FS,         0x0056
 .equ BIOS_INT1A_ISR_GS,         0x0058
 .equ BIOS_INT1A_ISR_FRAME,      0x005A
-
-.equ BIOS_INT1C_ISR_SS,         0x005C
-.equ BIOS_INT1C_ISR_SP,         0x005E
-.equ BIOS_INT1C_ISR_FS,         0x0061
-.equ BIOS_INT1C_ISR_GS,         0x0063
-.equ BIOS_INT1C_ISR_FRAME,      0x0065
 
 // timer-interrupts
 .global isr_int08
@@ -645,32 +627,30 @@ isr_int08:
     mov WORD PTR ds:[0x046E], ax
     mov BYTE PTR ds:[0x0470], 1     // overflow-flag in BDA
 2:
-    pop ds
-    pop ax
-
-    // set EOI before INT1C
     mov al, 0x20
     out 0x20, al
+
+    pop ds
+    pop ax
 
     // call user-interrupt INT 1C
     int 0x1C
 
-    iretw
+    iret
 
 .global isr_int1c
 isr_int1c:
-    iretw
+    iret
 
 // hardware-interrupts with EOI
-
-.global isr_int04
-isr_int04:
-    ISR_HW_ENTRY c_int04_handler // UART-interrupt
 
 .global isr_int09
 isr_int09:
     ISR_HW_ENTRY c_int09_handler // keyboard-interrupt
 
+.global isr_int0c
+isr_int0c:
+    ISR_HW_ENTRY c_int0c_handler // UART-interrupt
 
 
 // software-interrupts without EOI
@@ -719,6 +699,7 @@ isr_int1a:
 isr_int29:
     ISR_SAFE_STACK_ENTRY c_int29_handler, BIOS_SW_ISR_SS, BIOS_SW_ISR_SP, BIOS_SW_ISR_FS, BIOS_SW_ISR_GS, BIOS_SW_ISR_FRAME
 
+
 // special interrupts
 
 .global isr_spurious_irq7
@@ -737,7 +718,7 @@ isr_spurious_irq7:
     
     pop ax
 
-    iretw
+    iret
 
 1:
     mov al, 0x20        // Echter IRQ7: EOI
@@ -745,7 +726,7 @@ isr_spurious_irq7:
 
     pop ax
     
-    iretw
+    iret
 
 .global isr_spurious_irq15
 isr_spurious_irq15:
@@ -765,7 +746,7 @@ isr_spurious_irq15:
 
     pop ax
 
-    iretw
+    iret
 
 1:
     mov al, 0x20
@@ -774,15 +755,26 @@ isr_spurious_irq15:
 
     pop ax
 
-    iretw
+    iret
 
 .global isr_int_error
 isr_int_error:
     ISR_SAFE_STACK_ENTRY c_int_error_handler, BIOS_SW_ISR_SS, BIOS_SW_ISR_SP, BIOS_SW_ISR_FS, BIOS_SW_ISR_GS, BIOS_SW_ISR_FRAME 
+    //iret
 
-.global isr_int_dummy
-isr_int_dummy:
-    ISR_SAFE_STACK_ENTRY c_int_dummy_handler, BIOS_SW_ISR_SS, BIOS_SW_ISR_SP, BIOS_SW_ISR_FS, BIOS_SW_ISR_GS, BIOS_SW_ISR_FRAME 
+.global isr_hw_int_dummy
+isr_hw_int_dummy:
+	push ax
+	mov al, 0x20
+	out 0x20, al
+	pop ax
+
+    iret
+
+.global isr_sw_int_dummy
+isr_sw_int_dummy:
+    ISR_SAFE_STACK_ENTRY c_int_dummy_handler, BIOS_SW_ISR_SS, BIOS_SW_ISR_SP, BIOS_SW_ISR_FS, BIOS_SW_ISR_GS, BIOS_SW_ISR_FRAME
+	//iret
 
 // ========================================================
 // FUNCTIONS FOR TINY8086 BASIC
@@ -794,6 +786,10 @@ launch_basic:
 
     // copy BASIC from ROM to RAM (0x2000:0x0000)
     call copy_basic_to_ram
+
+	push ax
+    push ds
+    push es
 
     // basic uses an own stack at 0x1000:0x0000
     mov     ax, 0x1000           // STACK_SEG ist 1000h
@@ -812,9 +808,14 @@ launch_basic:
     // jump to BASIC in RAM at 0x2000:0x0000
     jmp 0x2000:0x0000
 
+    pop es
+    pop ds
+	pop ax
+
     ret
 
 copy_basic_to_ram:
+	push ax
     push ds
     push es
     
@@ -835,6 +836,7 @@ copy_basic_to_ram:
     
     pop es
     pop ds
+	pop ax
 
     ret
 

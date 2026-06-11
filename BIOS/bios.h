@@ -21,6 +21,8 @@
 #include "helper.h"
 #include "keyboard.h"
 
+#define BIOS_DEBUG              0
+
 #define BIOS_RESERVED_KB        16 // 16kB are reserved for our BIOS (global variables and stack)
 #define BIOS_CONVENTIONAL_KB    (640 - BIOS_RESERVED_KB)
 
@@ -42,9 +44,9 @@
 extern void launch_bootsector(void) __attribute__((cdecl));
 extern void launch_basic(void) __attribute__((cdecl));
 
-extern void isr_int04(void);
 extern void isr_int08(void);
 extern void isr_int09(void);
+extern void isr_int0c(void);
 extern void isr_int10(void);
 extern void isr_int11(void);
 extern void isr_int12(void);
@@ -58,12 +60,14 @@ extern void isr_int1a(void);
 extern void isr_int1c(void);
 extern void isr_int29(void);
 
-
 extern void isr_spurious_irq7(void);
 extern void isr_spurious_irq15(void);
-extern void isr_int_error(void);
-extern void isr_int_dummy(void);
 
+extern void isr_int_error(void);
+extern void isr_hw_int_dummy(void);
+extern void isr_sw_int_dummy(void);
+
+extern struct floppy_param_table fd0_params;
 extern struct disk_param_table hd0_params;
 
 // function prototypes
@@ -117,5 +121,18 @@ struct boot_sector {
     uint8_t                     boot_code[448];  // The actual bootloader code (e.g. DOS bootloader)
     uint16_t                    signature;       // Must be 0xAA55
 } __attribute__((packed));
+
+struct system_config {
+    uint16_t size;
+    uint8_t computer_type;
+    uint8_t model;
+    uint8_t bios_revision;
+    uint8_t feature_information;
+    uint8_t feature_2;
+    uint8_t reserved_1;
+    uint8_t reserved_2;
+    uint8_t reserved_3;
+} __attribute__((packed));
+struct system_config sysconfig; // global variable
 
 #endif

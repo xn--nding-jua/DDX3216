@@ -189,6 +189,16 @@ void lcd_print_string(const char* str, uint8_t attribute) {
     }
 }
 
+void lcd_print_uint16(uint16_t value, bool asHex) {
+	char textbuffer[6];
+	if (asHex) {
+		uint16_to_hex(value, textbuffer); // needs only 5 chars
+	} else {
+		uint16_to_dec(value, textbuffer); // needs 6 chars
+	}
+	lcd_print_string_ram(textbuffer, 0x07);
+}
+
 // output whole string on LCD at specific position
 void lcd_print_string_pos(int row, int col, const char* str, uint8_t attribute) {
 	// set cursor at desired position

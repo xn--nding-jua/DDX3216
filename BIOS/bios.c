@@ -21,17 +21,21 @@ __asm__(".code16gcc\n"); // we are using -m16 compiler-switch so this line is re
 // **********************************************************
 
 void setup_ivt() {
-    for (uint16_t i = 0; i < 8; i++) {
-        set_ivt_entry((uint8_t)i, (uint16_t)(uintptr_t)isr_int_error, ROM_SEG);
+    for (uint8_t i = 0; i <= 7 ; i++) {
+        set_ivt_entry(i, (uint16_t)(uintptr_t)isr_int_error, ROM_SEG);
     }
 
-    for (uint16_t i = 8; i < 256; i++) {
-        set_ivt_entry((uint8_t)i, (uint16_t)(uintptr_t)isr_int_dummy, ROM_SEG);
+    for (uint16_t i = 8; i <= 255; i++) {
+        set_ivt_entry(i, (uint16_t)(uintptr_t)isr_sw_int_dummy, ROM_SEG);
+    }
+    for (uint8_t i = 0x0a; i <= 0x0f; i++) {
+        set_ivt_entry(i, (uint16_t)(uintptr_t)isr_hw_int_dummy, ROM_SEG);
     }
 
-    set_ivt_entry(0x04, (uint16_t)(uintptr_t)isr_int04, ROM_SEG);
+    // set regular interrupts
     set_ivt_entry(0x08, (uint16_t)(uintptr_t)isr_int08, ROM_SEG);
     set_ivt_entry(0x09, (uint16_t)(uintptr_t)isr_int09, ROM_SEG);
+    set_ivt_entry(0x0c, (uint16_t)(uintptr_t)isr_int0c, ROM_SEG);
     set_ivt_entry(0x10, (uint16_t)(uintptr_t)isr_int10, ROM_SEG);
     set_ivt_entry(0x11, (uint16_t)(uintptr_t)isr_int11, ROM_SEG);
     set_ivt_entry(0x12, (uint16_t)(uintptr_t)isr_int12, ROM_SEG);
@@ -45,12 +49,13 @@ void setup_ivt() {
     set_ivt_entry(0x1c, (uint16_t)(uintptr_t)isr_int1c, ROM_SEG);
     set_ivt_entry(0x29, (uint16_t)(uintptr_t)isr_int29, ROM_SEG);
     
-    // Disk Parameter Table
-    set_ivt_entry(0x41, (uint16_t)(uintptr_t)&hd0_params, BIOS_SEG);
-
     // spurious interrupts
     set_ivt_entry(0x0F, (uint16_t)(uintptr_t)isr_spurious_irq7, ROM_SEG);
     set_ivt_entry(0x77, (uint16_t)(uintptr_t)isr_spurious_irq15, ROM_SEG);
+
+    // Floppy and Disk Parameter Tables
+    set_ivt_entry(0x1e, (uint16_t)(uintptr_t)&fd0_params, BIOS_SEG);
+    set_ivt_entry(0x41, (uint16_t)(uintptr_t)&hd0_params, BIOS_SEG);
 }
 
 void setup_bda() {
@@ -299,32 +304,32 @@ void boot_dos() {
     uint8_t status = 0xFF;
     uint8_t retries = 3;
     
-    uart_print("Reading Bootsector...\n");
+    uart_print_string("Reading Bootsector...\n");
     while (retries-- > 0) {
         if (ide_read_bootsector() == 0x00) {
             status = 0; // success
             break;
         }
-        uart_print("Disk read failed, retrying...\n");
+        uart_print_string("Disk read failed, retrying...\n");
         delay_1ms();
     }
 
     if (status != 0) {
-        uart_print("Disk read failed after 3 retries!\n");
+        uart_print_string("Disk read failed after 3 retries!\n");
         return;
     }
 
     // check boot-signature at the end of the MBR
-    uart_print("Checking Boot Signature...");
+    uart_print_string("Checking Boot Signature...");
     uint16_t signature = readFarWord(BASE_SEG, 0x7C00 + 510);
     if (signature != 0xAA55) {
-        uart_print("ERROR!\n");
+        uart_print_string("ERROR!\n");
         return;
     }else{
-        uart_print("OK\n");
+        uart_print_string("OK\n");
     }
     
-    uart_print("Booting from CF-Card...\n");
+    uart_print_string("Booting from CF-Card...\n");
     launch_bootsector();
 }
 
@@ -368,6 +373,17 @@ __attribute__((noreturn)) void bios_main() {
         // cold-boot
     }
 
+    // initialize sysconfig-table
+    sysconfig.size = 8;
+    sysconfig.computer_type = 0xFC; // PC
+    sysconfig.model = 0x00; // model
+    sysconfig.bios_revision = 0x01;
+    sysconfig.feature_information = 0xE0;
+    sysconfig.feature_2 = 0x02;
+    sysconfig.reserved_1 = 0x00;
+    sysconfig.reserved_2 = 0x00;
+    sysconfig.reserved_3 = 0x00;
+
 	// disable the watchdog
 	wdt_disable();
     delay_1ms();
@@ -375,10 +391,12 @@ __attribute__((noreturn)) void bios_main() {
 
     lcd_init();
     lcd_clear();
-    lcd_print_string_pos(0, 0, "AMD Elan SC300 BIOS v0.01   . ", 0x07);
+    lcd_print_string_pos(0, 0, "AMD Elan SC300 BIOS v0.01", 0x07);
 
+    // print the CPU-Revision at the upper right corner
     uint8_t version = read_sc300_cfg(0x64);
     lcd_putc_pos(0, 27, 'A' + (version & 0b00000111) - 1, 0x07);
+    lcd_putc_pos(0, 28, '.', 0x07);
     lcd_putc_pos(0, 29, '0' + ((version & 0b01111000) >> 3), 0x07);
 
     //lcd_print_string_pos(1, 0, "RAM-Test...", 0x07);
@@ -393,7 +411,7 @@ __attribute__((noreturn)) void bios_main() {
     uart_init(9600);
     pirq_init();
 	uart_interrupt_enable();
-	uart_print("AMD Elan SC300 BIOS v0.01\n");
+	uart_print_string("AMD Elan SC300 BIOS v0.01\n");
 
     lcd_print_string("Init keyboard...", 0x07); // no linefeed here
 	kbd_init();
@@ -416,6 +434,8 @@ __attribute__((noreturn)) void bios_main() {
         lcd_clear();
         launch_basic();
     }
+
+    // we should never come here again as either the bootsector or BASIC is called
 
     uint8_t c = 'A';
     while(1) {

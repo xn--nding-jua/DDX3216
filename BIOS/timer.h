@@ -11,5 +11,6 @@
 
 void timer_init();
 uint8_t read_rtc(uint8_t reg);
+void delay_1s_hardware(void);
 
 #endif

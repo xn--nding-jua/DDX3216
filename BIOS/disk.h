@@ -80,19 +80,33 @@ uint8_t ide_read_bootsector();
 uint8_t ide_read_sector(uint32_t lba, uint16_t dest_seg, uint16_t offset);
 uint32_t disk_chs_to_lba(uint32_t c, uint32_t h, uint32_t s);
 
+struct floppy_param_table {
+	uint8_t steprate;               // Step rate 2ms, head unload time 240ms
+	uint8_t head_loadtime;          // Head load time 4 ms, non-DMA mode 0
+	uint8_t delay;                  // Byte delay until motor turned off
+	uint8_t bytes_per_sector;       // 512 bytes per sector
+	uint8_t sectors_per_track;      // 18 sectors per track (1.44MB)
+	uint8_t gap_between_sectors;    // Gap between sectors for 3.5" floppy
+	uint8_t data_length;            // Data length (ignored)
+	uint8_t gap_length;             // Gap length when formatting
+	uint8_t fomat_filler;           // Format filler byte
+	uint8_t head_settle_time;       // Head settle time (1 ms)
+	uint8_t motor_start;            // Motor start time in 1/8 seconds
+} __attribute__((packed));
+
 struct disk_param_table {
-    uint16_t cylinders;
-    uint8_t  heads;
-    uint16_t reduced_write_cyl; // reserved
-    uint16_t write_precomp_cyl; // reserved
-    uint8_t  max_ecc_burst;
-    uint8_t  control_byte;
-    uint8_t  timeout_drive;
-    uint8_t  timeout_format;
-    uint8_t  timeout_check;
-    uint16_t landing_zone;
-    uint8_t  sectors_per_track;
-    uint8_t  reserved;
+    uint16_t cylinders;         // number of cylinders - 1
+    uint8_t  heads;             // number of heads - 1
+    uint16_t reduced_write_cyl; // starting reduced-write current cylinder
+    uint16_t write_precomp_cyl; // starting write precompensation cylinder
+    uint8_t  max_ecc_burst;     // maximum ECC data burst length
+    uint8_t  control_byte;      // disable retries (bit 7), disable ECC (bit 6)
+    uint8_t  timeout_drive;     // standard timeout value
+    uint8_t  timeout_format;    // timeout value for format drive
+    uint8_t  timeout_check;     // timeout value for check drive
+    uint16_t landing_zone;      // landing-zone (might be number of cylinders - 1 ???)
+    uint8_t  sectors_per_track; // sectors per track
+    uint8_t  reserved;          // reserved
 } __attribute__((packed));
 
 struct disk_address_packet {
@@ -111,8 +125,7 @@ struct drive_params_ext {
     uint32_t cylinders;       // +0x04: Anzahl Zylinder
     uint32_t heads;           // +0x08: Anzahl Köpfe
     uint32_t sectors;         // +0x0C: Sektoren pro Track
-    uint32_t total_low;       // +0x10: Gesamtsektoren (Low)
-    uint32_t total_high;      // +0x14: Gesamtsektoren (High)
+    uint64_t total;           // +0x10: Gesamtsektoren
     uint16_t bytes_per_sect;  // +0x18: Bytes pro Sektor
 } __attribute__((packed));
 
