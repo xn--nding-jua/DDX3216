@@ -206,9 +206,7 @@ __attribute__((externally_visible, regparm(1))) void c_int10_handler(struct inte
 
             // write char to display and handle control-characters like newline, carriage return, backspace, etc. internally
             lcd_putc(al, 0x07); // light gray on black
-            
-            // output ASCII-character to UART (including control-characters like newline, etc.)
-            uart_putc(al);
+
             break;
 
         case 0x02: // set cursor position
@@ -267,7 +265,6 @@ __attribute__((externally_visible, regparm(1))) void c_int12_handler(struct inte
         uart_putc('\n');
     #endif
 
-    delay_1ms(); // we seem to have timing-issues when loading DOS without this line
 	regs->ax = readFarWord(0x0000, BDA_MEM_SIZE);
 }
 
@@ -340,7 +337,6 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
                 sectors_done++;
             }
 
-            delay_1ms();
             #if BIOS_DEBUG == 1
                 // check last two bytes at SEG 0x9B80, Offset 0x0200 -> should be 0xAA55 = MagicByte
                 if (regs->es == 0x9B80) {
@@ -377,7 +373,6 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
                 // success: AH = 00h (Success), AL = number of read sectors
                 regs->ax = 0x0000 | sectors_done;
                 regs->flags &= ~ISR_FLAGS_CF; // clear carray-flag on success
-                delay_1ms();
                 #if BIOS_DEBUG == 1
                     uart_print_string("Read ");
                     uart_print_uint16(sectors_done, false);
@@ -795,7 +790,7 @@ __attribute__((externally_visible, regparm(1))) void c_int16_handler(struct inte
 
 */
 
-    regs->flags &= ~ISR_FLAGS_ZF;
+    regs->flags |= ISR_FLAGS_ZF; // no key in buffer
 }
 
 // parallel printer

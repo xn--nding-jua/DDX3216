@@ -32,6 +32,9 @@ With date of 31th of May IO.SYS is loaded successfully and shows "Starting MS-DO
 
 ![alt text](Documentation/booting_dos.jpg)
 
+As MS-DOS still has trouble to boot, I tested FreeDOS in the meantime in version 1.4. And this OS is booting straight to the shell- YEAH!
+![alt text](Documentation/freedos_shell.jpg)
+
 ## Bootsectors
 For the first tests I've implemented a very basic Bootsector that implements a very simple and short assembler-part that calls a C-function. Within C the external UART is used to output some demo-text. Actually there are two versions: a very simple bootdisk that stays in real-mode and a more advanced one that enables the protected mode that allows use to use the flat-memory-model of the 386-CPU.
 But as I'm close to boot DOS 6.22 on this machine I will not work on these bootdisks anymore.

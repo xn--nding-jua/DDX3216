@@ -306,95 +306,76 @@ bool cfcard_init() {
         return false;
     }
 
-    // read drive geometry from CF-card using IDENTIFY-Command into bootloader-buffer at 0x7C00
-    if (!disk_read_identify_data()) {
-        // something went wrong during IDENTIFY-Command -> fallback with fixed geometry for 512MB CF-Card
-        uart_print_string("Failed to read IDENTIFY-Data!\n");
-        lcd_print_string("ERROR\n", 0x07);
-        return false;
+    #if BIOS_MANUAL_CHS == 1
+        // data for debug purposes
+        hd0_params.cylinders          = CF_CYLINDERS; // total numbers of cylinders
+        hd0_params.heads              = CF_HEADS;   // total numbers of heads
+        hd0_params.reduced_write_cyl  = 0x00;       // starting reduced-write current cylinder
+        hd0_params.write_precomp_cyl  = 0x00;       // starting write precompensation cylinder
+        hd0_params.max_ecc_burst      = 0x00;       // maximum ECC data burst length
+        hd0_params.control_byte       = 0b11000000; // disable retries (bit 7), disable ECC (bit 6)
+        hd0_params.timeout_drive      = 0x00;       // standard timeout value
+        hd0_params.timeout_format     = 0x00;       // timeout value for format drive
+        hd0_params.timeout_check      = 0x00;       // timeout value for check drive
+        hd0_params.landing_zone       = 0x00;       // landing-zone (might be number of cylinders - 1 ???)
+        hd0_params.sectors_per_track  = CF_SECTORS; // total numbers of sectors per track
+        hd0_params.reserved           = 0x00;       // reserved
+    #else
+        // read drive geometry from CF-card using IDENTIFY-Command into bootloader-buffer at 0x7C00
+        if (!disk_read_identify_data()) {
+            // something went wrong during IDENTIFY-Command -> fallback with fixed geometry for 512MB CF-Card
+            uart_print_string("Failed to read IDENTIFY-Data!\n");
+            lcd_print_string("ERROR\n", 0x07);
+            return false;
+        }else{
+            // copy relevant parameters from IDENTIFY-Data to global variable
+            hd0_params.cylinders          = readFarWord(BASE_SEG, 0x7C00 + (1 * sizeof(uint16_t)));     // word 1: cylinders
+            hd0_params.heads              = readFarByte(BASE_SEG, 0x7C00 + (3 * sizeof(uint16_t)));     // word 3: heads
+            hd0_params.reduced_write_cyl  = 0x00;        // no Precompensation
+            hd0_params.write_precomp_cyl  = 0x00;        // no Reduced Write
+            hd0_params.max_ecc_burst      = 0x00;        // standard-value that DOS expects
+            hd0_params.control_byte       = 0b11000000;  // disable retries (bit 7), disable ECC (bit 6)
+            hd0_params.timeout_drive      = 0x00;
+            hd0_params.timeout_format     = 0x00;
+            hd0_params.timeout_check      = 0x00;
+            hd0_params.landing_zone       = 0x00;
+            hd0_params.sectors_per_track  = readFarByte(BASE_SEG, 0x7C00 + (6 * sizeof(uint16_t)));     // word 6: sectors per track
+            hd0_params.reserved           = 0x00;
 
-        /*
-        // fixed CF-Card geometry with 512MB
-        // CHS for BIOS-compatibility (DOS-Limit: 1024/16/63)
-        hd0_params.cylinders         = 1014;
-        hd0_params.heads             = 16;
-        hd0_params.reduced_write_cyl = 0xFFFF;  // no Precompensation
-        hd0_params.write_precomp_cyl = 0xFFFF;  // no Reduced Write
-        hd0_params.max_ecc_burst     = 0x0B;    // standard-value that DOS expects
-        hd0_params.control_byte      = 0x08;    // must be 8 when 16 heads
-        hd0_params.timeout_drive     = 0x00;
-        hd0_params.timeout_format    = 0x00;
-        hd0_params.timeout_check     = 0x00;
-        hd0_params.landing_zone      = 1013;
-        hd0_params.sectors_per_track = 63;
-        hd0_params.reserved          = 0x00;
-        */
-    }else{
-        // copy relevant parameters from IDENTIFY-Data to global variable
-        hd0_params.cylinders          = readFarWord(BASE_SEG, 0x7C00 + (1 * sizeof(uint16_t)));     // word 1: cylinders
-        hd0_params.heads              = readFarByte(BASE_SEG, 0x7C00 + (3 * sizeof(uint16_t)));     // word 3: heads
-        hd0_params.reduced_write_cyl  = 0x00;        // no Precompensation
-        hd0_params.write_precomp_cyl  = 0x00;        // no Reduced Write
-        hd0_params.max_ecc_burst      = 0x00;        // standard-value that DOS expects
-        hd0_params.control_byte       = 0b11000000;  // disable retries (bit 7), disable ECC (bit 6)
-        hd0_params.timeout_drive      = 0x00;
-        hd0_params.timeout_format     = 0x00;
-        hd0_params.timeout_check      = 0x00;
-        hd0_params.landing_zone       = 0x00;
-        hd0_params.sectors_per_track  = readFarByte(BASE_SEG, 0x7C00 + (6 * sizeof(uint16_t)));     // word 6: sectors per track
-        hd0_params.reserved           = 0x00;
+            // read LBA-sectors for max. 4GB disks
+            uint32_t lba_sectors = readFarWord(BASE_SEG, 0x7C00 + (60 * sizeof(uint16_t))); // word 60..61: total number of sectors (LBA)
 
-        // read LBA-sectors for max. 4GB disks
-        uint32_t lba_sectors = readFarWord(BASE_SEG, 0x7C00 + (60 * sizeof(uint16_t))); // word 60..61: total number of sectors (LBA)
-
-        // check if we have more than 1024 cylinders, 16 heads or 63 sectors per track and if so,
-        // recalculate the geometry to fit into the CHS limits of the BIOS (1024/16/63) and set hd0_params accordingly
-        if (hd0_params.cylinders > 1024) {
-            // recalculate geometry to fit into CHS limits of the BIOS
-            hd0_params.cylinders = 1024;
-            hd0_params.heads = (lba_sectors / (hd0_params.cylinders * hd0_params.sectors_per_track)) + 1;
-            if (hd0_params.heads > 16) {
-                hd0_params.heads = 16;
-                hd0_params.sectors_per_track = (lba_sectors / (hd0_params.cylinders * hd0_params.heads)) + 1;
-                if (hd0_params.sectors_per_track > 63) {
-                    hd0_params.sectors_per_track = 63;
+            // check if we have more than 1024 cylinders, 16 heads or 63 sectors per track and if so,
+            // recalculate the geometry to fit into the CHS limits of the BIOS (1024/16/63) and set hd0_params accordingly
+            if (hd0_params.cylinders > 1024) {
+                // recalculate geometry to fit into CHS limits of the BIOS
+                hd0_params.cylinders = 1024;
+                hd0_params.heads = (lba_sectors / (hd0_params.cylinders * hd0_params.sectors_per_track)) + 1;
+                if (hd0_params.heads > 16) {
+                    hd0_params.heads = 16;
+                    hd0_params.sectors_per_track = (lba_sectors / (hd0_params.cylinders * hd0_params.heads)) + 1;
+                    if (hd0_params.sectors_per_track > 63) {
+                        hd0_params.sectors_per_track = 63;
+                    }
                 }
             }
         }
+    #endif
 
-        
-// ========================= DEBUG =========================
-// data for debug purposes
-hd0_params.cylinders          = 507;        // total numbers of cylinders
-hd0_params.heads              = 32;         // total numbers of heads
-hd0_params.reduced_write_cyl  = 0x00;       // starting reduced-write current cylinder
-hd0_params.write_precomp_cyl  = 0x00;       // starting write precompensation cylinder
-hd0_params.max_ecc_burst      = 0x00;       // maximum ECC data burst length
-hd0_params.control_byte       = 0b11000000; // disable retries (bit 7), disable ECC (bit 6)
-hd0_params.timeout_drive      = 0x00;       // standard timeout value
-hd0_params.timeout_format     = 0x00;       // timeout value for format drive
-hd0_params.timeout_check      = 0x00;       // timeout value for check drive
-hd0_params.landing_zone       = 0x00;       // landing-zone (might be number of cylinders - 1 ???)
-hd0_params.sectors_per_track  = 63;         // total numbers of sectors per track
-hd0_params.reserved           = 0x00;       // reserved
-// ========================= DEBUG END =========================
+    // print geometry to LCD
+    char textbuffer[6];
+    uint16_to_dec(hd0_params.cylinders, textbuffer);
+    lcd_print_string("C", 0x07);
+    lcd_print_string_ram(textbuffer, 0x07);
 
+    uint8_to_dec(hd0_params.heads, textbuffer);
+    lcd_print_string("H", 0x07);
+    lcd_print_string_ram(textbuffer, 0x07);
 
-        // print geometry to LCD for debugging
-        char textbuffer[6];
-        uint16_to_dec(hd0_params.cylinders, textbuffer);
-        lcd_print_string("C", 0x07);
-        lcd_print_string_ram(textbuffer, 0x07);
-
-        uint8_to_dec(hd0_params.heads, textbuffer);
-        lcd_print_string("H", 0x07);
-        lcd_print_string_ram(textbuffer, 0x07);
-
-        uint8_to_dec(hd0_params.sectors_per_track, textbuffer);
-        lcd_print_string("S", 0x07);
-        lcd_print_string_ram(textbuffer, 0x07);
-        lcd_putc('\n', 0x07);
-    }
+    uint8_to_dec(hd0_params.sectors_per_track, textbuffer);
+    lcd_print_string("S", 0x07);
+    lcd_print_string_ram(textbuffer, 0x07);
+    lcd_putc('\n', 0x07);
 
     //lcd_print_string("OK\n", 0x07);
     uart_print_string("OK\n");

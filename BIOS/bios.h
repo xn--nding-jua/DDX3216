@@ -22,6 +22,10 @@
 #include "keyboard.h"
 
 #define BIOS_DEBUG              0
+#define BIOS_MANUAL_CHS         1
+    #define CF_CYLINDERS            1014
+    #define CF_HEADS                16
+    #define CF_SECTORS              63
 
 #define BIOS_RESERVED_KB        16 // 16kB are reserved for our BIOS (global variables and stack)
 #define BIOS_CONVENTIONAL_KB    (640 - BIOS_RESERVED_KB)
