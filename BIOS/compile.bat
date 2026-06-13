@@ -6,6 +6,7 @@ echo .
 
 echo Step 1/3: Compiling sourcecode...
 setlocal enabledelayedexpansion
+set "AS=c:\Programme2\nasm-3.01\nasm.exe"
 set "CC=C:\Programme2\i686-elf-tools-windows\bin\i686-elf-gcc.exe"
 set "LD=C:\Programme2\i686-elf-tools-windows\bin\i686-elf-ld.exe"
 set "OBJCOPY=C:\Programme2\i686-elf-tools-windows\bin\i686-elf-objcopy.exe"
@@ -16,7 +17,7 @@ if not exist bin md bin
 
 echo Compiling tiny8086 BASIC...
 cd tiny8086basic
-c:\Programme2\nasm-3.01\nasm.exe basic.asm -o ..\bin\basic.bin
+%AS% basic.asm -o ..\bin\basic.bin
 cd ..
 
 set "OBJECT_FILES="

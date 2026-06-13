@@ -91,8 +91,8 @@ void setup_bda() {
     writeFarWord(0x0000, 0x044E, 0x0000);  //  Start-Offset of VRAM for current page (in Bytes, relative to 0xB8000)
 
     // cursor position (8x Col/Row)
-    //writeFarWord(0x0000, BDA_CURSOR_POS_COL, 0x0000);     // cursor-position is already be used
-    //writeFarWord(0x0000, BDA_CURSOR_POS_COL + 2, 0x0000); // cursor-position is already be used
+    //writeFarWord(0x0000, BDA_CURSOR_POS_COL, 0x0000);     // cursor-position is already be used, so dont overwrite it
+    //writeFarWord(0x0000, BDA_CURSOR_POS_COL + 2, 0x0000); // cursor-position is already be used, so dont overwrite it
     writeFarWord(0x0000, BDA_CURSOR_POS_COL + 4, 0x0000);
     writeFarWord(0x0000, BDA_CURSOR_POS_COL + 6, 0x0000);
     writeFarWord(0x0000, BDA_CURSOR_POS_COL + 8, 0x0000);
@@ -166,11 +166,13 @@ void ram_test_and_setup() {
 
     // this will test RAM-segments 0x07C0 (bootsector) to 0x9FFF = the end of conventional memory (640 kB)
     if (test_ram_range(0x07C0, 0x87C0)) {
-        lcd_print_string_pos(1, 11, "OK    ", 0x07); // delete the last 3 chars from memory-test as well
+        lcd_print_string_pos(1, 11, "OK    \n", 0x07); // delete the last 3 chars from memory-test as well
     } else {
-        lcd_print_string_pos(1, 11, "ERROR!", 0x07);
+        lcd_print_string_pos(1, 11, "ERROR!\n", 0x07);
         while(1) { __asm__("hlt"); }
     }
+
+    // the high-memory could be tested using MMSA or MMSB and paging, but its not necessary for our DIY-project so skip it
 }
 
 void kbd_init() {
@@ -333,35 +335,6 @@ void boot_dos() {
     launch_bootsector();
 }
 
-// this is a test-function to fill 8-Bit Shift Register IC73 to control some LEDs
-void setLEDs() {
-	// LEDs are controlled through a bunch of logic ICs
-	// first the control-signals are fed into IC5A and IC6A
-	// IC5A controls signals VULTCH, LSSELR, UCSELR and SPTESR
-	// IC6A controls signals VUSELW, LSSELW, UCSELW, LSLTCH, FLSET1, FLSET0
-	//
-	// The Addressbits SA12..15 are used on the IO-bus, resulting in an address-space
-	// between 0x1000 and 0xF000. 0x3000 will enable VUSELW on writing and VULTCH on reading the IO bus
-
-	// LEDs 1 and  9 of Channel 1-4 are controlled at address 0x3000 bit 0
-	// ...
-	// LEDs 8 and 16 of Channel 1-4 are controlled at address 0x3000 bit 7
-	//
-	// four more shift-registers are connected to the 9th bit of the previous shift-register
-
-	// turn on/off all 5 stages of shift-register
-	for (uint8_t i = 0; i < (8 * 5); i++) {
-		// odd LEDs are connected to GND
-		// even LEDs are connected to VCC
-		// the value 0b00000001 will set the leds of 5 shift-registers to a pattern on/off/on/off/...
-		// the other 7 shift-register lanes will be inverted
-		outb(0x3000, 0b00001111); // output data to databus D0...D7 (will set SRCLK=0 and RCLK=1)
-		inb(0x3000); // dummy-read from IO-bus (will set SRCLK=1 and RCLK=0)
-	}
-	// final dummy-write to set SRCLK=0 and RCLK=1
-	outb(0x3000, 0b00000000);
-}
-
 // **********************************************************
 // main function
 // **********************************************************
@@ -399,8 +372,8 @@ __attribute__((noreturn)) void bios_main() {
     lcd_putc_pos(0, 28, '.', 0x07);
     lcd_putc_pos(0, 29, '0' + ((version & 0b01111000) >> 3), 0x07);
 
-    //lcd_print_string_pos(1, 0, "RAM-Test...", 0x07);
-	//ram_test_and_setup(); // this function halts the CPU on any RAM-error
+    lcd_print_string_pos(1, 0, "RAM-Test...", 0x07);
+	ram_test_and_setup(); // this function halts the CPU on any RAM-error
 
     lcd_print_string("Init PIC and IVT...\n", 0x07);
     pic_init();
@@ -419,61 +392,57 @@ __attribute__((noreturn)) void bios_main() {
 	lcd_print_string("Init timer...\n", 0x07);
 	timer_init();
 
+    delay_1ms();
     __asm__ volatile ("sti");
-    setLEDs();
+    ddx3216_setLEDs();
 
-    lcd_print_string("Init CF-Card...", 0x07); // no linefeed here
-	mms_init();
-    if (cfcard_init()) {
-        // try to load DOS from CF-Card and boot it
-        lcd_print_string("Booting from CF-Card...\n", 0x07);
-        boot_dos();
-	}else{
-        // no CF-card found, launch BASIC instead
-        lcd_print_string("No CF-Card. Booting BASIC...\n", 0x07);
-        lcd_clear();
-        launch_basic();
-    }
-
-    // we should never come here again as either the bootsector or BASIC is called
-
-    uint8_t c = 'A';
-    while(1) {
-        // show a sign of life
-        lcd_putc_pos(0, 0, c, 0x07);
-        c++;
-        if (c > 'z') c = 'A';
-
-        // DEBUG: check BIOS Keyboard-Ringbuffer
-        if (readFarWord(0x0000, BDA_KBD_HEAD) != readFarWord(0x0000, BDA_KBD_TAIL)) {
-            uint16_t keyboard_data = readFarWord(0x0000, BDA_KBD_HEAD);
-            char ascii = (keyboard_data >> 8) & 0xFF;
-            uint8_t scancode = keyboard_data & 0xFF;
-
-            // display scancode and ASCII-character on LCD
-            lcd_print_string_pos(7, 0, "Scancode: 0x", 0x07);
-            char textbuffer[3];
-            uint8_to_hex(scancode, textbuffer);
-            lcd_putc_pos(7, 15, textbuffer[0], 0x07);
-            lcd_putc_pos(7, 16, textbuffer[1], 0x07);
-
-            lcd_print_string_pos(7, 18, "ASCII: ", 0x07);
-            lcd_putc_pos(7, 25, ascii ? ascii : '.', 0x07);
-
-            // move head forward
-            uint16_t next_head = readFarWord(0x0000, BDA_KBD_HEAD) + sizeof(uint16_t);
-            if (next_head >= readFarWord(0x0000, BDA_KBD_BUF_END)) next_head = readFarWord(0x0000, BDA_KBD_BUF_START);
-            writeFarWord(0x0000, BDA_KBD_HEAD, next_head);
+    #if BIOS_SKIP_DOS_OR_BASIC == 0
+        lcd_print_string("Init CF-Card...", 0x07); // no linefeed here
+        mms_init();
+        if (cfcard_init()) {
+            // try to load DOS from CF-Card and boot it
+            lcd_print_string("Booting from CF-Card...\n", 0x07);
+            boot_dos();
+        }else{
+            // no CF-card found, launch BASIC instead
+            lcd_print_string("No CF-Card. Booting BASIC...\n", 0x07);
+            lcd_clear();
+            launch_basic();
         }
+    #else
+        uint8_t c = 'A';
+        while(1) {
+            // show a sign of life
+            lcd_putc_pos(0, 0, c, 0x07);
+            c++;
+            if (c > 'z') c = 'A';
 
-        /*
-        // DEBUG: poll UART for new characters
-        if (inb(UART_LSR) & 0x01) {
-            char uart_c = inb(UART_RBR);
-            uart_putc(uart_c); // echo back to sender
+            // DEBUG: check BIOS Keyboard-Ringbuffer
+            if (readFarWord(0x0000, BDA_KBD_HEAD) != readFarWord(0x0000, BDA_KBD_TAIL)) {
+                uint16_t keyboard_data = readFarWord(0x0000, BDA_KBD_HEAD);
+                char ascii = (keyboard_data >> 8) & 0xFF;
+                uint8_t scancode = keyboard_data & 0xFF;
+
+                // display scancode and ASCII-character on LCD
+                lcd_print_string_pos(7, 0, "Scancode: 0x", 0x07);
+                char textbuffer[3];
+                uint8_to_hex(scancode, textbuffer);
+                lcd_putc_pos(7, 15, textbuffer[0], 0x07);
+                lcd_putc_pos(7, 16, textbuffer[1], 0x07);
+
+                lcd_print_string_pos(7, 18, "ASCII: ", 0x07);
+                lcd_putc_pos(7, 25, ascii ? ascii : '.', 0x07);
+
+                // move head forward
+                uint16_t next_head = readFarWord(0x0000, BDA_KBD_HEAD) + sizeof(uint16_t);
+                if (next_head >= BDA_KBD_BUF_END) next_head = BDA_KBD_BUF_START;
+                writeFarWord(0x0000, BDA_KBD_HEAD, next_head);
+            }
+
+            delay_1ms();
         }
-        */
+    #endif
 
-        delay_1ms();
-    }
+    // prevent from returning from main
+    while(1) { __asm__("hlt"); }
 }

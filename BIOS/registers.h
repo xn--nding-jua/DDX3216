@@ -1,3 +1,6 @@
+#ifndef REGISTERS_H_
+#define REGISTERS_H_
+
 #define CFG_ADDR                0x22
 #define CFG_DATA                0x23
 #define BASE_SEG                0x0000 // the bottom of the memory-map
@@ -62,11 +65,6 @@
 #define LPT_READ_CONTROL		(LPT_BASE + 2)
 #define LPT_WRITE_DATA			(LPT_BASE + 0)
 #define LPT_WRITE_CONTROL		(LPT_BASE + 2)
-#define DDX3216_IRDA_CS			(1 << 1) // AFD#
-#define DDX3216_IRDA_EN			(1 << 0) // STB#
-#define DDX3216_IRDA_ON			(1 << 2) // INIT#
-#define DDX3216_RS232_EN		(1 << 3) // SLIN#
-#define DDX3216_SPDI			(1 << 6) // ACK#
 
 #define IIR_PENDING             0x01 // 0 = interrupt pending, 1 = no interrupt
 #define IIR_REASON              0x0E // Bits 1-3 contain the reason for the interrupt
@@ -132,3 +130,5 @@
 #define TIMER1_DATA             0x41
 #define TIMER2_DATA             0x42
 #define TIMER_CTRL              0x43
+
+#endif

@@ -56,8 +56,8 @@
 // segment-addresses
 .equ ROM_SEG,         0xF000    // Segment where the ROM is mapped and where the BIOS code is located
 .equ BASIC_SEG,       0x2000    // Segment for tiny8086basic
-.equ BIOS_SEG,        0x9C00    // Segment for global variables and stack during interrupts
-.equ BIOS_STACK_TOP,  0x4000    // STACK-Pointer is 0x9C00 + 0x4000 = 0x9C000 + 0x4000 = 0xA0000
+.equ BIOS_SEG,        0x9FC0    // Segment for global variables and stack during interrupts
+.equ BIOS_STACK_TOP,  0x0400    // STACK-Pointer is 0x9FC0 + 0x0400 = 0x9FC00 + 0x0400 = 0xA0000
 .equ BOOT_STACK_SEG,  0x0000    // only during initialization. Will be changed later to 0x9C00
 .equ BOOT_STACK_TOP,  0x7C00    // STACK-Pointer during boot is 0x0000 + 0x7C00 = 0x00000 + 0x7C00 = 0x07C00
 
@@ -137,11 +137,11 @@ sc300_init:
     mov     al, 0b00000000
     out     CFG_DATA, al
 
-    // Index 0x64 (Version): 1 0 0 x 1 1 x x -> 0x8C
+    // Index 0x64 (Version)
     // Bit7=1, Bits 6:5=00, Bit4=0(EPMODE), Bits 3:2=11
     mov     al, 0x64
     out     CFG_ADDR, al
-    mov     al, 0b10001100
+    mov     al, 0b10001100      // b7 must be 1, bit6/5 must be 0, bit 3/2 must be 1
     out     CFG_DATA, al
 
     // Index 0x6A: reserved - must be 0x00
@@ -150,26 +150,25 @@ sc300_init:
     mov     al, 0x00
     out     CFG_DATA, al
 
-    // Index 0x6B (Misc2): 0 x x 1 x x x x -> Bit4=1
+    // Index 0x6B (Misc2)
     mov     al, 0x6B
     out     CFG_ADDR, al
-    mov     al, 0b00000100     // Bit4=1
+    mov     al, 0b00010000      // according to ReferenceManual: Bit 4 must be 1, Bit 2 must be 0 for 25/33MHz
     out     CFG_DATA, al
 
-    // Index 0x74 (MMSB Control): Bits 5:4 = 00
+    // Index 0x74 (MMSB Control)
     mov     al, 0x74
     out     CFG_ADDR, al
     mov     al, 0x00
     out     CFG_DATA, al
 
-    // Index 0x80 (Power Control 1): Bit3=0
+    // Index 0x80 (Power Control 1)
     mov     al, 0x80
     out     CFG_ADDR, al
     mov     al, 0x00
     out     CFG_DATA, al
 
-    // Index 0x8F (Clock Control): Bit7=1, Bit4=0
-    // 1 x x 0 x x x x -> 0x80 | PLL-Startup-time
+    // Index 0x8F (Clock Control)
     // suggested: 256ms Restart-time (XST=110b = Bits 2:0 = 6)
     mov     al, 0x8F
     out     CFG_ADDR, al
@@ -195,7 +194,7 @@ sc300_init:
     mov     al, 0b00010000      // 33 MHz: HSPLLFQ = 10b
     out     CFG_DATA, al
 
-    // Index 0xB4 (PCMCIA Card Reset): Bit7=0 (Standard DRAM), Bit6=1 (muss!)
+    // Index 0xB4 (PCMCIA Card Reset): Bit7=0 (Standard DRAM)
     mov     al, 0xB4
     out     CFG_ADDR, al
     mov     al, 0b01000000      // Bit6 must be 1!
@@ -203,25 +202,25 @@ sc300_init:
 
     // additional mandatory settings for 33-MHz:
 
-    // Index 0x60: x 0 0 x 0 x x x -> Bit6=0, Bit5=0, Bit2=0
+    // Index 0x60
     mov     al, 0x60
     out     CFG_ADDR, al
     mov     al, 0x00
     out     CFG_DATA, al
 
-    // Index 0x62 (MMS Wait State 1): 0 x x 1 x x x x -> Bit4=1 for 33MHz
+    // Index 0x62 (MMS Wait State 1)
     mov     al, 0x62
     out     CFG_ADDR, al
     mov     al, 0b00010000      // Bit4=1 (MISOUT) for 33 MHz
     out     CFG_DATA, al
 
-    // Index 0x63 (Wait State Control): x 1 1 x x x 0 x -> Bits 6:5=11 for 33MHz
+    // Index 0x63 (Wait State Control)
     mov     al, 0x63
     out     CFG_ADDR, al
     mov     al, 0b01101100      // Bits 6:5=11 + Bits 3:2=11 (suggested)
     out     CFG_DATA, al
 
-    // Index 0x65 (ROM CFG1): xx1x xxxx -> Bit5=1 (PFWS) for 33 MHz
+    // Index 0x65 (ROM CFG1)
     mov     al, 0x65
     out     CFG_ADDR, al
     mov     al, 0b00100000      // Bit5=1 (PFWS for 33 MHz Pflicht), ENROMF=1 inverted!

@@ -120,7 +120,7 @@ __attribute__((externally_visible, regparm(1))) void c_int09_handler(struct inte
                     uint16_t next_tail = readFarWord(0x0000, BDA_KBD_TAIL) + sizeof(uint16_t);
                 
                     // wrap write-pointer around if it reaches the end of the buffer
-                    if (next_tail >= BDA_KBD_BUF_END) {
+                    if (next_tail > BDA_KBD_BUF_END) {
                         next_tail = BDA_KBD_BUF_START;
                     }
 
@@ -676,9 +676,8 @@ __attribute__((externally_visible, regparm(1))) void c_int15_handler(struct inte
             break;
 
         case 0x88: {
-            // Request Extended Memory Size (up to 64MB)
-            //regs->ax = 16 * 1024;
-            regs->ax = 0x0000; // for Debugging: no HIMEM
+            // Request Extended Memory Size
+            regs->ax = BIOS_TOTAL_MEMORY_MB * 1024;
             regs->flags &= ~ISR_FLAGS_CF; // Clear Carry Flag (Success)
             break;
         }
@@ -748,49 +747,37 @@ __attribute__((externally_visible, regparm(1))) void c_int16_handler(struct inte
         lcd_print_uint16(regs->ax, true);
     #endif
 
-/*
-
     uint8_t ah = regs->ax >> 8;
 
     switch (ah) {
         case 0x00: // Read key, blocking
-            while (readFarWord(0x0000, BDA_KBD_HEAD) == readFarWord(0x0000, BDA_KBD_TAIL)) {
-                __asm__ volatile ("sti\n hlt\n cli"); // halt CPU until next keyboard-interrupt
-            }
-            
-            uint16_t head = readFarWord(0x0000, BDA_KBD_HEAD);
-            regs->ax = readFarWord(0x0000, head);
-            
-            // increment head
-            uint16_t next_head = head + 2;
-            if (next_head >= BDA_KBD_BUF_END) next_head = BDA_KBD_BUF_START;
-            writeFarWord(0x0000, BDA_KBD_HEAD, next_head);
-
-            regs->flags &= ~ISR_FLAGS_ZF;
-
+            regs->flags |= ISR_FLAGS_ZF; // no key in buffer
             break;
 
         case 0x01: // Check key
             if (readFarWord(0x0000, BDA_KBD_HEAD) != readFarWord(0x0000, BDA_KBD_TAIL)) {
-                // Key in buffer -> delete ZF
-                __asm__ volatile ("andw $0xFFBF, 6(%%bp)" ::: "memory");
-                regs->ax = readFarWord(0x0000, readFarWord(0x0000, BDA_KBD_HEAD));
+                // a new key is in buffer
+                uint16_t current_head = readFarWord(0x0000, BDA_KBD_HEAD);
+                regs->ax = readFarWord(0x0000, current_head);
+
+                // move head forward
+                uint16_t next_head = current_head + sizeof(uint16_t);
+                if (next_head > BDA_KBD_BUF_END) {
+                    next_head = BDA_KBD_BUF_START;
+                }
+                writeFarWord(0x0000, BDA_KBD_HEAD, next_head);
+
+                regs->flags &= ~ISR_FLAGS_ZF;
             } else {
                 // buffer empty -> set ZF
-                __asm__ volatile ("orw  $0x0040, 6(%%bp)" ::: "memory");
+                regs->flags |= ISR_FLAGS_ZF;
             }
-            regs->flags &= ~ISR_FLAGS_ZF;
-
             break;
 
         default:
             regs->flags |= ISR_FLAGS_ZF;
             break;
     }
-
-*/
-
-    regs->flags |= ISR_FLAGS_ZF; // no key in buffer
 }
 
 // parallel printer
@@ -812,6 +799,8 @@ __attribute__((externally_visible, regparm(1))) void c_int19_handler(struct inte
         uart_print_string("I19\n");
         lcd_print_string("I19", 0x07);
     #endif
+
+    lcd_print_string("Rebooting...", 0x07);
 
 	// reset DS to 0
 	__asm__ volatile("xorw %%ax, %%ax\n movw %%ax, %%ds" ::: "ax");
