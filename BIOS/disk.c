@@ -362,23 +362,28 @@ bool cfcard_init() {
         }
     #endif
 
-    // print geometry to LCD
+    // print geometry to LCD and UART
     char textbuffer[6];
     uint16_to_dec(hd0_params.cylinders, textbuffer);
     lcd_print_string("C", 0x07);
     lcd_print_string_ram(textbuffer, 0x07);
+    uart_putc('C');
+    uart_print_string(textbuffer);
 
     uint8_to_dec(hd0_params.heads, textbuffer);
     lcd_print_string("H", 0x07);
     lcd_print_string_ram(textbuffer, 0x07);
+    uart_putc('H');
+    uart_print_string(textbuffer);
 
     uint8_to_dec(hd0_params.sectors_per_track, textbuffer);
     lcd_print_string("S", 0x07);
     lcd_print_string_ram(textbuffer, 0x07);
     lcd_putc('\n', 0x07);
+    uart_putc('S');
+    uart_print_string(textbuffer);
+    uart_putc('\n');
 
-    //lcd_print_string("OK\n", 0x07);
-    uart_print_string("OK\n");
     return true;
 }
 

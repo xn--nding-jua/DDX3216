@@ -231,7 +231,7 @@ __attribute__((externally_visible, regparm(1))) void c_int10_handler(struct inte
             // return cursor position in DX (DH = Row, DL = Column)
             regs->dx = (readFarByte(BASE_SEG, BDA_CURSOR_POS_ROW) << 8) | readFarByte(BASE_SEG, BDA_CURSOR_POS_COL);
             break;
-/*
+
         case 0x0C: // write graphics pixel
             // AL = Color, BH = Page Number, CX = x, DX = y
             lcd_draw_pixel(regs->cx, regs->dx, al);
@@ -242,7 +242,7 @@ __attribute__((externally_visible, regparm(1))) void c_int10_handler(struct inte
             // return AL = Color
             regs->ax = (regs->ax & 0xFF00) | lcd_read_pixel(regs->cx, regs->dx);
             break;
-*/
+
         case 0x0E: // write character
             #if BIOS_DEBUG == 1
                 uart_putc(al);
@@ -252,7 +252,7 @@ __attribute__((externally_visible, regparm(1))) void c_int10_handler(struct inte
             lcd_putc(al, 0x07); // light gray on black
 
             break;
-/*
+
         case 0x0F: // get Current Video Mode
             // AL = Video Mode, AH = number of character columns, BH = active page
 
@@ -261,7 +261,7 @@ __attribute__((externally_visible, regparm(1))) void c_int10_handler(struct inte
             regs->ax = ((uint16_t)40 << 8) | 0x00; // 40x25 char in grayscale-text mode
             regs->bx = 0x0000; // BH = 0
             break;
-*/
+
         default:
             // simply ignore other video-functions like set cursor, etc.
             break;

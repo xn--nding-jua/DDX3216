@@ -405,7 +405,6 @@ __attribute__((noreturn)) void bios_main() {
             boot_dos();
         }else{
             // no CF-card found, launch BASIC instead
-            lcd_print_string("No CF-Card. Booting BASIC...\n", 0x07);
             lcd_clear();
             launch_basic();
         }

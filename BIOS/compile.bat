@@ -10,7 +10,7 @@ set "AS=c:\Programme2\nasm-3.01\nasm.exe"
 set "CC=C:\Programme2\i686-elf-tools-windows\bin\i686-elf-gcc.exe"
 set "LD=C:\Programme2\i686-elf-tools-windows\bin\i686-elf-ld.exe"
 set "OBJCOPY=C:\Programme2\i686-elf-tools-windows\bin\i686-elf-objcopy.exe"
-set "CFLAGS=-march=i386 -m16 -O0 -ffreestanding -fno-toplevel-reorder -fno-stack-protector -mpreferred-stack-boundary=2 -mno-80387 -nostdlib -fno-pic"
+set "CFLAGS=-march=i386 -m16 -O0 -ffreestanding -fno-toplevel-reorder -fno-stack-protector -fno-omit-frame-pointer -fno-jump-tables -mpreferred-stack-boundary=2 -mno-80387 -nostdlib -fno-pic -fno-pie"
 
 if not exist obj md obj
 if not exist bin md bin

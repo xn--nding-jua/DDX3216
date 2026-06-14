@@ -28,6 +28,7 @@ void lcd_install_font() {
 		}
 	}
 	*/
+	// the following code is much more efficient than the manual-copy-code above
 	copyFarBlockBetweenSegments(ROM_SEG, (uint16_t)(uintptr_t)&bios_font_8x8[0][0], VRAM_SEG, 0x7800, 256 * 8);
 }
 
@@ -67,7 +68,7 @@ void lcd_init(bool textmode) {
 
 		write_sc300_lcd_cfg(LCD_VID_IDX_INTERLACED_MODE,   0); // not used in LCD mode
 		write_sc300_lcd_cfg(LCD_VID_IDX_MAX_SCANLINE,      8-1); // number of pixels per character -1
-		write_sc300_lcd_cfg(LCD_VID_IDX_CURSOR_START,      0b01000000 + 6-1); // enable 16*refreshrate / last two pixel-rows of a font as cursor
+		write_sc300_lcd_cfg(LCD_VID_IDX_CURSOR_START,      0b01100000 + 6-1); // enable blinking / Blink with 1/32 FieldRate / last two pixel-rows of a font as cursor
 		write_sc300_lcd_cfg(LCD_VID_IDX_CURSOR_END,        7-1); // last two pixel-rows of a font as cursor
 		write_sc300_lcd_cfg(LCD_VID_IDX_START_ADDR_UPPER,  0); // video-memory starts directly after boot-sector at 0xB8000
 		write_sc300_lcd_cfg(LCD_VID_IDX_START_ADDR_LOWER,  0); // video-memory starts directly after boot-sector at 0xB8000
