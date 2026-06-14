@@ -362,7 +362,9 @@ __attribute__((noreturn)) void bios_main() {
     delay_1ms();
 	a20_enable();
 
+    textmode = true;
     lcd_init();
+    lcd_install_font(); // has to be called once
     lcd_clear();
     lcd_print_string_pos(0, 0, "AMD Elan SC300 BIOS v0.01", 0x07);
 
@@ -372,8 +374,8 @@ __attribute__((noreturn)) void bios_main() {
     lcd_putc_pos(0, 28, '.', 0x07);
     lcd_putc_pos(0, 29, '0' + ((version & 0b01111000) >> 3), 0x07);
 
-    lcd_print_string_pos(1, 0, "RAM-Test...", 0x07);
-	ram_test_and_setup(); // this function halts the CPU on any RAM-error
+    //lcd_print_string_pos(1, 0, "RAM-Test...", 0x07);
+    //ram_test_and_setup(); // this function halts the CPU on any RAM-error
 
     lcd_print_string("Init PIC and IVT...\n", 0x07);
     pic_init();
@@ -392,7 +394,6 @@ __attribute__((noreturn)) void bios_main() {
 	lcd_print_string("Init timer...\n", 0x07);
 	timer_init();
 
-    delay_1ms();
     __asm__ volatile ("sti");
     ddx3216_setLEDs();
 
@@ -435,7 +436,7 @@ __attribute__((noreturn)) void bios_main() {
 
                 // move head forward
                 uint16_t next_head = readFarWord(0x0000, BDA_KBD_HEAD) + sizeof(uint16_t);
-                if (next_head >= BDA_KBD_BUF_END) next_head = BDA_KBD_BUF_START;
+                if (next_head > BDA_KBD_BUF_END) next_head = BDA_KBD_BUF_START;
                 writeFarWord(0x0000, BDA_KBD_HEAD, next_head);
             }
 

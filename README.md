@@ -48,3 +48,10 @@ For the tiny8086 BASIC-interpreter I'm using NASM:
 Documentation:
 * https://www.nasm.us/docs/3.01/nasm09.html#section-9.1
 * https://www.nasm.us/doc/nasm08.html
+
+## Comparable projects
+If you are planning programming a BIOS by yourself, please consider other and better projects for this. Here are a couple of nice DIY-implementations, that could be helpful:
+
+* https://github.com/maniekx86/M8SBC-486
+* https://github.com/640-KB/GLaBIOS
+* https://github.com/raszpl/Zenith_ZBIOS/

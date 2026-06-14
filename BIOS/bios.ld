@@ -29,7 +29,7 @@ MEMORY {
 	/* Destination: EPROM-IC 27C512 with 64kB */
     ROM (rx)  : ORIGIN = 0x0000, LENGTH = 64K
 
-    /* RAM Area in DS-Segment (0x9FC0) starting at offset 0x0100 with ~0.5kB in size */
+    /* RAM Area in DS-Segment (0x9F80) starting at offset 0x0100 with ~1kB in size */
     BIOSRAM (wa)  : ORIGIN = 0x0100, LENGTH = 0x0300 /* leave 0x0100 bytes for some global variables */
 }
 

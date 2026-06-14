@@ -199,14 +199,22 @@ __attribute__((externally_visible, regparm(1))) void c_int10_handler(struct inte
     uint8_t al = (uint8_t)(regs->ax & 0xFF);
 
     switch (ah) {
-        case 0x0E: // write character
-            #if BIOS_DEBUG == 1
-                uart_putc(al);
-            #endif
+        case 0x00: // set video mode
+            // for videomodes see here: https://mendelson.org/wpdos/videomodes.txt
+            switch (al) {
+                case 0x03: // standard DOS color-textmode
+                    textmode = true;
+                    break;
+                case 0x06: // 640x200 monochrome pixel graphics mode
+                    textmode = false;
+                    break;
+                default:
+                    // unsupported mode
+                    break;
+            }
 
-            // write char to display and handle control-characters like newline, carriage return, backspace, etc. internally
-            lcd_putc(al, 0x07); // light gray on black
-
+            lcd_init();
+            lcd_clear();
             break;
 
         case 0x02: // set cursor position
@@ -223,14 +231,37 @@ __attribute__((externally_visible, regparm(1))) void c_int10_handler(struct inte
             // return cursor position in DX (DH = Row, DL = Column)
             regs->dx = (readFarByte(BASE_SEG, BDA_CURSOR_POS_ROW) << 8) | readFarByte(BASE_SEG, BDA_CURSOR_POS_COL);
             break;
+/*
+        case 0x0C: // write graphics pixel
+            // AL = Color, BH = Page Number, CX = x, DX = y
+            lcd_draw_pixel(regs->cx, regs->dx, al);
+            break;
 
+        case 0x0D: // read graphics pixel
+            // BH = Page Number, CX = x, DX = y
+            // return AL = Color
+            regs->ax = (regs->ax & 0xFF00) | lcd_read_pixel(regs->cx, regs->dx);
+            break;
+*/
+        case 0x0E: // write character
+            #if BIOS_DEBUG == 1
+                uart_putc(al);
+            #endif
+
+            // write char to display and handle control-characters like newline, carriage return, backspace, etc. internally
+            lcd_putc(al, 0x07); // light gray on black
+
+            break;
+/*
         case 0x0F: // get Current Video Mode
+            // AL = Video Mode, AH = number of character columns, BH = active page
+
             // AH = Columns (40), AL = Video Mode (00h), BH = Page (0)
             // number of rows is set in BDA and not returned via INT10h, because DOS will ignore the returned value anyway and would always assume 25 rows
             regs->ax = ((uint16_t)40 << 8) | 0x00; // 40x25 char in grayscale-text mode
             regs->bx = 0x0000; // BH = 0
             break;
-
+*/
         default:
             // simply ignore other video-functions like set cursor, etc.
             break;
@@ -289,6 +320,8 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
         uart_putc('\n');
 
         lcd_putc('.', 0x07);
+    #else
+        ddx3216_setLEDs(); // toggle all LEDs on IDE access
     #endif
 
     // get registers

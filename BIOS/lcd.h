@@ -10,6 +10,8 @@
 #include "bios.h"
 #include "fonts.h"
 
+bool textmode;
+
 void lcd_init();
 void lcd_clear();
 void lcd_clear_test();
@@ -23,5 +25,7 @@ void lcd_print_string_ram(const char *str, uint8_t attribute);
 void lcd_print_string_ram_pos(int row, int col, const char *str, uint8_t attribute);
 void lcd_install_font();
 void lcd_draw_double_box(uint8_t x, uint8_t y, uint8_t w, uint8_t h);
+void lcd_draw_pixel(uint16_t x, uint16_t y, uint8_t color);
+uint8_t lcd_read_pixel(uint16_t x, uint16_t y);
 
 #endif

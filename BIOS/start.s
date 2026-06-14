@@ -56,9 +56,9 @@
 // segment-addresses
 .equ ROM_SEG,         0xF000    // Segment where the ROM is mapped and where the BIOS code is located
 .equ BASIC_SEG,       0x2000    // Segment for tiny8086basic
-.equ BIOS_SEG,        0x9FC0    // Segment for global variables and stack during interrupts
-.equ BIOS_STACK_TOP,  0x0400    // STACK-Pointer is 0x9FC0 + 0x0400 = 0x9FC00 + 0x0400 = 0xA0000
-.equ BOOT_STACK_SEG,  0x0000    // only during initialization. Will be changed later to 0x9C00
+.equ BIOS_SEG,        0x9F80    // Segment for global variables and stack during interrupts
+.equ BIOS_STACK_TOP,  0x0800    // STACK-Pointer is 0x9F80 + 0x0800 = 0x9F800 + 0x0800 = 0xA0000
+.equ BOOT_STACK_SEG,  0x0000    // only during initialization. Will be changed later to 0x9F80
 .equ BOOT_STACK_TOP,  0x7C00    // STACK-Pointer during boot is 0x0000 + 0x7C00 = 0x00000 + 0x7C00 = 0x07C00
 
 .equ CFG_ADDR,        0x22
@@ -134,14 +134,27 @@ sc300_init:
     // Index 0x62 (MMS Wait State to 5 (default)):
     mov     al, 0x62
     out     CFG_ADDR, al
-    mov     al, 0b00000000
+    mov     al, 0b00010000      // select 5 waitstates
+    out     CFG_DATA, al
+
+    // Index 0x63 (Wait State Control)
+    mov     al, 0x63
+    out     CFG_ADDR, al
+    mov     al, 0b01100100      // set internal IO WS to 4 WS, set 16-bit IO WS to 3WS
     out     CFG_DATA, al
 
     // Index 0x64 (Version)
     // Bit7=1, Bits 6:5=00, Bit4=0(EPMODE), Bits 3:2=11
     mov     al, 0x64
     out     CFG_ADDR, al
-    mov     al, 0b10001100      // b7 must be 1, bit6/5 must be 0, bit 3/2 must be 1
+    mov     al, 0b10011100      // b7 must be 1, bit6/5 must be 0, bit 3/2 must be 1
+    out     CFG_DATA, al
+
+    // Index 0x65 (ROM CFG1)
+    mov     al, 0x65
+    out     CFG_ADDR, al
+    mov     al, 0b00100000      // Bit5=1 (PFWS for 33 MHz Pflicht), ENROMF=1 inverted!
+    // Attention: Bit0 (ENROMF) reads back inverted, we write a "0" to enable it
     out     CFG_DATA, al
 
     // Index 0x6A: reserved - must be 0x00
@@ -172,7 +185,7 @@ sc300_init:
     // suggested: 256ms Restart-time (XST=110b = Bits 2:0 = 6)
     mov     al, 0x8F
     out     CFG_ADDR, al
-    mov     al, 0b10000110       // Bit7=1, XST=110b (256ms PLL-Restart)
+    mov     al, 0b10000100       // Bit7=1, XST=110b (256ms PLL-Restart)
     out     CFG_DATA, al
 
     // Index 0x93: reserved - must be 0x00
@@ -200,7 +213,24 @@ sc300_init:
     mov     al, 0b01000000      // Bit6 must be 1!
     out     CFG_DATA, al
 
+    mov     cx, 0x7530
+1:  // wait for hardware to get up
+    nop
+    loop    1b
+
     // additional mandatory settings for 33-MHz:
+
+    // Index 0x50 (MMS Waitstate)
+    mov     al, 0x50
+    out     CFG_ADDR, al
+    mov     al, 0b01100110      // ROMDOS Command Delay, PCMCIA Waitstate enable to 4 WS, ROMDOS Waitstate enabled to 2 WS
+    out     CFG_DATA, al
+
+    // Index 0x51 (ROM Configuration 2)
+    mov     al, 0x51
+    out     CFG_ADDR, al
+    mov     al, 0b00000010      // enable 16-bit access for ROMDOS
+    out     CFG_DATA, al
 
     // Index 0x60
     mov     al, 0x60
@@ -208,23 +238,16 @@ sc300_init:
     mov     al, 0x00
     out     CFG_DATA, al
 
+    // Index 0x61 (IO Waitstates)
+    mov     al, 0x61
+    out     CFG_ADDR, al
+    mov     al, 0b00110000      // IO Waitstates to 2 WS
+    out     CFG_DATA, al
+
     // Index 0x62 (MMS Wait State 1)
     mov     al, 0x62
     out     CFG_ADDR, al
     mov     al, 0b00010000      // Bit4=1 (MISOUT) for 33 MHz
-    out     CFG_DATA, al
-
-    // Index 0x63 (Wait State Control)
-    mov     al, 0x63
-    out     CFG_ADDR, al
-    mov     al, 0b01101100      // Bits 6:5=11 + Bits 3:2=11 (suggested)
-    out     CFG_DATA, al
-
-    // Index 0x65 (ROM CFG1)
-    mov     al, 0x65
-    out     CFG_ADDR, al
-    mov     al, 0b00100000      // Bit5=1 (PFWS for 33 MHz Pflicht), ENROMF=1 inverted!
-    // Attention: Bit0 (ENROMF) reads back inverted, we write a "0" to enable it
     out     CFG_DATA, al
 
 
@@ -254,6 +277,12 @@ dram_init:
     mov     al, 0x9C		// from original DDX3216-EPROM
     out     0x23, al
 
+	// set memory-type
+    mov     al, 0x70        // Misc 6 register
+    out     0x22, al
+    mov     al, 0x00		// select DRAM and set PGP0 to input
+    out     0x23, al
+
     // enable refresh
     mov     al, 0xA7        // Index: PMU Control 1
     out     0x22, al
@@ -268,6 +297,32 @@ dram_init_delay:
     dec     cx
     jnz     .dram_wait_loop // loop until counter is zero
 
+
+    // more registers
+
+    // set drive strength
+    mov     al, 0xB9        // Memory Configuration 2 Register
+    out     0x22, al
+    mov     al, 0b00010001  // Strength C for MemDat and RAS#, Strength E for MA, SA and MWE#
+    out     0x23, al
+
+    // set drive strength
+    mov     al, 0xB3        // Misc 5 Register
+    out     0x22, al
+    mov     al, 0x00        // Everything to default values
+    out     0x23, al
+
+    // Index 0x61 (IO Waitstates)
+    mov     al, 0x61
+    out     CFG_ADDR, al
+    mov     al, 0b01110000      // Enable CPU HighSpeed, IO Waitstates to 2 WS
+    out     CFG_DATA, al
+
+    // Index 0x62 (MMS Wait State):
+    mov     al, 0x62
+    out     CFG_ADDR, al
+    mov     al, 0b00011111      // select 5 waitstates, 2 WS for 8-bit ISA, 1 WS for 16-bit ISA
+    out     CFG_DATA, al
 
 
 clear_bss:

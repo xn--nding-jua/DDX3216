@@ -29,22 +29,18 @@
     #define CF_HEADS                16
     #define CF_SECTORS              63
 
-#define BIOS_RESERVED_KB        1 // 1 kB is reserved for our BIOS (global variables and stack)
+#define BIOS_RESERVED_KB        2 // 2 kB is reserved for our BIOS (global variables and stack)
 #define BIOS_CONVENTIONAL_KB    (640 - BIOS_RESERVED_KB)
 #define BIOS_TOTAL_MEMORY_MB    16
 
-#define BIOS_SEG                0x9C00
-#define BIOS_STACK_TOP          0x4000
-
-#define BIOS_DATA_START_OFF     0x0100 // start in RAM for global variables
-#define BIOS_DATA_END_OFF       0x2000 // end of RAM
-#define BIOS_STACK_LOW_OFF      0x2000 // end of Stack
-#define BIOS_STACK_HIGH_OFF     0x4000 // begin of Stack
+#define BIOS_SEG                0x9F80
 
 #define LCD_BPP                 1      // bits per pixel (1 for text mode, 4 for graphics mode)
 #define LCD_WIDTH               240    // real LCD resolution of the DDX3216
 #define LCD_HEIGHT              64     // real vertical resolution of the LCD panel
-#define VRAM_SIZE               ((LCD_WIDTH * LCD_BPP / 8) * (LCD_HEIGHT / 8) * 2)
+#define VRAM_SIZE_TEXT          ((LCD_WIDTH * LCD_BPP / 8) * (LCD_HEIGHT / 8) * 2)
+#define VRAM_SIZE_GRAPHICS_PER_BANK 0x2000 // for 240x64 we are using 1920 which fits in a single page, but we are using 640x200 for compatibility
+#define VRAM_BYTES_PER_ROW      (640 / 8)
 
 
 // ISRs from Assembler-Part
