@@ -26,6 +26,9 @@ void lcd_print_string_ram_pos(int row, int col, const char *str, uint8_t attribu
 void lcd_install_font();
 void lcd_draw_double_box(uint8_t x, uint8_t y, uint8_t w, uint8_t h);
 void lcd_draw_pixel(uint16_t x, uint16_t y, uint8_t color);
+void lcd_draw_line(uint16_t startx, uint16_t starty, uint16_t endx, uint16_t endy, uint8_t color);
+void lcd_draw_rect(uint16_t startx, uint16_t starty, uint16_t endx, uint16_t endy, uint8_t lineColor, uint8_t fillColor);
+void lcd_graphic_putc(uint16_t x, uint16_t y, char c, uint8_t color, bool inverted);
 uint8_t lcd_read_pixel(uint16_t x, uint16_t y);
 
 #endif

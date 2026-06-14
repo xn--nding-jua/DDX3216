@@ -74,6 +74,12 @@
 #define IIR_RLS                 0x06 // Receiver Line Status (Fehler/Break)
 #define IIR_TIMEOUT             0x0C // Character Timeout (Daten im FIFO, aber keine neuen kommen)
 
+#define LCD_HGA_IDX_ADDR        0x03B4
+#define LCD_HGA_IDX_DATA        0x03B5
+#define LCD_HGA_MODE_CTRL       0x03B8
+#define LCD_HGA_STATUS          0x03BA
+#define LCD_HGA_CONFIG          0x03BF
+
 #define LCD_CGA_IDX_ADDR        0x03D4
 #define LCD_CGA_IDX_DATA        0x03D5
 #define LCD_CGA_MODE_CTRL       0x03D8
@@ -96,7 +102,8 @@
 #define LCD_VID_IDX_START_ADDR_LOWER     0x0D
 #define LCD_VID_IDX_CURSOR_ADDR_UPPER    0x0E
 #define LCD_VID_IDX_CURSOR_ADDR_LOWER    0x0F
-
+#define LCD_VID_IDX_LIGHTPEN_REG1        0x10
+#define LCD_VID_IDX_LIGHTPEN_REG2        0x11
 #define LCD_ENH_IDX_SOFTW_SWITCH_EN      0x12
 #define LCD_ENH_IDX_SOFTW_SWITCH_DIS     0x13
 #define LCD_ENH_IDX_SCREEN_CTRL_RESTORE  0x18

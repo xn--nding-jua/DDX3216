@@ -54,6 +54,11 @@ static inline void write_sc300_cfgw(uint16_t reg, uint16_t data) {
 	outb(CFG_DATA, (uint8_t)((data >> 8) & 0xFF));
 }
 
+static inline void write_sc300_hga_cfg(uint16_t reg, uint8_t data) {
+	outb(LCD_HGA_IDX_ADDR, reg);
+	outb(LCD_HGA_IDX_DATA, data);
+}
+
 static inline void write_sc300_lcd_cfg(uint16_t reg, uint8_t data) {
 	outb(LCD_CGA_IDX_ADDR, reg);
 	outb(LCD_CGA_IDX_DATA, data);

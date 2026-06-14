@@ -31,9 +31,11 @@ void lcd_init() {
 	// bit 2   : reserved
 	// bit 1   : auto-blanking
 	// bit 0   : display-mode
-	write_sc300_lcd_cfg(LCD_ENH_IDX_SCREEN_CTRL_RESTORE,  0b01010000); // 4-bit single-screen small LCD / font-area 1 / CGA-mode
 
 	if (textmode) {
+		// CGA Textmode
+		write_sc300_lcd_cfg(LCD_ENH_IDX_SCREEN_CTRL_RESTORE,  0b01010000); // 4-bit single-screen small LCD / font-area 1 / CGA-mode
+
 		// setup LCD standard registers
 		// ===========================================
 		write_sc300_lcd_cfg(LCD_VID_IDX_HOR_TOTAL,         (LCD_WIDTH * LCD_BPP) / 8);   // chars per row (virtual CGA resolution)
@@ -60,7 +62,14 @@ void lcd_init() {
 
 		outb(LCD_CGA_MODE_CTRL, 0b00111101); // blinking enabled / 1-bpp graphics / video enabled / colorburst enabled / textmode / normal-width char (8 pixels)
 		outb(LCD_CGA_CLR_SEL, 0x00); // default
+
+		// disable enhanced registers
+		outb(LCD_CGA_IDX_ADDR, LCD_ENH_IDX_SOFTW_SWITCH_DIS);
+		inb(LCD_CGA_IDX_DATA); // read without I/O-cycle in between
 	}else{
+		// HGA Graphics Mode
+		write_sc300_lcd_cfg(LCD_ENH_IDX_SCREEN_CTRL_RESTORE,  0b01010000); // 4-bit single-screen small LCD / font-area 1 / CGA-mode
+
 		// setup LCD standard registers
 		// ===========================================
 		write_sc300_lcd_cfg(LCD_VID_IDX_HOR_TOTAL,         (640 * LCD_BPP) / 16);   // pixels per row divided by 16 (see page 3-26 in PRM)
@@ -68,10 +77,10 @@ void lcd_init() {
 		write_sc300_lcd_cfg(LCD_VID_IDX_HOR_SYNC_POS,      0x00); // according to page 3-26 of reference manual
 		write_sc300_lcd_cfg(LCD_VID_IDX_HOR_SYNC_WIDTH,    0x00); // according to page 3-26 of reference manual
 
-		write_sc300_lcd_cfg(LCD_VID_IDX_VER_TOTAL,         200 / 2);    // number of pixels per row divided by number of pages (see page 3-27 in PRM)
+		write_sc300_lcd_cfg(LCD_VID_IDX_VER_TOTAL,         64 / 2);    // number of pixels per row divided by number of pages (see page 3-27 in PRM)
 		write_sc300_lcd_cfg(LCD_VID_IDX_VER_TOTAL_ADJ,     0x00); // according to page 3-27 of reference manual
-		write_sc300_lcd_cfg(LCD_VID_IDX_VER_DISP,          200 / 2);    // same value as 0x04
-		write_sc300_lcd_cfg(LCD_VID_IDX_VER_SYNC_POS,      200 / 2);    // same value as 0x04
+		write_sc300_lcd_cfg(LCD_VID_IDX_VER_DISP,          64 / 2);    // same value as 0x04
+		write_sc300_lcd_cfg(LCD_VID_IDX_VER_SYNC_POS,      64 / 2);    // same value as 0x04
 
 		write_sc300_lcd_cfg(LCD_VID_IDX_INTERLACED_MODE,   0);
 		write_sc300_lcd_cfg(LCD_VID_IDX_MAX_SCANLINE,      2-1); // number of banks used for graphics-mode (here 2 pages of 8kB are used)
@@ -87,11 +96,11 @@ void lcd_init() {
 
 		outb(LCD_CGA_MODE_CTRL, 0b00011010);
 		outb(LCD_CGA_CLR_SEL, 0x0F); // default
-	}
 
-	// disable enhanced registers
-	outb(LCD_CGA_IDX_ADDR, LCD_ENH_IDX_SOFTW_SWITCH_DIS);
-	inb(LCD_CGA_IDX_DATA); // read without I/O-cycle in between
+		// disable enhanced registers
+		outb(LCD_CGA_IDX_ADDR, LCD_ENH_IDX_SOFTW_SWITCH_DIS);
+		inb(LCD_CGA_IDX_DATA); // read without I/O-cycle in between
+	}
 }
 
 void lcd_clear() {
@@ -101,19 +110,10 @@ void lcd_clear() {
 			writeFarByte(VRAM_SEG, i, 0x00);
 		}
 	}else{
-		/*
+		// in graphicsmode we are using 2 banks
 		for (int i = 0; i < VRAM_SIZE_GRAPHICS_PER_BANK; i++) {
-			writeFarByte(VRAM_SEG, i, 0x00); // page 0 for even-numbered pixel-rows
-			writeFarByte(VRAM_SEG, 0x0200 + i, 0x00); // page 1 for odd-numbered pixel-rows
-		}
-		*/
-		uint8_t value = 0;
-		for (uint16_t y = 0; y < 200/2; y++) {
-			for (uint16_t x = 0; x < (640/8); x++) {
-				writeFarByte(VRAM_SEG, (y * (uint16_t)0x50) + x, value); 		   					// page 0 for even-numbered pixel-rows
-				writeFarByte(VRAM_SEG, (uint16_t)0x2000 + (y * (uint16_t)0x50) + x, 255 - value);	// page 1 for odd-numbered pixel-rows
-				value++;
-			}
+			writeFarByte(VRAM_SEG,          i, 0x00); // page 0 for even-numbered pixel-rows
+			writeFarByte(VRAM_SEG, 0x2000 + i, 0x00); // page 1 for odd-numbered pixel-rows
 		}
 	}
 }
@@ -334,8 +334,72 @@ void lcd_draw_pixel(uint16_t x, uint16_t y, uint8_t color) {
 	writeFarByte(VRAM_SEG, offset, value);
 }
 
+void lcd_draw_line(uint16_t startx, uint16_t starty, uint16_t endx, uint16_t endy, uint8_t color) {
+	int16_t dx = (int16_t)endx - (int16_t)startx;
+    int16_t dy = (int16_t)endy - (int16_t)starty;
+	if (dx < 0) dx = -dx;
+	if (dy < 0) dy = -dy;
+    int16_t sx = (startx < endx) ? 1 : -1;
+    int16_t sy = (starty < endy) ? 1 : -1;
+    int16_t err = dx - dy;
+
+    while (1) {
+        // Pixel zeichnen (deine Funktion fängt X>=240 oder Y>=64 automatisch ab)
+        lcd_draw_pixel(startx, starty, color);
+
+        if (startx == endx && starty == endy) {
+            break;
+        }
+
+        int16_t e2 = 2 * err;
+        if (e2 > -dy) {
+            err -= dy;
+            startx += sx;
+        }
+        if (e2 < dx) {
+            err += dx;
+            starty += sy;
+        }
+    }
+}
+
+void lcd_draw_rect(uint16_t startx, uint16_t starty, uint16_t endx, uint16_t endy, uint8_t lineColor, uint8_t fillColor) {
+    // fill the inner part of the rectangle
+    if (fillColor != 0) {
+        for (uint16_t y = starty + 1; y < endy; y++) {
+            for (uint16_t x = startx + 1; x < endx; x++) {
+                lcd_draw_pixel(x, y, fillColor);
+            }
+        }
+    }
+
+    // draw the outer frame
+    // horizontal
+    lcd_draw_line(startx, starty, endx, starty, lineColor);
+    lcd_draw_line(startx, endy, endx, endy, lineColor);
+    // vertical
+    lcd_draw_line(startx, starty, startx, endy, lineColor);
+    lcd_draw_line(endx, starty, endx, endy, lineColor);
+}
+
+void lcd_graphic_putc(uint16_t x, uint16_t y, char c, uint8_t color, bool inverted) {
+    for (uint8_t row = 0; row < 8; row++) {
+        uint16_t font_rom_offset = (uint16_t)(uintptr_t)&bios_font_8x8[(uint8_t)c][row];
+        uint8_t row_data = readRomByte(font_rom_offset);
+
+        for (uint8_t bit = 0; bit < 8; bit++) {
+            uint8_t pixel_color = (row_data & (1 << (7 - bit))) ? 1 : 0;
+            
+            if (pixel_color && (!inverted)) {
+                lcd_draw_pixel(x + bit, y + row, color);
+            } else {
+                lcd_draw_pixel(x + bit, y + row, 255 - color);
+            }
+        }
+    }
+}
+
 uint8_t lcd_read_pixel(uint16_t x, uint16_t y) {
-	/*
 	if ((x >= 240) || (y >= 64)) {
         return 0;
     }
@@ -355,5 +419,4 @@ uint8_t lcd_read_pixel(uint16_t x, uint16_t y) {
 	uint8_t pixel_state = (value >> bitoffset) & 1;
 
 	return pixel_state;
-	*/
 }

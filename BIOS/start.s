@@ -371,7 +371,7 @@ launch_bootsector:
     xor ax, ax                  // set ax to 0x0000
     mov ds, ax
     mov es, ax
-    mov ss, ax                  // optional: set Stack-Segment to 0x0000
+    mov ss, ax                 // optional: set Stack-Segment to 0x0000
     mov sp, BOOT_STACK_TOP     // stack-pointer for initial DOS right below bootsector at 0x0000:0x7C00
 
     // write the boot-drive to DL
