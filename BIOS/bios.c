@@ -362,9 +362,8 @@ __attribute__((noreturn)) void bios_main() {
     delay_1ms();
 	a20_enable();
 
-    textmode = true;
-    lcd_init();
-    lcd_install_font(); // has to be called once
+    lcd_install_font(); // has to be called only once to copy fonts from ROM to SRAM
+    lcd_init(true); // init lcd in textmode
     lcd_clear();
     lcd_print_string_pos(0, 0, "AMD Elan SC300 BIOS v0.01", 0x07);
 

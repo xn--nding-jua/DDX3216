@@ -42,6 +42,7 @@
 #define VRAM_SIZE_GRAPHICS_PER_BANK 0x2000 // for 240x64 we are using 1920 which fits in a single page, but we are using 640x200 for compatibility
 #define VRAM_BYTES_PER_ROW      (640 / 8)
 
+#define abs(x) ((x) < 0 ? -(x) : (x))
 
 // ISRs from Assembler-Part
 extern void launch_bootsector(void) __attribute__((cdecl));

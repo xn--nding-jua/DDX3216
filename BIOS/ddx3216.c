@@ -1,7 +1,7 @@
 #include "bios.h"
 
 // this is a test-function to fill 8-Bit Shift Register IC73 to control some LEDs
-bool even;
+bool g_even;
 void ddx3216_setLEDs() {
 	// LEDs are controlled through a bunch of logic ICs
 	// first the control-signals are fed into IC5A and IC6A
@@ -31,14 +31,14 @@ void ddx3216_setLEDs() {
 
     //bool even = false;
     for (uint8_t i = 0; i < (8 * 5); i++) {
-        if (even) {
+        if (g_even) {
             outb(0x3000, 0b11111111);
         }else{
             outb(0x3000, 0b00000000);
         }
         inb(0x3000);
 
-        even = !even;
+        g_even = !g_even;
     }
 
 /*

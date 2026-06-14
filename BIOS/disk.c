@@ -458,10 +458,11 @@ uint8_t ide_read_sector(uint32_t lba, uint16_t dest_seg, uint16_t offset) {
     }
 
     // read 512 bytes and IDE_DATA (0x1F0) delivers at 8-Bit access always Low-Byte
-    for (uint16_t i = 0; i < 512; i++) {
-        uint8_t data = inb(IDE_DATA);
-        writeFarByte(dest_seg, offset + i, data);
-    }
+    readSector8BitFar(IDE_DATA, dest_seg, offset);
+    // the abouve function does the same as the following lines - but unbelievably faster :-)
+    // for (uint16_t i = 0; i < 512; i++) {
+    //     writeFarByte(dest_seg, offset + i, inb(IDE_DATA));
+    // }
 
     return 0x00; // no error
 }

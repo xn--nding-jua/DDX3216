@@ -14,9 +14,26 @@
 // the DDX3216 has a resolution of 240x64 but we are using a virtual
 // resolution of 320x200 (CGA)
 
-bool textmode;
+bool g_lcd_textmode;
 
-void lcd_init() {
+void lcd_install_font() {
+	/*
+	uint16_t vram_offset_base = 0x7800;
+	for (uint16_t c = 0; c < 256; c++) {
+		uint16_t char_vram_offset = vram_offset_base + (c * 8);
+		
+		for (uint8_t row = 0; row < 8; row++) {
+			uint8_t row_data = readRomByte((uint16_t)(uintptr_t)&bios_font_8x8[c][row]);
+			writeFarByte(VRAM_SEG, char_vram_offset + row, row_data);
+		}
+	}
+	*/
+	copyFarBlockBetweenSegments(ROM_SEG, (uint16_t)(uintptr_t)&bios_font_8x8[0][0], VRAM_SEG, 0x7800, 256 * 8);
+}
+
+void lcd_init(bool textmode) {
+    g_lcd_textmode = textmode;
+
 	// initialize LCD-controller in text-mode according to AMD white paper 20749A or graphics-mode if desired
 
 	// enable enhanced registers
@@ -32,7 +49,7 @@ void lcd_init() {
 	// bit 1   : auto-blanking
 	// bit 0   : display-mode
 
-	if (textmode) {
+	if (g_lcd_textmode) {
 		// CGA Textmode
 		write_sc300_lcd_cfg(LCD_ENH_IDX_SCREEN_CTRL_RESTORE,  0b01010000); // 4-bit single-screen small LCD / font-area 1 / CGA-mode
 
@@ -105,7 +122,7 @@ void lcd_init() {
 
 void lcd_clear() {
 	// delete video-memory
-	if (textmode) {
+	if (g_lcd_textmode) {
 		for (int i = 0; i < VRAM_SIZE_TEXT; i++) {
 			writeFarByte(VRAM_SEG, i, 0x00);
 		}
@@ -115,13 +132,6 @@ void lcd_clear() {
 			writeFarByte(VRAM_SEG,          i, 0x00); // page 0 for even-numbered pixel-rows
 			writeFarByte(VRAM_SEG, 0x2000 + i, 0x00); // page 1 for odd-numbered pixel-rows
 		}
-	}
-}
-
-// test the LCD and fill a simple pattern
-void lcd_clear_test() {
-	for (int i = 0; i < VRAM_SIZE_TEXT; i++) {
-		writeFarByte(VRAM_SEG, i, (i % 2) ? 0xAA : 0x55);
 	}
 }
 
@@ -272,22 +282,6 @@ void lcd_print_string_ram_pos(int row, int col, const char* str, uint8_t attribu
 	lcd_print_string_ram(str, attribute);
 }
 
-void lcd_install_character(uint8_t c, uint8_t row, uint8_t value) {
-	writeFarByte(VRAM_SEG, 0x7800 + (c * 8) + row, value);
-}
-
-void lcd_install_font() {
-	uint16_t vram_offset_base = 0x7800;
-	for (uint16_t c = 0; c < 256; c++) {
-		uint16_t char_vram_offset = vram_offset_base + (c * 8);
-		
-		for (uint8_t row = 0; row < 8; row++) {
-			uint8_t row_data = readRomByte((uint16_t)(uintptr_t)&bios_font_8x8[c][row]);
-			writeFarByte(VRAM_SEG, char_vram_offset + row, row_data);
-		}
-	}
-}
-
 void lcd_draw_double_box(uint8_t row, uint8_t col, uint8_t w, uint8_t h) {
     // corners
     lcd_putc_pos(row,     col,     0xC9, 0x07); // ╔
@@ -334,11 +328,31 @@ void lcd_draw_pixel(uint16_t x, uint16_t y, uint8_t color) {
 	writeFarByte(VRAM_SEG, offset, value);
 }
 
+uint8_t lcd_read_pixel(uint16_t x, uint16_t y) {
+	if ((x >= 240) || (y >= 64)) {
+        return 0;
+    }
+
+	// put even rows to first bank, odd rows to second bank
+	uint16_t bank_offset = ((y % 2) == 0) ? 0x0000 : 0x2000;
+
+	// memory-offset within the specific bank
+	uint16_t offset = bank_offset + ((y / 2) * VRAM_BYTES_PER_ROW) + (x / 8);
+
+	// calculate bit-offset in specific byte
+	uint8_t bitoffset = 7 - (x % 8);
+
+	// read value from RAM, set specific pixel and write value back to RAM
+	uint8_t value  = readFarByte(VRAM_SEG, offset);
+
+	uint8_t pixel_state = (value >> bitoffset) & 1;
+
+	return pixel_state;
+}
+
 void lcd_draw_line(uint16_t startx, uint16_t starty, uint16_t endx, uint16_t endy, uint8_t color) {
-	int16_t dx = (int16_t)endx - (int16_t)startx;
-    int16_t dy = (int16_t)endy - (int16_t)starty;
-	if (dx < 0) dx = -dx;
-	if (dy < 0) dy = -dy;
+	int16_t dx = abs((int16_t)endx - (int16_t)startx);
+    int16_t dy = ((int16_t)endy - (int16_t)starty);
     int16_t sx = (startx < endx) ? 1 : -1;
     int16_t sy = (starty < endy) ? 1 : -1;
     int16_t err = dx - dy;
@@ -399,24 +413,121 @@ void lcd_graphic_putc(uint16_t x, uint16_t y, char c, uint8_t color, bool invert
     }
 }
 
-uint8_t lcd_read_pixel(uint16_t x, uint16_t y) {
-	if ((x >= 240) || (y >= 64)) {
-        return 0;
+void lcd_draw_circle(uint16_t centerx, uint16_t centery, uint16_t radius, uint8_t color) {
+	// start-coordinates relative to radius
+    int16_t x = 0;
+    int16_t y = radius;
+    
+    // initial decision-error
+    int16_t d = 3 - (2 * radius);
+
+    // draw the first 8 points around the center
+    if (radius > 0) {
+        lcd_draw_pixel(centerx + x, centery + y, color);
+        lcd_draw_pixel(centerx - x, centery + y, color);
+        lcd_draw_pixel(centerx + x, centery - y, color);
+        lcd_draw_pixel(centerx - x, centery - y, color);
+        lcd_draw_pixel(centerx + y, centery + x, color);
+        lcd_draw_pixel(centerx - y, centery + x, color);
+        lcd_draw_pixel(centerx + y, centery - x, color);
+        lcd_draw_pixel(centerx - y, centery - x, color);
     }
 
-	// put even rows to first bank, odd rows to second bank
-	uint16_t bank_offset = ((y % 2) == 0) ? 0x0000 : 0x2000;
+	// the loop is running until X and Y values crosses (45 degree)
+    while (y >= x) {
+        x++;
 
-	// memory-offset within the specific bank
-	uint16_t offset = bank_offset + ((y / 2) * VRAM_BYTES_PER_ROW) + (x / 8);
+        // mathematical correction of the error
+        if (d > 0) {
+            y--;
+            d = d + 4 * (x - y) + 10;
+        } else {
+            d = d + 4 * x + 6;
+        }
 
-	// calculate bit-offset in specific byte
-	uint8_t bitoffset = 7 - (x % 8);
+		// use symmetry of circle and draw the pixel into all 8 octants
+        lcd_draw_pixel(centerx + x, centery + y, color); // Octant 1
+        lcd_draw_pixel(centerx - x, centery + y, color); // Octant 2
+        lcd_draw_pixel(centerx + x, centery - y, color); // Octant 3
+        lcd_draw_pixel(centerx - x, centery - y, color); // Octant 4
+        lcd_draw_pixel(centerx + y, centery + x, color); // Octant 5
+        lcd_draw_pixel(centerx - y, centery + x, color); // Octant 6
+        lcd_draw_pixel(centerx + y, centery - x, color); // Octant 7
+        lcd_draw_pixel(centerx - y, centery - x, color); // Octant 8
+    }
+}
 
-	// read value from RAM, set specific pixel and write value back to RAM
-	uint8_t value  = readFarByte(VRAM_SEG, offset);
+void lcd_graphics_scroll_vertical(int8_t pixels) {
+	uint16_t TOTAL_ROWS = 200; // we are supporting a virtual 640x200 pixel resolution
 
-	uint8_t pixel_state = (value >> bitoffset) & 1;
+	// we want to scroll line-by-line without destroying the bank-order
+    if (pixels % 2 != 0) {
+        if (pixels > 0) pixels++;
+        else pixels--;
+    }
 
-	return pixel_state;
+    // if this results in 0 pixel -> abort
+    if (pixels == 0 || abs(pixels) >= TOTAL_ROWS) {
+        return;
+    }
+
+	// the pixels are distributed over two banks
+    int16_t bank_row_shift = pixels / 2;
+    uint16_t bytes_to_shift = abs(bank_row_shift) * VRAM_BYTES_PER_ROW;
+    uint16_t total_bank_bytes = 100 * VRAM_BYTES_PER_ROW; // 8000 Bytes per Bank
+
+    // perform operation on both banks
+    for (uint8_t bank = 0; bank < 2; bank++) {
+        uint16_t bank_base = (bank == 0) ? 0x0000 : VRAM_SIZE_GRAPHICS_PER_BANK;
+
+        if (pixels > 0) {
+			// scroll to top
+            uint16_t dest = bank_base;
+            uint16_t src = bank_base + bytes_to_shift;
+            uint16_t size = total_bank_bytes - bytes_to_shift;
+
+			// copy block in SRAM
+			//copyFarBlock(VRAM_SEG, src, dest, size);
+			for (uint16_t i = 0; i < size; i++) {
+				copyFarByte(VRAM_SEG, src + i, dest + i);
+			}
+
+            // fill empty space with zeros
+            for (uint16_t i = total_bank_bytes - bytes_to_shift; i < total_bank_bytes; i++) {
+                writeFarByte(VRAM_SEG, bank_base + i, 0x00);
+            }
+
+        } else {
+			// scroll to bottom
+            uint16_t size = total_bank_bytes - bytes_to_shift;
+            
+			for (int16_t i = size - 1; i >= 0; i--) {
+				copyFarByte(VRAM_SEG, bank_base + i, bank_base + bytes_to_shift + i);
+			}
+
+			// fill empty space with zeros
+            for (uint16_t i = 0; i < bytes_to_shift; i++) {
+                writeFarByte(VRAM_SEG, bank_base + i, 0x00);
+            }
+        }
+    }
+}
+
+void lcd_graphics_demo() {
+	lcd_init(false);
+	lcd_clear();
+
+    lcd_draw_rect(20, 20, 240 - 20, 64 - 20, 0xFF, 0x00);
+    lcd_graphic_putc(30 + 8 * 0, 30, 'H', 0xFF, false);
+    lcd_graphic_putc(30 + 8 * 1, 30, 'e', 0xFF, false);
+    lcd_graphic_putc(30 + 8 * 2, 30, 'l', 0xFF, false);
+    lcd_graphic_putc(30 + 8 * 3, 30, 'l', 0xFF, false);
+    lcd_graphic_putc(30 + 8 * 4, 30, 'o', 0xFF, false);
+    lcd_graphic_putc(30 + 8 * 5, 30, ' ', 0xFF, false);
+    lcd_graphic_putc(30 + 8 * 6, 30, 'W', 0xFF, false);
+    lcd_graphic_putc(30 + 8 * 7, 30, 'o', 0xFF, false);
+    lcd_graphic_putc(30 + 8 * 8, 30, 'r', 0xFF, false);
+    lcd_graphic_putc(30 + 8 * 9, 30, 'l', 0xFF, false);
+    lcd_graphic_putc(30 + 8 * 10, 30, 'd', 0xFF, false);
+    lcd_graphic_putc(30 + 8 * 11, 30, '!', 0xFF, false);
 }

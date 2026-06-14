@@ -232,18 +232,84 @@ static inline uint16_t readFarWord(uint16_t segment, uint16_t offset) {
 */
 }
 
-static inline void copyFarBlock(uint16_t srcSegment, uint16_t srcOffset, void* dest, uint32_t len) {
+static inline void copyFarBlock(uint16_t segment, uint16_t srcOffset, void* destOffset, uint32_t len) {
     __asm__ __volatile__(
         "push %%ds\n\t"
         "movw %0, %%ds\n\t"    // source-segment (DS)
         "rep movsb\n\t"        // copies from DS:ESI to ES:EDI
         "pop %%ds"
         :
-        : "r"(srcSegment), "S"(srcOffset), "D"(dest), "c"(len)
+        : "r"(segment), "S"(srcOffset), "D"(destOffset), "c"(len)
         : "memory"
     );
 }
 
+static inline void copyFarByte(uint16_t segment, uint16_t srcOffset, uint16_t destOffset) {
+    __asm__ __volatile__(
+        "pushw %%es\n\t"
+        "movw  %w0, %%es\n\t"         // load segment to ES
+        "movb  %%es:(%%bx), %%al\n\t" // read source (BX) to AL
+        "movb  %%al, %%es:(%%di)\n\t" // write AL to destination (DI)
+        "popw  %%es\n\t"
+        :
+        : "r"(segment), "b"(srcOffset), "D"(destOffset)
+        : "ax", "memory"
+    );
+}
+
+static inline void copyFarByteBetweenSegments(uint16_t srcSegment, uint16_t srcOffset, uint16_t destSegment, uint16_t destOffset) {
+    __asm__ __volatile__(
+        "pushw %%ds\n\t"              // store DS
+        "pushw %%es\n\t"              // store ES
+        
+        "movw  %w0, %%ds\n\t"         // set source-segment to DS
+        "movw  %w1, %%es\n\t"         // set destination-segment to ES
+        
+        "movsb\n\t"                   // copy byte DS:SI to ES:DI
+        
+        "popw  %%es\n\t"              // restore ES
+        "popw  %%ds\n\t"              // restore DS
+        :
+        : "r"(srcSegment), "r"(destSegment), "S"(srcOffset), "D"(destOffset)
+        : "memory"
+    );
+}
+
+static inline void copyFarBlockBetweenSegments(uint16_t srcSegment, uint16_t srcOffset, uint16_t destSegment, uint16_t destOffset, uint16_t length) {
+    if (length == 0) return;
+
+    __asm__ __volatile__(
+        "pushw %%ds\n\t"              // store current DS
+        "pushw %%es\n\t"              // store current ES
+        
+        "movw  %w0, %%ds\n\t"         // set source-segment to DS
+        "movw  %w1, %%es\n\t"         // set destination-segment to ES
+        
+        "cld\n\t"                     // clear direction-flag to make sure that SI/DI is counting up
+        "rep movsb\n\t"               // repeat movsb CX times!
+        
+        "popw  %%es\n\t"              // restore ES
+        "popw  %%ds\n\t"              // restore DS
+        :
+        : "r"(srcSegment), "r"(destSegment), "S"(srcOffset), "D"(destOffset), "c"(length)
+        : "memory"
+    );
+}
+
+static inline void readSector8BitFar(uint16_t ide_port, uint16_t dest_seg, uint16_t dest_offset) {
+    __asm__ __volatile__(
+        "pushw %%es\n\t"              // store current ES
+        "movw  %w0, %%es\n\t"         // load destination-segment to ES
+        
+        "cld\n\t"                     // clear direction-flag to make sure that DI is counting up
+        "rep insb\n\t"                // repeat 512 times: read from DX(IDE_PORT) to ES:DI
+        
+        "popw  %%es\n\t"              // restore ES
+        :
+        : "r"(dest_seg), "D"(dest_offset), "d"(ide_port), "c"(512)
+        : "memory"
+    );
+}
 
 // additional functions
 // ==========================================================

@@ -203,18 +203,18 @@ __attribute__((externally_visible, regparm(1))) void c_int10_handler(struct inte
             // for videomodes see here: https://mendelson.org/wpdos/videomodes.txt
             switch (al) {
                 case 0x03: // standard DOS color-textmode
-                    textmode = true;
+                    lcd_init(true);
+                    lcd_clear();
                     break;
                 case 0x06: // 640x200 monochrome pixel graphics mode
-                    textmode = false;
+                    lcd_init(false);
+                    lcd_clear();
                     break;
                 default:
                     // unsupported mode
                     break;
             }
 
-            lcd_init();
-            lcd_clear();
             break;
 
         case 0x02: // set cursor position
