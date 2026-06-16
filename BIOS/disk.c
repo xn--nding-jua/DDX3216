@@ -368,20 +368,20 @@ bool cfcard_init() {
     lcd_print_string("C", 0x07);
     lcd_print_string_ram(textbuffer, 0x07);
     uart_putc('C');
-    uart_print_string(textbuffer);
+    uart_print_string_ram(textbuffer);
 
     uint8_to_dec(hd0_params.heads, textbuffer);
     lcd_print_string("H", 0x07);
     lcd_print_string_ram(textbuffer, 0x07);
     uart_putc('H');
-    uart_print_string(textbuffer);
+    uart_print_string_ram(textbuffer);
 
     uint8_to_dec(hd0_params.sectors_per_track, textbuffer);
     lcd_print_string("S", 0x07);
     lcd_print_string_ram(textbuffer, 0x07);
     lcd_putc('\n', 0x07);
     uart_putc('S');
-    uart_print_string(textbuffer);
+    uart_print_string_ram(textbuffer);
     uart_putc('\n');
 
     return true;

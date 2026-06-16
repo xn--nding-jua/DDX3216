@@ -180,8 +180,9 @@ void kbd_init() {
     uint8_t pmu3 = read_sc300_cfg(0xAD);
     write_sc300_cfg(0xAD, pmu3 | SC300_XTKBDEN);
 
+    /*
     // check for 0xAA from keyboard
-    /*    uint32_t timeout = 500;
+    uint32_t timeout = 500;
     uint8_t scancode = inb(KBD_DATA_PORT);
     while ((timeout > 0) || (scancode != 0xAA)) {
         timeout--;
@@ -194,6 +195,7 @@ void kbd_init() {
         delay_1ms();
     }
     */
+    
     uint8_t scancode = 0xAA; // DEBUG
     if (scancode != 0xAA) {
         // keyboard did not respond correctly
