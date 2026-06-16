@@ -52,7 +52,7 @@ __attribute__((externally_visible, regparm(1))) void c_int09_handler(struct inte
     #endif
 
     // read scancode from keyboard-controller
-	uint8_t scancode = inb(KBD_DATA_PORT);
+	uint8_t xt_scancode = inb(KBD_DATA_PORT);
 
     // clear shift-register and IRQ in keyboard-controller
     uint8_t ctrl = inb(KBD_CTRL_PORT);
@@ -60,11 +60,11 @@ __attribute__((externally_visible, regparm(1))) void c_int09_handler(struct inte
     outb(KBD_CTRL_PORT, ctrl & ~KBD_CTRL_CLEAR);  // clear Bit 7
 
     // check if it is make or break
-    if (scancode & 0x80) {
+    if (xt_scancode & 0x80) {
         // break (key is lifted up)
-        uint8_t real_scancode = scancode & 0x7F; // Bit 7 entfernen
 
-        switch(real_scancode) {
+        // check if one of the control-keys has been lifted up
+        switch(xt_scancode & 0x7F) {
             case 0x2A: // Left Shift
                 writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, readFarByte(0x0000, BDA_KBD_STATUS_FLAGS) & ~KBD_FLAG_LSHIFT);
                 break;
@@ -77,10 +77,25 @@ __attribute__((externally_visible, regparm(1))) void c_int09_handler(struct inte
             case 0x38: // Alt
                 writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, readFarByte(0x0000, BDA_KBD_STATUS_FLAGS) & ~KBD_FLAG_ALT);
                 break;
+            case 0x46: // Scrolllock
+                writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, readFarByte(0x0000, BDA_KBD_STATUS_FLAGS) & ~KBD_FLAG_SCROLLLOCK);
+                break;
+            case 0x45: // NumLock
+                writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, readFarByte(0x0000, BDA_KBD_STATUS_FLAGS) & ~KBD_FLAG_NUMLOCK);
+                break;
+            case 0x3A: // CapsLock
+                writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, readFarByte(0x0000, BDA_KBD_STATUS_FLAGS) & ~KBD_FLAG_CAPSLOCK);
+                break;
+            case 0x52: // Insert
+                writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, readFarByte(0x0000, BDA_KBD_STATUS_FLAGS) & ~KBD_FLAG_INSERTMODE);
+                break;
+            default:
+                // regular key-releases will not be handled here
+                break;
         }
     }else{
         // make (key is pressed down)
-        switch(scancode) {
+        switch(xt_scancode) {
             case 0x2A: // Left Shift
                 writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, readFarByte(0x0000, BDA_KBD_STATUS_FLAGS) | KBD_FLAG_LSHIFT);
                 break;
@@ -93,6 +108,18 @@ __attribute__((externally_visible, regparm(1))) void c_int09_handler(struct inte
             case 0x38: // Alt
                 writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, readFarByte(0x0000, BDA_KBD_STATUS_FLAGS) | KBD_FLAG_ALT);
                 break;
+            case 0x46: // Scrolllock
+                writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, readFarByte(0x0000, BDA_KBD_STATUS_FLAGS) | KBD_FLAG_SCROLLLOCK);
+                break;
+            case 0x45: // NumLock
+                writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, readFarByte(0x0000, BDA_KBD_STATUS_FLAGS) | KBD_FLAG_NUMLOCK);
+                break;
+            case 0x3A: // CapsLock
+                writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, readFarByte(0x0000, BDA_KBD_STATUS_FLAGS) | KBD_FLAG_CAPSLOCK);
+                break;
+            case 0x52: // Insert
+                writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, readFarByte(0x0000, BDA_KBD_STATUS_FLAGS) | KBD_FLAG_INSERTMODE);
+                break;
             default: {
                 // regular key, put scancode into keyboard-buffer
                 char ascii = 0;
@@ -100,23 +127,25 @@ __attribute__((externally_visible, regparm(1))) void c_int09_handler(struct inte
                 // check if shift is active
                 uint8_t status_flags = readFarByte(0x0000, BDA_KBD_STATUS_FLAGS);
                 if (status_flags & (KBD_FLAG_LSHIFT | KBD_FLAG_RSHIFT)) {
-                    if (scancode < sizeof(xt_to_ascii_shift)) {
-                        uint16_t rom_offset = (uint16_t)(uintptr_t)&xt_to_ascii_shift[scancode];
+                    if (xt_scancode < sizeof(xt_to_ascii_shift)) {
+                        uint16_t rom_offset = (uint16_t)(uintptr_t)&xt_to_ascii_shift[xt_scancode];
                         ascii = (char)readRomByte(rom_offset);
                     }else{
+                        // not a scancode that can be converted to ASCII
                         ascii = 0;
                     }
                 } else {
-                    if (scancode < sizeof(xt_to_ascii_normal)) {
-                        uint16_t rom_offset = (uint16_t)(uintptr_t)&xt_to_ascii_normal[scancode];
+                    if (xt_scancode < sizeof(xt_to_ascii_normal)) {
+                        uint16_t rom_offset = (uint16_t)(uintptr_t)&xt_to_ascii_normal[xt_scancode];
                         ascii = (char)readRomByte(rom_offset);
                     }else{
+                        // not a scancode that can be converted to ASCII
                         ascii = 0;
                     }
                 }
 
                 // if valid ascii-character, put it into the keyboard-buffer together with the scancode, otherwise ignore it
-                if (ascii != 0 || scancode != 0) {
+                if (ascii != 0 || xt_scancode != 0) {
                     uint16_t next_tail = readFarWord(0x0000, BDA_KBD_TAIL) + sizeof(uint16_t);
                 
                     // wrap write-pointer around if it reaches the end of the buffer
@@ -130,7 +159,7 @@ __attribute__((externally_visible, regparm(1))) void c_int09_handler(struct inte
                         // where the high-byte is the scancode and the low-byte is the ASCII-character
 
                         // High-Byte = Scancode, Low-Byte = ASCII
-                        uint16_t key_data = (scancode << 8) | (uint8_t)ascii;
+                        uint16_t key_data = ((uint16_t)xt_scancode << 8) | (uint8_t)ascii;
                         
                         // write keydata to keyboard-buffer at position
                         writeFarWord(0x0000, readFarWord(0x0000, BDA_KBD_TAIL), key_data);
