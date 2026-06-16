@@ -311,6 +311,21 @@ static inline void readSector8BitFar(uint16_t ide_port, uint16_t dest_seg, uint1
     );
 }
 
+static inline void writeSector8BitFar(uint16_t ide_port, uint16_t src_seg, uint16_t src_offset) {
+    __asm__ __volatile__(
+        "pushw %%ds\n\t"
+        "movw  %w0, %%ds\n\t"         // load source-segment to DS
+        
+        "cld\n\t"
+        "rep outsb\n\t"               // write 512 bytes from DS:SI to DX(ide_port)
+        
+        "popw  %%ds\n\t"
+        :
+        : "r"(src_seg), "S"(src_offset), "d"(ide_port), "c"(512)
+        : "memory"
+    );
+}
+
 // additional functions
 // ==========================================================
 static inline void delay_1us(void) {

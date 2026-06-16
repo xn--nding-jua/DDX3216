@@ -464,10 +464,47 @@ uint8_t ide_read_sector(uint32_t lba, uint16_t dest_seg, uint16_t offset) {
 
     // read 512 bytes and IDE_DATA (0x1F0) delivers at 8-Bit access always Low-Byte
     readSector8BitFar(IDE_DATA, dest_seg, offset);
-    // the abouve function does the same as the following lines - but unbelievably faster :-)
+    // the above function does the same as the following lines - but unbelievably faster :-)
     // for (uint16_t i = 0; i < 512; i++) {
     //     writeFarByte(dest_seg, offset + i, inb(IDE_DATA));
     // }
+
+    return 0x00; // no error
+}
+
+uint8_t ide_write_sector(uint32_t lba, uint16_t src_seg, uint16_t offset) {
+    // wait until drive is ready
+    if (!ide_wait_ready()) {
+        uart_print_string("ide_write_sector: Drive not ready\n");
+        return 0xAA;
+    }
+
+    // LBA-Address and send command
+    outb(IDE_SECT_COUNT,  1);
+    outb(IDE_LBA_LOW,     (uint8_t)( lba        & 0xFF));
+    outb(IDE_LBA_MID,     (uint8_t)((lba >>  8) & 0xFF));
+    outb(IDE_LBA_HIGH,    (uint8_t)((lba >> 16) & 0xFF));
+    outb(IDE_DRIVE_HEAD,  0xE0 | (uint8_t)((lba >> 24) & 0x0F));
+    outb(IDE_COMMAND,     IDE_CMD_WRITE);
+
+    // wait until data is ready (DRQ set)
+    if (!ide_wait_drq()) {
+        uart_print_string("ide_write_sector: DRQ timeout\n");
+        return 0xBB;
+    }
+
+    // write 512 bytes and IDE_DATA (0x1F0) delivers at 8-Bit access always Low-Byte
+    writeSector8BitFar(IDE_DATA, src_seg, offset);
+    // the above function does the same as the following lines - but unbelievably faster :-)
+    // for (uint16_t i = 0; i < 512; i++) {
+    //     outb(IDE_DATA, readFarByte(dest_seg, offset + i));
+    // }
+
+    // wait until CF card is not busy anymore
+    if (!ide_wait_ready()) {
+        uart_print_string("ide_write_sector: Post-write completion timeout\n");
+        return 0xCC;
+    }
 
     return 0x00; // no error
 }

@@ -66,8 +66,9 @@ But as I'm close to boot DOS 6.22 on this machine I will not work on these bootd
 The main-compiler is GCC i686 with integrated elf-tools in version 7.1.0:
 * https://github.com/lordmilko/i686-elf-tools/releases/tag/7.1.0
 
-For the tiny8086 BASIC-interpreter I'm using NASM in version 3.01:
-* https://www.nasm.us https://www.nasm.us/pub/nasm/releasebuilds/3.01
+For the tiny8086 BASIC-interpreter I'm using NASM in version 2.16:
+* https://www.nasm.us https://www.nasm.us/pub/nasm/releasebuilds/2.16
+tinyBASIC will not run correctly with version 3.0 and newer
 
 Here some documentation for NASM:
 * https://www.nasm.us/docs/3.01/nasm09.html#section-9.1

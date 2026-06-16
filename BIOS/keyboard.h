@@ -26,7 +26,7 @@ static const char xt_to_ascii_normal[58] = {
   0x00, // [NULL]
   0x1B, // [ESCAPE]
   '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=',
-  0x08, // [BACKSPACE]
+  '\b', // [BACKSPACE]
   '\t', // [TAB]
 
   // next index = 0x10
@@ -52,7 +52,7 @@ static const char xt_to_ascii_shift[58] = {
   0x00, // [NULL]
   0x1B, // [ESCAPE]
    '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '+',
-   0x08, // [BACKSPACE]
+  '\b', // [BACKSPACE]
   '\t',  // [TAB]
 
   // next index = 0x10

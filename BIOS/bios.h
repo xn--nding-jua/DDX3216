@@ -24,6 +24,7 @@
 
 #define BIOS_DEBUG              0   // use massive lcd-prints and uart-prints for Interrupt-functions
 #define BIOS_SKIP_DOS_OR_BASIC  0   // skip loading of CF-card bootsector and basic and start into BIOS-main-function
+#define BIOS_CHECK_KEYBOARD     0
 #define BIOS_MANUAL_CHS         1   // dont try to detect the CF-card and use the below manual values for CHS
     #define CF_CYLINDERS            1014
     #define CF_HEADS                16

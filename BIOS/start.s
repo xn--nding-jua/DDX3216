@@ -827,8 +827,8 @@ isr_hw_int_dummy:
 
 .global isr_sw_int_dummy
 isr_sw_int_dummy:
-    ISR_SAFE_STACK_ENTRY c_int_dummy_handler, BIOS_SW_ISR_SS, BIOS_SW_ISR_SP, BIOS_SW_ISR_FS, BIOS_SW_ISR_GS, BIOS_SW_ISR_FRAME
-	//iret
+    //ISR_SAFE_STACK_ENTRY c_int_dummy_handler, BIOS_SW_ISR_SS, BIOS_SW_ISR_SP, BIOS_SW_ISR_FS, BIOS_SW_ISR_GS, BIOS_SW_ISR_FRAME
+	iret
 
 // ========================================================
 // FUNCTIONS FOR TINY8086 BASIC

@@ -338,7 +338,7 @@ void loop() {
   // power-on self test
   if (digitalRead(xt_clk) == LOW) {
     delay(10); // wait 10ms
-    sendXtKey(0xAA) ; 
+    sendXtKey(0xAA);
     while (keyboard.available()) {
       keyboard.read(); // Discard buffer on reset
     }

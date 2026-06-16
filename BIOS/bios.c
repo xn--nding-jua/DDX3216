@@ -180,23 +180,24 @@ void kbd_init() {
     uint8_t pmu3 = read_sc300_cfg(0xAD);
     write_sc300_cfg(0xAD, pmu3 | SC300_XTKBDEN);
 
-    /*
-    // check for 0xAA from keyboard
-    uint32_t timeout = 500;
-    uint8_t scancode = inb(KBD_DATA_PORT);
-    while ((timeout > 0) || (scancode != 0xAA)) {
-        timeout--;
-        if (timeout == 0) {
-            // an error occured
-            break;
-        }
-        scancode = inb(KBD_DATA_PORT);
+    #if BIOS_CHECK_KEYBOARD == 1
+        // check for 0xAA from keyboard
+        uint32_t timeout = 500;
+        uint8_t scancode = inb(KBD_DATA_PORT);
+        while ((timeout > 0) || (scancode != 0xAA)) {
+            timeout--;
+            if (timeout == 0) {
+                // an error occured
+                break;
+            }
+            scancode = inb(KBD_DATA_PORT);
 
-        delay_1ms();
-    }
-    */
+            delay_1ms();
+        }
+    #else
+        uint8_t scancode = 0xAA; // DEBUG
+    #endif
     
-    uint8_t scancode = 0xAA; // DEBUG
     if (scancode != 0xAA) {
         // keyboard did not respond correctly
         lcd_print_string("ERROR\n", 0x07);

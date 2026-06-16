@@ -6,7 +6,7 @@ echo .
 
 echo Step 1/3: Compiling sourcecode...
 setlocal enabledelayedexpansion
-set "AS=c:\Programme2\nasm-3.01\nasm.exe"
+set "AS=c:\Programme2\nasm-2.16\nasm.exe"
 set "CC=C:\Programme2\i686-elf-tools-windows\bin\i686-elf-gcc.exe"
 set "LD=C:\Programme2\i686-elf-tools-windows\bin\i686-elf-ld.exe"
 set "OBJCOPY=C:\Programme2\i686-elf-tools-windows\bin\i686-elf-objcopy.exe"

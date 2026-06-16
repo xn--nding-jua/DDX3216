@@ -143,6 +143,23 @@ __attribute__((externally_visible, regparm(1))) void c_int09_handler(struct inte
                         // ALT+GR is pressed
                         //rom_offset = (uint16_t)(uintptr_t)&xt_to_ascii_altgr[xt_scancode];
                         //ascii = (char)readRomByte(rom_offset);
+                    }else if (status_flags & KBD_FLAG_CTRL) {
+                        // CTRL is pressed
+                        if (xt_scancode == 0x2E) {
+                            // CTRL + C is pressed
+
+                            // trigger software-interrupt 1B immediately
+                            __asm__ volatile ("int $0x1B");
+
+                            // return ETX and the xt-scancode
+                            ascii = 0x03; // send ETX
+                        }else if (xt_scancode == 0x1F) {
+                            // CTRL + S is pressed
+
+                            ascii = 0x13; // send DeviceControl3
+                        }
+                    }else if (status_flags & KBD_FLAG_ALT) {
+                        // ALT is pressed
                     }else{
                         rom_offset = (uint16_t)(uintptr_t)&xt_to_ascii_normal[xt_scancode];
                         ascii = (char)readRomByte(rom_offset);
@@ -269,6 +286,19 @@ __attribute__((externally_visible, regparm(1))) void c_int10_handler(struct inte
         case 0x03: // get cursor position
             // return cursor position in DX (DH = Row, DL = Column)
             regs->dx = (readFarByte(BASE_SEG, BDA_CURSOR_POS_ROW) << 8) | readFarByte(BASE_SEG, BDA_CURSOR_POS_COL);
+            break;
+
+        case 0x06: // scroll window up
+            if (al == 0) {
+                // scroll full window up
+                lcd_scroll_up();
+                lcd_scroll_up();
+                lcd_scroll_up();
+                lcd_scroll_up();
+                lcd_scroll_up();
+                lcd_scroll_up();
+                lcd_scroll_up();
+            }
             break;
 
         case 0x0C: // write graphics pixel
@@ -455,6 +485,53 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
                 regs->ax = ((uint16_t)error << 8) | sectors_done;
                 regs->flags |= ISR_FLAGS_CF;  // set carry flag on error
                 lcd_print_string("IDE ERROR\n", 0x07);
+            }
+            break;
+        }
+        
+        case 0x03: { // Write Sector
+            uint8_t  sectors_to_write = al;
+            uint8_t  sector           = cl & 0b00111111;
+            uint16_t cylinder         = (((uint16_t)(cl & 0b11000000)) << 2) | (uint16_t)ch;
+            uint8_t  head             = dh;
+            uint16_t src_bx           = regs->bx; // offset within ES
+            uint16_t src_es           = regs->es; // segment of source buffer
+            uint8_t  sectors_done     = 0;
+            uint8_t  error            = 0;
+            uint32_t lba              = disk_chs_to_lba(cylinder, head, sector);
+
+            // loop for all requested sectors
+            for (uint8_t s = 0; s < sectors_to_write; s++) {
+                uint32_t cur_lba      = lba + (uint32_t)s;
+                uint16_t cur_offset   = src_bx + ((uint16_t)s * 512); // moving offset within ES: (BX + s * 512)
+
+                // call IDE write function
+                error = ide_write_sector(cur_lba, src_es, cur_offset);
+                if (error != 0x00) {
+                    #if BIOS_DEBUG == 1
+                        uart_print_string("IDE WRITE ERROR\n");
+                    #endif
+                    break;
+                }
+
+                sectors_done++;
+            }
+
+            // return answer
+            if (error == 0) {
+                // success: AH = 00h (Success), AL = number of written sectors
+                regs->ax = 0x0000 | sectors_done;
+                regs->flags &= ~ISR_FLAGS_CF; // clear carry-flag on success
+                #if BIOS_DEBUG == 1
+                    uart_print_string("Wrote ");
+                    uart_print_uint16(sectors_done, false);
+                    uart_print_string(" sectors!\n");
+                #endif
+            } else {
+                // error occurred
+                regs->ax = ((uint16_t)error << 8) | sectors_done;
+                regs->flags |= ISR_FLAGS_CF;  // set carry flag on error
+                lcd_print_string("IDE WRITE ERROR\n", 0x07);
             }
             break;
         }
@@ -996,11 +1073,6 @@ __attribute__((externally_visible, regparm(1))) void c_int_error_handler(struct 
 }
 
 __attribute__((externally_visible, regparm(1))) void c_int_dummy_handler(struct interrupt_registers *regs) {
-    uart_print_string("I??\n");
-    lcd_print_string("I??", 0x07);
-
-    __asm__ volatile ("cli; hlt");
-
 /*
     char buf[5];
     
