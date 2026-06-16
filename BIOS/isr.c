@@ -54,6 +54,11 @@ __attribute__((externally_visible, regparm(1))) void c_int09_handler(struct inte
     // read scancode from keyboard-controller
 	uint8_t xt_scancode = inb(KBD_DATA_PORT);
 
+    #if BIOS_DEBUG == 1
+        lcd_print_string_pos(7, 0, "XT ScanCode: 0x", 0x07);
+        lcd_print_uint16(xt_scancode, true);
+    #endif
+
     // clear shift-register and IRQ in keyboard-controller
     uint8_t ctrl = inb(KBD_CTRL_PORT);
     outb(KBD_CTRL_PORT, ctrl | KBD_CTRL_CLEAR);   // set Bit 7
@@ -122,53 +127,64 @@ __attribute__((externally_visible, regparm(1))) void c_int09_handler(struct inte
                 break;
             default: {
                 // regular key, put scancode into keyboard-buffer
-                char ascii = 0;
+                char ascii = 0; // DOS will receive and check the original XT scancode in AH if no ASCII-char is recognized below
 
-                // check if shift is active
                 uint8_t status_flags = readFarByte(0x0000, BDA_KBD_STATUS_FLAGS);
-                if (status_flags & (KBD_FLAG_LSHIFT | KBD_FLAG_RSHIFT)) {
-                    if (xt_scancode < sizeof(xt_to_ascii_shift)) {
-                        uint16_t rom_offset = (uint16_t)(uintptr_t)&xt_to_ascii_shift[xt_scancode];
+
+                // check if the XT-scancode is within the ASCII-characters
+                if (xt_scancode < sizeof(xt_to_ascii_normal)) {
+                    // check if shift, capslock or ctrl+alt is active
+                    uint16_t rom_offset;
+                    if (status_flags & (KBD_FLAG_LSHIFT | KBD_FLAG_RSHIFT | KBD_FLAG_CAPSLOCK)) {
+                        // shift or capslock is pressed
+                        rom_offset = (uint16_t)(uintptr_t)&xt_to_ascii_shift[xt_scancode];
                         ascii = (char)readRomByte(rom_offset);
+                    }else if ((status_flags & KBD_FLAG_CTRL) && (status_flags & KBD_FLAG_ALT)) {
+                        // ALT+GR is pressed
+                        //rom_offset = (uint16_t)(uintptr_t)&xt_to_ascii_altgr[xt_scancode];
+                        //ascii = (char)readRomByte(rom_offset);
                     }else{
-                        // not a scancode that can be converted to ASCII
-                        ascii = 0;
+                        rom_offset = (uint16_t)(uintptr_t)&xt_to_ascii_normal[xt_scancode];
+                        ascii = (char)readRomByte(rom_offset);
                     }
-                } else {
-                    if (xt_scancode < sizeof(xt_to_ascii_normal)) {
-                        uint16_t rom_offset = (uint16_t)(uintptr_t)&xt_to_ascii_normal[xt_scancode];
-                        ascii = (char)readRomByte(rom_offset);
-                    }else{
-                        // not a scancode that can be converted to ASCII
-                        ascii = 0;
+                }else{
+                    // check for some control keys like CTRL+ALT+DELETE
+                    if ((status_flags & KBD_FLAG_CTRL) && (status_flags & KBD_FLAG_ALT)) {
+                        // ALT+GR is pressed
+                        if (xt_scancode == 0x53) {
+                            // CTRL + ALT + DELETE is pressed -> reboot
+                            cpu_reset();
+                        }
                     }
                 }
 
                 // if valid ascii-character, put it into the keyboard-buffer together with the scancode, otherwise ignore it
-                if (ascii != 0 || xt_scancode != 0) {
-                    uint16_t next_tail = readFarWord(0x0000, BDA_KBD_TAIL) + sizeof(uint16_t);
-                
-                    // wrap write-pointer around if it reaches the end of the buffer
-                    if (next_tail > BDA_KBD_BUF_END) {
+                if ((ascii > 0) || (xt_scancode > 0)) {
+                    // get current keyboard-buffer tail
+                    uint16_t kbd_buffer_tail = readFarWord(0x0000, BDA_KBD_TAIL);
+
+                    // calc next tail with wraparound
+                    uint16_t next_tail = kbd_buffer_tail + sizeof(uint16_t);
+                    if (next_tail >= BDA_KBD_BUF_END) {
                         next_tail = BDA_KBD_BUF_START;
                     }
 
-                    // check if buffer has some space left for the new scancode
-                    if (next_tail != readFarWord(0x0000, BDA_KBD_HEAD)) {
+                    // check if buffer is full: this is when (tail + 2 == head)
+                    if (next_tail == readFarWord(0x0000, BDA_KBD_HEAD)) {
+                        // buffer overflow -> ignore new key-press
+                        // regular BIOS would beep here, but we have no speaker
+                    } else {
                         // BIOS is storing a 16-bit value for each key-press in the keyboard-buffer,
                         // where the high-byte is the scancode and the low-byte is the ASCII-character
 
                         // High-Byte = Scancode, Low-Byte = ASCII
                         uint16_t key_data = ((uint16_t)xt_scancode << 8) | (uint8_t)ascii;
                         
-                        // write keydata to keyboard-buffer at position
-                        writeFarWord(0x0000, readFarWord(0x0000, BDA_KBD_TAIL), key_data);
+                        // write current keydata to keyboard-buffer
+                        writeFarWord(0x0040, kbd_buffer_tail, key_data); // tail is stored as offset in segment 0x0040!
 
                         // update tail-pointer
                         writeFarWord(0x0000, BDA_KBD_TAIL, next_tail);
-                    } else {
-                        // buffer overflow -> ignore new key-press
-                        // regular BIOS would beep here, but we have no speaker
                     }
                 }
 
@@ -197,12 +213,6 @@ __attribute__((externally_visible, regparm(1))) void c_int0c_handler(struct inte
             case IIR_RDA: {
                 // receive data available
                 uint8_t c = inb(UART_RBR); // this resets the IRQ
-
-                // !!!DEBUG for TESTING!!!
-                if (c == 'R') {
-                    // on 'R' the CPU should reset
-                    cpu_reset(); // IMPORTANT: REMOVE WHEN EVERYTHING IS WORKING SOMEDAY!!!
-                }
                 break;
             }
 
@@ -812,29 +822,51 @@ __attribute__((externally_visible, regparm(1))) void c_int16_handler(struct inte
     uint8_t ah = regs->ax >> 8;
 
     switch (ah) {
-        case 0x00: // Read key, blocking
-            regs->flags |= ISR_FLAGS_ZF; // no key in buffer
-            break;
+        case 0x00: // Read key
+            // this function has to block if buffer is empty
+            while (1) {
+                uint16_t head = readFarWord(0x0000, BDA_KBD_HEAD);
+                uint16_t tail = readFarWord(0x0000, BDA_KBD_TAIL);
+                
+                if (head != tail) {
+                    // read char from ring-buffer
+                    regs->ax = readFarWord(0x0040, head); // head is stored at offset within segment 0x0040!
 
-        case 0x01: // Check key
-            if (readFarWord(0x0000, BDA_KBD_HEAD) != readFarWord(0x0000, BDA_KBD_TAIL)) {
-                // a new key is in buffer
-                uint16_t current_head = readFarWord(0x0000, BDA_KBD_HEAD);
-                regs->ax = readFarWord(0x0000, current_head);
+                    // read start/end of ringbuffer from BDA
+                    uint16_t buf_start = readFarWord(0x0000, BDA_KBD_BUF_START_OFFSET);
+                    uint16_t buf_end = readFarWord(0x0000, BDA_KBD_BUF_END_OFFSET);
 
-                // move head forward
-                uint16_t next_head = current_head + sizeof(uint16_t);
-                if (next_head > BDA_KBD_BUF_END) {
-                    next_head = BDA_KBD_BUF_START;
+                    // move head forwards
+                    uint16_t next_head = head + sizeof(uint16_t);
+                    if (next_head >= buf_end) {
+                        next_head = buf_start;
+                    }
+
+                    // write new head
+                    writeFarWord(0x0000, BDA_KBD_HEAD, next_head);
+                    break;
+                }else{
+                    __asm__ volatile ("sti; hlt; cli");
                 }
-                writeFarWord(0x0000, BDA_KBD_HEAD, next_head);
-
-                regs->flags &= ~ISR_FLAGS_ZF;
-            } else {
-                // buffer empty -> set ZF
-                regs->flags |= ISR_FLAGS_ZF;
             }
             break;
+
+        case 0x01: { // Check for new key
+            uint16_t head = readFarWord(0x0000, BDA_KBD_HEAD);
+            uint16_t tail = readFarWord(0x0000, BDA_KBD_TAIL);    
+            
+            if (head == tail) {
+                // keyboard-buffer is empty -> set zero-flag
+                regs->flags |= ISR_FLAGS_ZF;
+            } else {
+                // keyboard-buffer has some new data -> copy char to AX without changing the buffer
+                regs->ax = readFarWord(0x0040, head); 
+                
+                // delete zero-flag to show that character is present
+                regs->flags &= ~ISR_FLAGS_ZF;
+            }            
+            break;
+        }
 
         default:
             regs->flags |= ISR_FLAGS_ZF;

@@ -644,11 +644,11 @@ launch_bootsector:
 .equ BIOS_INT15_ISR_GS,         0x004E
 .equ BIOS_INT15_ISR_FRAME,      0x0050
 
-.equ BIOS_INT1A_ISR_SS,         0x0052
-.equ BIOS_INT1A_ISR_SP,         0x0054
-.equ BIOS_INT1A_ISR_FS,         0x0056
-.equ BIOS_INT1A_ISR_GS,         0x0058
-.equ BIOS_INT1A_ISR_FRAME,      0x005A
+.equ BIOS_INT16_ISR_SS,         0x0052
+.equ BIOS_INT16_ISR_SP,         0x0054
+.equ BIOS_INT16_ISR_FS,         0x0056
+.equ BIOS_INT16_ISR_GS,         0x0058
+.equ BIOS_INT16_ISR_FRAME,      0x005A
 
 // timer-interrupts
 .global isr_int08
@@ -735,7 +735,7 @@ isr_int15:
 
 .global isr_int16
 isr_int16:
-    ISR_SAFE_STACK_ENTRY c_int16_handler, BIOS_SW_ISR_SS, BIOS_SW_ISR_SP, BIOS_SW_ISR_FS, BIOS_SW_ISR_GS, BIOS_SW_ISR_FRAME
+    ISR_SAFE_STACK_ENTRY c_int16_handler, BIOS_INT16_ISR_SS, BIOS_INT16_ISR_SP, BIOS_INT16_ISR_FS, BIOS_INT16_ISR_GS, BIOS_INT16_ISR_FRAME
 
 .global isr_int17
 isr_int17:
@@ -747,7 +747,7 @@ isr_int19:
 
 .global isr_int1a
 isr_int1a:
-    ISR_SAFE_STACK_ENTRY c_int1a_handler, BIOS_INT1A_ISR_SS, BIOS_INT1A_ISR_SP, BIOS_INT1A_ISR_FS, BIOS_INT1A_ISR_GS, BIOS_INT1A_ISR_FRAME
+    ISR_SAFE_STACK_ENTRY c_int1a_handler, BIOS_SW_ISR_SS, BIOS_SW_ISR_SP, BIOS_SW_ISR_FS, BIOS_SW_ISR_GS, BIOS_SW_ISR_FRAME
 
 .global isr_int29
 isr_int29:

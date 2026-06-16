@@ -207,6 +207,8 @@ void kbd_init() {
         // initialize keyboard-buffer (set both pointers to begin of buffer)
         writeFarWord(0x0000, BDA_KBD_HEAD, BDA_KBD_BUF_START);
         writeFarWord(0x0000, BDA_KBD_TAIL, BDA_KBD_BUF_START);
+        writeFarWord(0x0000, BDA_KBD_BUF_START_OFFSET, 0x001E); // set begin of keyboardbuffer within segment 0x0040
+        writeFarWord(0x0000, BDA_KBD_BUF_END_OFFSET, 0x003E); // set end of keyboardbuffer within segment 0x0040
 
         // clear keyboard-register and IRQ
         uint8_t ctrl = inb(KBD_CTRL_PORT);
@@ -417,28 +419,6 @@ __attribute__((noreturn)) void bios_main() {
             lcd_putc_pos(0, 0, c, 0x07);
             c++;
             if (c > 'z') c = 'A';
-
-            // DEBUG: check BIOS Keyboard-Ringbuffer
-            if (readFarWord(0x0000, BDA_KBD_HEAD) != readFarWord(0x0000, BDA_KBD_TAIL)) {
-                uint16_t keyboard_data = readFarWord(0x0000, BDA_KBD_HEAD);
-                char ascii = (keyboard_data >> 8) & 0xFF;
-                uint8_t scancode = keyboard_data & 0xFF;
-
-                // display scancode and ASCII-character on LCD
-                lcd_print_string_pos(7, 0, "Scancode: 0x", 0x07);
-                char textbuffer[3];
-                uint8_to_hex(scancode, textbuffer);
-                lcd_putc_pos(7, 15, textbuffer[0], 0x07);
-                lcd_putc_pos(7, 16, textbuffer[1], 0x07);
-
-                lcd_print_string_pos(7, 18, "ASCII: ", 0x07);
-                lcd_putc_pos(7, 25, ascii ? ascii : '.', 0x07);
-
-                // move head forward
-                uint16_t next_head = readFarWord(0x0000, BDA_KBD_HEAD) + sizeof(uint16_t);
-                if (next_head > BDA_KBD_BUF_END) next_head = BDA_KBD_BUF_START;
-                writeFarWord(0x0000, BDA_KBD_HEAD, next_head);
-            }
 
             delay_1ms();
         }

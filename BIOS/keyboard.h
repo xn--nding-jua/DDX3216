@@ -42,6 +42,11 @@ static const char xt_to_ascii_normal[58] = {
   '\\', 'y', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', 0x00, 0x00, 0x00, ' '
 };
 
+/*
+static const char xt_to_ascii_altgr[58] = {
+};
+*/
+
 static const char xt_to_ascii_shift[58] = {
   // index = 0x00
   0x00, // [NULL]
