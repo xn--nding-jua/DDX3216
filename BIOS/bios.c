@@ -197,7 +197,7 @@ void kbd_init() {
     #else
         uint8_t scancode = 0xAA; // DEBUG
     #endif
-    
+
     if (scancode != 0xAA) {
         // keyboard did not respond correctly
         lcd_print_string("ERROR\n", 0x07);
@@ -208,8 +208,8 @@ void kbd_init() {
         // initialize keyboard-buffer (set both pointers to begin of buffer)
         writeFarWord(0x0000, BDA_KBD_HEAD, BDA_KBD_BUF_START);
         writeFarWord(0x0000, BDA_KBD_TAIL, BDA_KBD_BUF_START);
-        writeFarWord(0x0000, BDA_KBD_BUF_START_OFFSET, 0x001E); // set begin of keyboardbuffer within segment 0x0040
-        writeFarWord(0x0000, BDA_KBD_BUF_END_OFFSET, 0x003E); // set end of keyboardbuffer within segment 0x0040
+        writeFarWord(0x0000, BDA_KBD_BUF_START_PTR, BDA_KBD_BUF_START); // set begin of keyboardbuffer within segment 0x0040
+        writeFarWord(0x0000, BDA_KBD_BUF_END_PTR, BDA_KBD_BUF_END); // set end of keyboardbuffer within segment 0x0040
 
         // clear keyboard-register and IRQ
         uint8_t ctrl = inb(KBD_CTRL_PORT);
@@ -420,6 +420,29 @@ __attribute__((noreturn)) void bios_main() {
             lcd_putc_pos(0, 0, c, 0x07);
             c++;
             if (c > 'z') c = 'A';
+
+
+            uint16_t head = readFarWord(0x0000, BDA_KBD_HEAD);
+            uint16_t tail = readFarWord(0x0000, BDA_KBD_TAIL);
+            if (head != tail) {
+                // read char from ring-buffer
+                uint16_t kbd_data = readFarWord(0x0040, head); // head is stored at offset within segment 0x0040!
+                // read start/end of ringbuffer from BDA
+                uint16_t buf_start = readFarWord(0x0000, BDA_KBD_BUF_START_PTR);
+                uint16_t buf_end = readFarWord(0x0000, BDA_KBD_BUF_END_PTR);
+                // move head forwards
+                uint16_t next_head = head + sizeof(uint16_t);
+                if (next_head >= buf_end) {
+                    next_head = buf_start;
+                }
+                // write new head
+                writeFarWord(0x0000, BDA_KBD_HEAD, next_head);
+
+
+                // display new data on screen
+                lcd_print_string_pos(7, 0, "Code/Ascii = 0x", 0x07);
+                lcd_print_uint16(kbd_data, true);
+            }
 
             delay_1ms();
         }

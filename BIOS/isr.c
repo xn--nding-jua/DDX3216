@@ -178,12 +178,16 @@ __attribute__((externally_visible, regparm(1))) void c_int09_handler(struct inte
                 // if valid ascii-character, put it into the keyboard-buffer together with the scancode, otherwise ignore it
                 if ((ascii > 0) || (xt_scancode > 0)) {
                     // get current keyboard-buffer tail
-                    uint16_t kbd_buffer_tail = readFarWord(0x0000, BDA_KBD_TAIL);
+                    uint16_t tail = readFarWord(0x0000, BDA_KBD_TAIL);
+
+                    // read start/end of ringbuffer from BDA
+                    uint16_t buf_start = readFarWord(0x0000, BDA_KBD_BUF_START_PTR);
+                    uint16_t buf_end = readFarWord(0x0000, BDA_KBD_BUF_END_PTR);
 
                     // calc next tail with wraparound
-                    uint16_t next_tail = kbd_buffer_tail + sizeof(uint16_t);
-                    if (next_tail >= BDA_KBD_BUF_END) {
-                        next_tail = BDA_KBD_BUF_START;
+                    uint16_t next_tail = tail + sizeof(uint16_t);
+                    if (next_tail >= buf_end) {
+                        next_tail = buf_start;
                     }
 
                     // check if buffer is full: this is when (tail + 2 == head)
@@ -198,7 +202,7 @@ __attribute__((externally_visible, regparm(1))) void c_int09_handler(struct inte
                         uint16_t key_data = ((uint16_t)xt_scancode << 8) | (uint8_t)ascii;
                         
                         // write current keydata to keyboard-buffer
-                        writeFarWord(0x0040, kbd_buffer_tail, key_data); // tail is stored as offset in segment 0x0040!
+                        writeFarWord(0x0040, tail, key_data); // tail is stored as offset in segment 0x0040!
 
                         // update tail-pointer
                         writeFarWord(0x0000, BDA_KBD_TAIL, next_tail);
@@ -221,29 +225,18 @@ __attribute__((externally_visible, regparm(1))) void c_int0c_handler(struct inte
 	while (!(inb(UART_IIR) & IIR_PENDING)) {
         uint8_t reason = inb(UART_IIR) & IIR_REASON;
 
-        switch (reason) {
-            case IIR_RLS:
-                // receiver line status (errors, break)
-                inb(UART_LSR); // LSR lesen löscht diesen Interrupt
-                break;
-
-            case IIR_RDA: {
-                // receive data available
-                uint8_t c = inb(UART_RBR); // this resets the IRQ
-                break;
-            }
-
-            case IIR_TIMEOUT:
-                inb(UART_RBR); // this resets the IRQ
-                break;
-
-            case IIR_THRE:
-                // reading IIR or writing THR will reset this IRQ
-                break;
-
-            case IIR_MS:
-                inb(UART_MSR); // this resets the IRQ
-                break;
+        if (reason == IIR_RLS) {
+            // receiver line status (errors, break)
+            inb(UART_LSR); // LSR lesen löscht diesen Interrupt
+        }else if (reason == IIR_RDA) {
+            // receive data available
+            uint8_t c = inb(UART_RBR); // this resets the IRQ
+        }else if (reason == IIR_TIMEOUT) {
+            inb(UART_RBR); // this resets the IRQ
+        }else if (reason == IIR_THRE) {
+            // reading IIR or writing THR will reset this IRQ
+        }else if (reason == IIR_MS) {
+            inb(UART_MSR); // this resets the IRQ
         }
     }
 }
@@ -254,86 +247,72 @@ __attribute__((externally_visible, regparm(1))) void c_int10_handler(struct inte
     uint8_t ah = (uint8_t)(regs->ax >> 8);
     uint8_t al = (uint8_t)(regs->ax & 0xFF);
 
-    switch (ah) {
-        case 0x00: // set video mode
-            // for videomodes see here: https://mendelson.org/wpdos/videomodes.txt
-            switch (al) {
-                case 0x03: // standard DOS color-textmode
-                    lcd_init(true);
-                    lcd_clear();
-                    break;
-                case 0x06: // 640x200 monochrome pixel graphics mode
-                    lcd_init(false);
-                    lcd_clear();
-                    break;
-                default:
-                    // unsupported mode
-                    break;
-            }
+    if (ah == 0x00) {
+        // set video mode
+        // for videomodes see here: https://mendelson.org/wpdos/videomodes.txt
+        if (al == 0x03) {
+            // standard DOS color-textmode
+            lcd_init(true);
+            lcd_clear();
+        }else if (al == 0x06) {
+            // 640x200 monochrome pixel graphics mode
+            lcd_init(false);
+            lcd_clear();
+        }else{
+            // unsupported mode
+        }
+    }else if (ah == 0x02) {
+        // set cursor position
+        writeFarByte(BASE_SEG, BDA_CURSOR_POS_ROW, (regs->dx >> 8) & 0xFF); // DH = Row
+        writeFarByte(BASE_SEG, BDA_CURSOR_POS_COL, regs->dx & 0xFF); // DL = Column
 
-            break;
+        // update hardware cursor position
+        uint16_t offset = ((readFarByte(BASE_SEG, BDA_CURSOR_POS_ROW) * (LCD_WIDTH / 8)) + readFarByte(BASE_SEG, BDA_CURSOR_POS_COL)) * 2;
+        write_sc300_lcd_cfg(LCD_VID_IDX_CURSOR_ADDR_UPPER, (offset >> 9) & 0xFF); // upper 7 bits of offset (divide by 512)
+        write_sc300_lcd_cfg(LCD_VID_IDX_CURSOR_ADDR_LOWER, (offset >> 1) & 0xFF); // lower 8 bits of offset (divide by 2)
+    }else if (ah == 0x03) {
+        // get cursor position
+        // return cursor position in DX (DH = Row, DL = Column)
+        regs->dx = (readFarByte(BASE_SEG, BDA_CURSOR_POS_ROW) << 8) | readFarByte(BASE_SEG, BDA_CURSOR_POS_COL);
+    }else if (ah == 0x06) {
+        // scroll window up
+        if (al == 0) {
+            // scroll full window up
+            lcd_scroll_up();
+            lcd_scroll_up();
+            lcd_scroll_up();
+            lcd_scroll_up();
+            lcd_scroll_up();
+            lcd_scroll_up();
+            lcd_scroll_up();
+        }
+    }else if (ah == 0x0C) {
+        // write graphics pixel
+        // AL = Color, BH = Page Number, CX = x, DX = y
+        lcd_draw_pixel(regs->cx, regs->dx, al);
+    }else if (ah == 0x0D) {
+        // read graphics pixel
+        // BH = Page Number, CX = x, DX = y
+        // return AL = Color
+        regs->ax = (regs->ax & 0xFF00) | lcd_read_pixel(regs->cx, regs->dx);
+    }else if (ah == 0x0E) {
+        // write character
+        #if BIOS_DEBUG == 1
+            uart_putc(al);
+        #endif
 
-        case 0x02: // set cursor position
-        	writeFarByte(BASE_SEG, BDA_CURSOR_POS_ROW, (regs->dx >> 8) & 0xFF); // DH = Row
-        	writeFarByte(BASE_SEG, BDA_CURSOR_POS_COL, regs->dx & 0xFF); // DL = Column
+        // write char to display and handle control-characters like newline, carriage return, backspace, etc. internally
+        lcd_putc(al, 0x07); // light gray on black
+    }else if (ah == 0x0F) {
+        // get Current Video Mode
+        // AL = Video Mode, AH = number of character columns, BH = active page
 
-            // update hardware cursor position
-            uint16_t offset = ((readFarByte(BASE_SEG, BDA_CURSOR_POS_ROW) * (LCD_WIDTH / 8)) + readFarByte(BASE_SEG, BDA_CURSOR_POS_COL)) * 2;
-            write_sc300_lcd_cfg(LCD_VID_IDX_CURSOR_ADDR_UPPER, (offset >> 9) & 0xFF); // upper 7 bits of offset (divide by 512)
-            write_sc300_lcd_cfg(LCD_VID_IDX_CURSOR_ADDR_LOWER, (offset >> 1) & 0xFF); // lower 8 bits of offset (divide by 2)
-            break;
-
-        case 0x03: // get cursor position
-            // return cursor position in DX (DH = Row, DL = Column)
-            regs->dx = (readFarByte(BASE_SEG, BDA_CURSOR_POS_ROW) << 8) | readFarByte(BASE_SEG, BDA_CURSOR_POS_COL);
-            break;
-
-        case 0x06: // scroll window up
-            if (al == 0) {
-                // scroll full window up
-                lcd_scroll_up();
-                lcd_scroll_up();
-                lcd_scroll_up();
-                lcd_scroll_up();
-                lcd_scroll_up();
-                lcd_scroll_up();
-                lcd_scroll_up();
-            }
-            break;
-
-        case 0x0C: // write graphics pixel
-            // AL = Color, BH = Page Number, CX = x, DX = y
-            lcd_draw_pixel(regs->cx, regs->dx, al);
-            break;
-
-        case 0x0D: // read graphics pixel
-            // BH = Page Number, CX = x, DX = y
-            // return AL = Color
-            regs->ax = (regs->ax & 0xFF00) | lcd_read_pixel(regs->cx, regs->dx);
-            break;
-
-        case 0x0E: // write character
-            #if BIOS_DEBUG == 1
-                uart_putc(al);
-            #endif
-
-            // write char to display and handle control-characters like newline, carriage return, backspace, etc. internally
-            lcd_putc(al, 0x07); // light gray on black
-
-            break;
-
-        case 0x0F: // get Current Video Mode
-            // AL = Video Mode, AH = number of character columns, BH = active page
-
-            // AH = Columns (40), AL = Video Mode (00h), BH = Page (0)
-            // number of rows is set in BDA and not returned via INT10h, because DOS will ignore the returned value anyway and would always assume 25 rows
-            regs->ax = ((uint16_t)40 << 8) | 0x00; // 40x25 char in grayscale-text mode
-            regs->bx = 0x0000; // BH = 0
-            break;
-
-        default:
-            // simply ignore other video-functions like set cursor, etc.
-            break;
+        // AH = Columns (40), AL = Video Mode (00h), BH = Page (0)
+        // number of rows is set in BDA and not returned via INT10h, because DOS will ignore the returned value anyway and would always assume 25 rows
+        regs->ax = ((uint16_t)40 << 8) | 0x00; // 40x25 char in grayscale-text mode
+        regs->bx = 0x0000; // BH = 0
+    }else{
+        // simply ignore other video-functions like set cursor, etc.
     }
 }
 
@@ -366,6 +345,30 @@ __attribute__((externally_visible, regparm(1))) void c_int12_handler(struct inte
     #endif
 
 	regs->ax = readFarWord(0x0000, BDA_MEM_SIZE);
+}
+
+static uint8_t __attribute__((noinline)) do_read_sectors(uint32_t start_lba, uint16_t seg, uint16_t off, uint8_t count) {
+    for (uint8_t s = 0; s < count; s++) {
+        uint8_t err = ide_read_sector(start_lba + (uint32_t)s, seg, off + ((uint16_t)s * 512));
+        if (err) return err;
+    }
+    return 0;
+}
+
+static uint8_t __attribute__((noinline)) do_write_sectors(uint32_t start_lba, uint16_t seg, uint16_t off, uint8_t count) {
+    for (uint8_t s = 0; s < count; s++) {
+        uint8_t err = ide_write_sector(start_lba + (uint32_t)s, seg, off + ((uint16_t)s * 512));
+        if (err) return err;
+    }
+    return 0;
+}
+
+static uint8_t __attribute__((noinline)) do_verify_sectors(uint32_t start_lba, uint8_t count) {
+    for (uint8_t s = 0; s < count; s++) {
+        uint8_t err = ide_verify_sector(start_lba + (uint32_t)s);
+        if (err) return err;
+    }
+    return 0;
 }
 
 // INT13h: disk-interrupt
@@ -404,247 +407,178 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
     // clear carry-flag in flags-register
     regs->flags &= ~ISR_FLAGS_CF; 
 
-    switch(ah) {
-        case 0x00: // Reset Disk
-            outb(IDE_DEV_CTRL, 0x06);
-            for (volatile uint16_t i = 0; i < 10000; i++);
-            outb(IDE_DEV_CTRL, 0x02);
-            ide_wait_ready();
-            regs->ax = 0x0000; // Return-Code = Success
+    if (ah == 0x00) {
+        // Reset Disk
+        outb(IDE_DEV_CTRL, 0x06);
+        for (volatile uint16_t i = 0; i < 10000; i++);
+        outb(IDE_DEV_CTRL, 0x02);
+        ide_wait_ready();
+        regs->ax = 0x0000; // Return-Code = Success
+        regs->flags &= ~ISR_FLAGS_CF;
+    }else if (ah == 0x01) {
+        // Get Status of Last Drive Operation
+        regs->ax = 0x0000; // no error
+        regs->flags &= ~ISR_FLAGS_CF;
+    }else if (ah == 0x02) {
+        // Read Sectors
+        uint8_t  sectors_to_read = al;
+        uint8_t  sector           = cl & 0x3F;
+        uint16_t cylinder         = (((uint16_t)(cl & 0xC0)) << 2) | ch;
+        uint8_t  head             = dh;
+
+        // loop through all requested sectors
+        uint8_t err = do_read_sectors(
+            disk_chs_to_lba(cylinder, head, sector),
+            regs->es,   // offset within ES
+            regs->bx,   // segment of destination buffer
+            sectors_to_read
+        );
+
+        if (err) {
+            regs->ax     = ((uint16_t)err << 8) | 0;
+            regs->flags |= ISR_FLAGS_CF;
+        }else{
+            regs->ax     = sectors_to_read;
             regs->flags &= ~ISR_FLAGS_CF;
-            break;
-        
-        case 0x02: { // Read Sectors
-            uint8_t  sectors_to_read = al;
-            uint8_t  sector          = cl & 0b00111111;
-            uint16_t cylinder        = (((uint16_t)(cl & 0b11000000)) << 2) | (uint16_t)ch;
-            uint8_t  head            = dh;
-            uint16_t dest_bx         = regs->bx; // offset within ES
-            uint16_t dest_es         = regs->es; // segment of destination buffer
-            uint8_t  sectors_done    = 0;
-            uint8_t  error           = 0;
-            uint32_t lba             = disk_chs_to_lba(cylinder, head, sector);
-
-            // loop for all requested sectors
-            for (uint8_t s = 0; s < sectors_to_read; s++) {
-                uint32_t cur_lba     = lba + (uint32_t)s;
-                uint16_t cur_offset  = dest_bx + ((uint16_t)s * 512); // moving offset within ES: (BX + s * 512)
-
-                error = ide_read_sector(cur_lba, dest_es, cur_offset);
-                if (error != 0x00) {
-                    lcd_print_string("IDE ERROR", 0x07);
-                    break;
-                }
-
-                sectors_done++;
-            }
-
-            #if BIOS_DEBUG == 1
-                // check last two bytes at SEG 0x9B80, Offset 0x0200 -> should be 0xAA55 = MagicByte
-                if (regs->es == 0x9B80) {
-                    uart_print_string("Last two bytes of SEG 0x9B80 = ");
-                    uart_print_uint16(readFarWord(0x9B80, 0x0200 + 510), true);
-                    uart_putc('\n');
-                }
-                
-                // check BPB in bootsector: SEG 0x9B80, Offset 0x0200 + 24...27
-                if (regs->es == 0x0070) {
-                    uart_print_string("BPB at 0x014E + 24 = 0x");
-                    uart_print_uint16(readFarWord(0x0070, 0x014E + 24), true);
-                    uart_print_string(" and at 0x014E + 26 = 0x");
-                    uart_print_uint16(readFarWord(0x0070, 0x014E + 26), true);
-                    uart_putc('\n');
-                }
-                
-                // reading name of formatter
-                if (regs->es == 0x0070) {
-                    char oem_name[9];
-                    for (int i = 0; i < 8; i++) {
-                        oem_name[i] = (char)readFarByte(0x0070, 0x014E + 3 + i); 
-                    }
-                    oem_name[8] = '\0';
-
-                    uart_print_string("OEM Name of Disk-Formatter: ");
-                    uart_print_string_ram(oem_name);
-                    uart_putc('\n');
-                } 
-            #endif
-
-            // return answer
-            if (error == 0) {
-                // success: AH = 00h (Success), AL = number of read sectors
-                regs->ax = 0x0000 | sectors_done;
-                regs->flags &= ~ISR_FLAGS_CF; // clear carray-flag on success
-                #if BIOS_DEBUG == 1
-                    uart_print_string("Read ");
-                    uart_print_uint16(sectors_done, false);
-                    uart_print_string(" sectors!\n");
-                #endif
-            } else {
-                // error occurred
-                regs->ax = ((uint16_t)error << 8) | sectors_done;
-                regs->flags |= ISR_FLAGS_CF;  // set carry flag on error
-                lcd_print_string("IDE ERROR\n", 0x07);
-            }
-            break;
         }
-        
-        case 0x03: { // Write Sector
-            uint8_t  sectors_to_write = al;
-            uint8_t  sector           = cl & 0b00111111;
-            uint16_t cylinder         = (((uint16_t)(cl & 0b11000000)) << 2) | (uint16_t)ch;
-            uint8_t  head             = dh;
-            uint16_t src_bx           = regs->bx; // offset within ES
-            uint16_t src_es           = regs->es; // segment of source buffer
-            uint8_t  sectors_done     = 0;
-            uint8_t  error            = 0;
-            uint32_t lba              = disk_chs_to_lba(cylinder, head, sector);
+    }else if (ah == 0x03) {
+        uint8_t  sectors_to_write = al;
+        uint8_t  sector           = cl & 0x3F;
+        uint16_t cylinder         = (((uint16_t)(cl & 0xC0)) << 2) | ch;
+        uint8_t  head             = dh;
 
-            // loop for all requested sectors
-            for (uint8_t s = 0; s < sectors_to_write; s++) {
-                uint32_t cur_lba      = lba + (uint32_t)s;
-                uint16_t cur_offset   = src_bx + ((uint16_t)s * 512); // moving offset within ES: (BX + s * 512)
+        uint8_t err = do_write_sectors(
+            disk_chs_to_lba(cylinder, head, sector),
+            regs->es,
+            regs->bx,
+            sectors_to_write
+        );
 
-                // call IDE write function
-                error = ide_write_sector(cur_lba, src_es, cur_offset);
-                if (error != 0x00) {
-                    #if BIOS_DEBUG == 1
-                        uart_print_string("IDE WRITE ERROR\n");
-                    #endif
-                    break;
-                }
-
-                sectors_done++;
-            }
-
-            // return answer
-            if (error == 0) {
-                // success: AH = 00h (Success), AL = number of written sectors
-                regs->ax = 0x0000 | sectors_done;
-                regs->flags &= ~ISR_FLAGS_CF; // clear carry-flag on success
-                #if BIOS_DEBUG == 1
-                    uart_print_string("Wrote ");
-                    uart_print_uint16(sectors_done, false);
-                    uart_print_string(" sectors!\n");
-                #endif
-            } else {
-                // error occurred
-                regs->ax = ((uint16_t)error << 8) | sectors_done;
-                regs->flags |= ISR_FLAGS_CF;  // set carry flag on error
-                lcd_print_string("IDE WRITE ERROR\n", 0x07);
-            }
-            break;
+        if (err) {
+            regs->ax     = ((uint16_t)err << 8) | 0;
+            regs->flags |= ISR_FLAGS_CF;
+        }else{
+            regs->ax     = sectors_to_write;
+            regs->flags &= ~ISR_FLAGS_CF;
         }
+    }else if (ah == 0x04) {
+        // Verify Sectors
+        uint8_t  sectors_to_verify = al;
+        uint8_t  sector            = cl & 0x3F;
+        uint16_t cylinder          = (((uint16_t)(cl & 0xC0)) << 2) | ch;
+        uint8_t  head              = dh;
 
-        case 0x08: { // Get Drive Parameters
-            // what kind of drive is requested?
-            if (dl == 0x80) {
-                // harddisk / CF-Card
-                uint16_t max_cyl_idx    = hd0_params.cylinders - 1;     // cylinder-index is 0-based
-                uint8_t  max_head_idx   = hd0_params.heads - 1;         // head-index is 0-based
-                uint8_t  max_sector     = hd0_params.sectors_per_track; // sectors are 1-based
+        // loop through all requested sectors
+        uint8_t err = do_verify_sectors(
+            disk_chs_to_lba(cylinder, head, sector),
+            sectors_to_verify
+        );
 
-                // CX-encoding:
-                // Bits 15-8 : Bits 7-0 of cylinders
-                // Bits 7-6  : Bits 9-8 of cylinders
-                // Bits 5-0  : sectors per track
-                uint8_t cl_val = (uint8_t)((max_cyl_idx >> 2) & 0b11000000) | (uint8_t)(max_sector & 0b00111111);
-                uint8_t ch_val = (uint8_t)(max_cyl_idx & 0xFF); // low(!) eight bits of cylinder-number
-                
-                regs->ax = 0x0000; // Return-Code = Success
-                regs->bx = 0x0000; // Drive type (AT/PS2 floppies only)
-                regs->cx = ((uint16_t)ch_val << 8) | cl_val; // 15..6 = logical last index of cylinders = number of cylinders - 1 / 5..0 logical last index of sectors per track = number of sectors (starts at 1!)
-                regs->dx = ((uint16_t)max_head_idx << 8) | 0x01; // DL = number of hard-disk-drives / DH = logical last index of heads = numer of heads - 1
-
-                // set ES and DI to zero (pointer to drive parameter table, but only for floppies)
-                regs->es = 0x0000;
-                regs->di = 0x0000;
-
-                regs->flags &= ~ISR_FLAGS_CF;
-            }else if (dl >= 0x81) {
-                // we do not support more drives
-                regs->ax = 0x0100;  // AH=01 = Invalid Command
-                regs->bx = 0x0000;
-                regs->cx = 0x0000;
-                regs->dx = 0x0000;  // DL=0 = no more drives
-
-                regs->flags |= ISR_FLAGS_CF;              
-            }else{
-                // floppy
-                regs->ax = 0x0100; // AH = 01h (Invalid Command / Drive Not Ready)
-                regs->bx = 0x0000;
-                regs->cx = 0x0000;
-                regs->dx = 0x0000;      // zero floppy-drives available
-                regs->flags |= ISR_FLAGS_CF;  // Set Carry Flag = Fehler!
-            }
-            break;
+        if (err) {
+            regs->ax     = ((uint16_t)err << 8) | 0;
+            regs->flags |= ISR_FLAGS_CF;
+        }else{
+            regs->ax     = sectors_to_verify;
+            regs->flags &= ~ISR_FLAGS_CF;
         }
+    }else if (ah == 0x08) {
+        // Get Drive Parameters
+        // what kind of drive is requested?
+        if (dl == 0x80) {
+            // harddisk / CF-Card
+            uint16_t max_cyl_idx    = hd0_params.cylinders - 1;     // cylinder-index is 0-based
+            uint8_t  max_head_idx   = hd0_params.heads - 1;         // head-index is 0-based
+            uint8_t  max_sector     = hd0_params.sectors_per_track; // sectors are 1-based
 
-        case 0x15: { // Get Disk Type
-            if (dl == 0x80) {
-                // HDD #0
-                uint32_t total = (uint32_t)hd0_params.cylinders * (uint32_t)hd0_params.heads * (uint32_t)hd0_params.sectors_per_track;
-                regs->ax    = 0x0300 | (regs->ax & 0x00FF);
-                regs->cx    = (uint16_t)(total >> 16);
-                regs->dx    = (uint16_t)(total & 0xFFFF);
-                regs->flags &= ~ISR_FLAGS_CF;
-            }else if (dl >= 0x81) {
-                // HDD #1 or more
-                regs->ax    = 0x0000;    // AH = 00h (Drive not present)
-                regs->flags |= ISR_FLAGS_CF;  // Set Carry = Fehler / Nicht vorhanden
-            }else{
-                // floppy drive
-                regs->ax    = 0x0000;    // AH = 00h (Drive not present)
-                regs->flags |= ISR_FLAGS_CF;  // Set Carry = Fehler / Nicht vorhanden
-            }
-            break;
+            // CX-encoding:
+            // Bits 15-8 : Bits 7-0 of cylinders
+            // Bits 7-6  : Bits 9-8 of cylinders
+            // Bits 5-0  : sectors per track
+            uint8_t cl_val = (uint8_t)((max_cyl_idx >> 2) & 0b11000000) | (uint8_t)(max_sector & 0b00111111);
+            uint8_t ch_val = (uint8_t)(max_cyl_idx & 0xFF); // low(!) eight bits of cylinder-number
+            
+            regs->ax = 0x0000; // Return-Code = Success
+            regs->bx = 0x0000; // Drive type (AT/PS2 floppies only)
+            regs->cx = ((uint16_t)ch_val << 8) | cl_val; // 15..6 = logical last index of cylinders = number of cylinders - 1 / 5..0 logical last index of sectors per track = number of sectors (starts at 1!)
+            regs->dx = ((uint16_t)max_head_idx << 8) | 0x01; // DL = number of hard-disk-drives / DH = logical last index of heads = numer of heads - 1
+
+            // set ES and DI to zero (pointer to drive parameter table, but only for floppies)
+            regs->es = 0x0000;
+            regs->di = 0x0000;
+
+            regs->flags &= ~ISR_FLAGS_CF;
+        }else if (dl >= 0x81) {
+            // we do not support more drives
+            regs->ax = 0x0100;  // AH=01 = Invalid Command
+            regs->bx = 0x0000;
+            regs->cx = 0x0000;
+            regs->dx = 0x0000;  // DL=0 = no more drives
+
+            regs->flags |= ISR_FLAGS_CF;              
+        }else{
+            // floppy
+            regs->ax = 0x0100; // AH = 01h (Invalid Command / Drive Not Ready)
+            regs->bx = 0x0000;
+            regs->cx = 0x0000;
+            regs->dx = 0x0000;      // zero floppy-drives available
+            regs->flags |= ISR_FLAGS_CF;  // Set Carry Flag = Fehler!
         }
+    }else if (ah == 0x15) {
+        // Get Disk Type
+        if (dl == 0x80) {
+            // HDD #0
+            uint32_t total = (uint32_t)hd0_params.cylinders * (uint32_t)hd0_params.heads * (uint32_t)hd0_params.sectors_per_track;
+            regs->ax    = 0x0300 | (regs->ax & 0x00FF);
+            regs->cx    = (uint16_t)(total >> 16);
+            regs->dx    = (uint16_t)(total & 0xFFFF);
+            regs->flags &= ~ISR_FLAGS_CF;
+        }else if (dl >= 0x81) {
+            // HDD #1 or more
+            regs->ax    = 0x0000;    // AH = 00h (Drive not present)
+            regs->flags |= ISR_FLAGS_CF;  // Set Carry = Fehler / Nicht vorhanden
+        }else{
+            // floppy drive
+            regs->ax    = 0x0000;    // AH = 00h (Drive not present)
+            regs->flags |= ISR_FLAGS_CF;  // Set Carry = Fehler / Nicht vorhanden
+        }
+    }else if (ah == 0x41) {
+        // Extensions Present
+        // LBA-Support
 
-        case 0x41: // Extensions Present
-            // LBA-Support
-
-            // check for magic word 0x55AA
-            if (regs->bx != 0x55AA) {
-                regs->flags |= ISR_FLAGS_CF;  // CF=1: Fehler
-                regs->ax = 0x0100;
-                break;
-            }
-
+        // check for magic word 0x55AA
+        if (regs->bx != 0x55AA) {
+            regs->flags |= ISR_FLAGS_CF;  // CF=1: Fehler
+            regs->ax = 0x0100;
+        }else{
             // enable LBA-support
             regs->bx    = 0xAA55;      // send back magic word
             regs->ax    = 0x3000;      // AH = Version 3.0
             regs->cx    = 0x0007;      // Bit 0: Extended Disk Access
-                                       // Bit 1: Removable Drive Support
-                                       // Bit 2: EDD (Enhanced Disk Drive)
+                                        // Bit 1: Removable Drive Support
+                                        // Bit 2: EDD (Enhanced Disk Drive)
             regs->flags &= ~ISR_FLAGS_CF;    // CF=0: Extensions available
-            break;
+        }
+    }else if (ah == 0x42) {
+        // Extended Read Sectors
+        // DAP is at DS:SI
+        uint16_t dap_segment = regs->ds;
+        uint16_t dap_offset  = regs->si;
 
-        case 0x42: { // Extended Read Sectors
-            // DAP is at DS:SI
-            uint16_t dap_segment = regs->ds;
-            uint16_t dap_offset  = regs->si;
+        // read DAP bytewise from caller
+        struct disk_address_packet dap;
+        uint8_t* dap_ptr = (uint8_t*)&dap;
+        for (uint8_t i = 0; i < sizeof(dap); i++) {
+            dap_ptr[i] = readFarByte(dap_segment, dap_offset + i);
+        }
 
-            // read DAP bytewise from caller
-            struct disk_address_packet dap;
-            uint8_t* dap_ptr = (uint8_t*)&dap;
-            for (uint8_t i = 0; i < sizeof(dap); i++) {
-                dap_ptr[i] = readFarByte(dap_segment, dap_offset + i);
-            }
-
-            // check the structure
-            if (dap.size != 0x10) {
-                regs->ax    = 0x0100; // bad data
-                regs->flags |= ISR_FLAGS_CF;
-                break;
-            }
-
-            // 64-bit LBA: upper 32 Bit must be 0 (CF-Card < 4GB)
-            if (dap.lba_high != 0) {
-                regs->ax    = 0x0100; // LBA out of border
-                regs->flags |= ISR_FLAGS_CF;
-                break;
-            }
-
+        // check the structure
+        if (dap.size != 0x10) {
+            regs->ax    = 0x0100; // bad data
+            regs->flags |= ISR_FLAGS_CF;
+        }else if (dap.lba_high != 0) { // 64-bit LBA: upper 32 Bit must be 0 (CF-Card < 4GB)
+            regs->ax    = 0x0100; // LBA out of border
+            regs->flags |= ISR_FLAGS_CF;
+        }else{
             uint32_t lba          = dap.lba_low;
             uint16_t sector_count = dap.sector_count;
             uint16_t dest_offset  = dap.dest_offset;
@@ -675,40 +609,35 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
                 regs->ax    = ((uint16_t)error << 8);
                 regs->flags |= ISR_FLAGS_CF;
             }
-            break;
+        }
+    }else if (ah == 0x48) {
+        // Get Drive Parameters Extended
+        uint16_t buf_segment = regs->ds;
+        uint16_t buf_offset  = regs->si;
+
+        // check buffer-size (first two bytes)
+        uint16_t buf_size = readFarWord(buf_segment, buf_offset);
+
+        struct drive_params_ext params;
+        params.size           = buf_size;
+        params.flags          = 0x0002;        // Bit 1: LBA supported
+        params.cylinders      = hd0_params.cylinders;
+        params.heads          = hd0_params.heads;
+        params.sectors        = hd0_params.sectors_per_track;
+        params.total          = (uint64_t)hd0_params.cylinders * (uint64_t)hd0_params.heads * (uint64_t)hd0_params.sectors_per_track;
+        params.bytes_per_sect = 512; // we only support 512 bytes per sector, so this is fixed to 512
+
+        // write structure in buffer of caller
+        uint8_t *p = (uint8_t*)&params;
+        for (uint8_t i = 0; i < sizeof(params); i++) {
+            writeFarByte(buf_segment, buf_offset + i, p[i]);
         }
 
-        case 0x48: { // Get Drive Parameters Extended
-            uint16_t buf_segment = regs->ds;
-            uint16_t buf_offset  = regs->si;
-
-            // check buffer-size (first two bytes)
-            uint16_t buf_size = readFarWord(buf_segment, buf_offset);
-
-            struct drive_params_ext params;
-            params.size           = buf_size;
-            params.flags          = 0x0002;        // Bit 1: LBA supported
-            params.cylinders      = hd0_params.cylinders;
-            params.heads          = hd0_params.heads;
-            params.sectors        = hd0_params.sectors_per_track;
-            params.total          = (uint64_t)hd0_params.cylinders * (uint64_t)hd0_params.heads * (uint64_t)hd0_params.sectors_per_track;
-            params.bytes_per_sect = 512; // we only support 512 bytes per sector, so this is fixed to 512
-
-            // write structure in buffer of caller
-            uint8_t *p = (uint8_t*)&params;
-            for (uint8_t i = 0; i < sizeof(params); i++) {
-                writeFarByte(buf_segment, buf_offset + i, p[i]);
-            }
-
-            regs->ax    = 0x0000;
-            regs->flags &= ~ISR_FLAGS_CF;
-            break;
-        }
-
-        default:
-            regs->ax = 0x0100;
-            regs->flags |= ISR_FLAGS_CF; // Carry Set
-            break;
+        regs->ax    = 0x0000;
+        regs->flags &= ~ISR_FLAGS_CF;
+    }else{
+        regs->ax = 0x0100;
+        regs->flags |= ISR_FLAGS_CF; // Carry Set
     }
 }
 
@@ -722,35 +651,29 @@ __attribute__((externally_visible, regparm(1))) void c_int14_handler(struct inte
     uint8_t ah = (uint8_t)(regs->ax >> 8);
     uint8_t al = (uint8_t)(regs->ax & 0xFF);
 
-	switch (ah) {
-        case 0x00: // initializing
-            // DOS wants to initalize with ax = 2400 Baud, no parity, 1 stopbit and 8 databits
+	if (ah == 0x00) {
+        // initializing
+        // DOS wants to initalize with ax = 2400 Baud, no parity, 1 stopbit and 8 databits
 
-            // the desired port is stored in register DX
-            // DOS initializes from 0x03 downto 0x00
-            regs->ax    = 0x0000;
+        // the desired port is stored in register DX
+        // DOS initializes from 0x03 downto 0x00
+        regs->ax    = 0x0000;
+        regs->flags &= ~ISR_FLAGS_CF;
+    }else if (ah == 0x01) {
+        // transmit char
+        uart_putc((char)al);
+        regs->ax    = 0x6000;
+        regs->flags &= ~ISR_FLAGS_CF;
+    }else if (ah == 0x02) {
+        // receive char (not implemented)
+        regs->ax    = 0x8000; // timeout
+        regs->flags &= ~ISR_FLAGS_CF;
+    }else if (ah == 0x03) {
+        // request state
+            uint8_t status = inb(UART_LSR); // LSR
+            uint8_t modem = inb(UART_MSR);  // MSR
+            regs->ax    = ((uint16_t)status << 8) | modem;
             regs->flags &= ~ISR_FLAGS_CF;
-            break;
-
-        case 0x01: // transmit char
-            uart_putc((char)al);
-            regs->ax    = 0x6000;
-            regs->flags &= ~ISR_FLAGS_CF;
-            break;
-
-        case 0x02: // receive char (not implemented)
-            regs->ax    = 0x8000; // timeout
-            regs->flags &= ~ISR_FLAGS_CF;
-            break;
-
-        case 0x03: // request state
-            {
-                uint8_t status = inb(UART_LSR); // LSR
-                uint8_t modem = inb(UART_MSR);  // MSR
-                regs->ax    = ((uint16_t)status << 8) | modem;
-                regs->flags &= ~ISR_FLAGS_CF;
-            }
-            break;
     }
 }
 
@@ -766,125 +689,90 @@ __attribute__((externally_visible, regparm(1))) void c_int15_handler(struct inte
     uint8_t ah = (uint8_t)(regs->ax >> 8);
     uint8_t al = (uint8_t)(regs->ax & 0xFF);
 
-    switch (ah) {
-        case 0x24:  // A20 Gate Control
-            if (al == 0x00) { // disable Gate A20
-                a20_disable();
-                regs->flags &= ~ISR_FLAGS_CF; // Success
-            }else if (al == 0x01) { // enable Gate A20
-                a20_enable();
-                regs->flags &= ~ISR_FLAGS_CF; // Success
-            } else if (al == 0x02) { // request if Gate A20 is opened
-                regs->ax = a20_is_enabled() ? ISR_FLAGS_CF : 0x0000;
-                regs->flags &= ~ISR_FLAGS_CF;
-            } else {
-                regs->ax = 0x8600; // unknown AL-Subcode
-                regs->flags |= ISR_FLAGS_CF;
-            }
-            break;
-
-        case 0x41:
-            // the following functions are rarely documented and are related to the IBM Micro Channel
-            // we do not support this
-
-            // DOS hangs after this interrupt. AX=0x4101 which stands for
-            // "Wait for External Event"
-
-            switch(al) {
-                case 0x01: {
-                    regs->ax = 0x0000;
-                    regs->flags &= ~ISR_FLAGS_CF; 
-                    break;
-                }
-                default:
-                    regs->ax = 0x8600;
-                    regs->flags |= ISR_FLAGS_CF;
-                    break;
-            }
-
-            break;
-
-        case 0x86: {
-            uint32_t usec = ((uint32_t)regs->cx << 16) | regs->dx;
-
-            if (usec > 1000000UL) {
-                usec = 1000000UL;
-            }
-
-            delay_us(usec);
-
-            regs->ax = 0x0000;
+    if (ah == 0x24) {
+        // A20 Gate Control
+        if (al == 0x00) { // disable Gate A20
+            a20_disable();
+            regs->flags &= ~ISR_FLAGS_CF; // Success
+        }else if (al == 0x01) { // enable Gate A20
+            a20_enable();
+            regs->flags &= ~ISR_FLAGS_CF; // Success
+        } else if (al == 0x02) { // request if Gate A20 is opened
+            regs->ax = a20_is_enabled() ? ISR_FLAGS_CF : 0x0000;
             regs->flags &= ~ISR_FLAGS_CF;
-            break;
+        } else {
+            regs->ax = 0x8600; // unknown AL-Subcode
+            regs->flags |= ISR_FLAGS_CF;
         }
+    }else if (ah == 0x41) {
+        // the following functions are rarely documented and are related to the IBM Micro Channel
+        // we do not support this
 
-        case 0x87:
-            // Move block to/from extended memory -> unsupported
+        // DOS hangs after this interrupt. AX=0x4101 which stands for
+        // "Wait for External Event"
+
+        if (al == 0x01) {
+            regs->ax = 0x0000;
+            regs->flags &= ~ISR_FLAGS_CF; 
+        }else{
             regs->ax = 0x8600;
             regs->flags |= ISR_FLAGS_CF;
-            break;
+        }
+    }else if (ah == 0x86) {
+        uint32_t usec = ((uint32_t)regs->cx << 16) | regs->dx;
 
-        case 0x88: {
-            // Request Extended Memory Size
-            regs->ax = BIOS_TOTAL_MEMORY_MB * 1024;
-            regs->flags &= ~ISR_FLAGS_CF; // Clear Carry Flag (Success)
-            break;
+        if (usec > 1000000UL) {
+            usec = 1000000UL;
         }
 
-        case 0x90: // AH=90h: Device busy
-        case 0x91: // AH=91h: Interrupt complete
-            regs->ax = 0x0000;
-            regs->flags &= ~ISR_FLAGS_CF;
-            break;
+        delay_us(usec);
 
-        case 0xC0: {
-            // Get Configuration Table
+        regs->ax = 0x0000;
+        regs->flags &= ~ISR_FLAGS_CF;
+    }else if (ah == 0x87) {
+        // Move block to/from extended memory -> unsupported
+        regs->ax = 0x8600;
+        regs->flags |= ISR_FLAGS_CF;
+    }else if (ah == 0x88) {
+        // Request Extended Memory Size
+        regs->ax = BIOS_TOTAL_MEMORY_MB * 1024;
+        regs->flags &= ~ISR_FLAGS_CF; // Clear Carry Flag (Success)
+    }else if ((ah == 0x90) || (ah == 0x91)) {
+        // AH=90h: Device busy
+        // AH=91h: Interrupt complete
+        regs->ax = 0x0000;
+        regs->flags &= ~ISR_FLAGS_CF;
+    }else if (ah == 0xC0) {
+        // Get Configuration Table
 
-            regs->es = 0xF000;
-            regs->bx = (uint16_t)(uintptr_t)&sysconfig; // pointer to config. TODO: check if this is correct
+        regs->es = 0xF000;
+        regs->bx = (uint16_t)(uintptr_t)&sysconfig; // pointer to config. TODO: check if this is correct
 
-            // we do not support this for now
-            regs->ax = 0x0000;
-            regs->flags &= ~ISR_FLAGS_CF;  // Set Carry Flag
-            break;
+        // we do not support this for now
+        regs->ax = 0x0000;
+        regs->flags &= ~ISR_FLAGS_CF;  // Set Carry Flag
+    }else if (ah == 0xC1) {
+        // Get EBDA segment
+        regs->es = BIOS_SEG;
+        regs->ax = 0x0000;
+        regs->flags &= ~ISR_FLAGS_CF;
+    }else if (ah == 0xDA) {
+        // E820 / alternative memory-APIs
+        // we do not support this for now
+        regs->ax = 0x8600;
+        regs->flags |= ISR_FLAGS_CF;
+    }else if (ah == 0xE8) {
+        if (al == 0x20) {
+            // memmap
+        }else if (al == 0x01) {
+            // memsize2
         }
-
-        case 0xC1: // Get EBDA segment
-            regs->es = BIOS_SEG;
-            regs->ax = 0x0000;
-            regs->flags &= ~ISR_FLAGS_CF;
-            break;
-
-        case 0xDA: {
-            // E820 / alternative memory-APIs
-            // we do not support this for now
-            regs->ax = 0x8600;
-            regs->flags |= ISR_FLAGS_CF;
-            break;
-        }
-
-        case 0xE8: {
-            switch (al) {
-                case 0x20:
-                    // memmap
-                    break;
-                case 0x01:
-                    // memsize2
-                    break;
-            }
-            break;
-            }
-        case 0x8A: {
-            // memsize3
-            break;
-            }
-
-        default:
-            // Unbekannte Funktion -> Fehler (AH = 0x86, Carry Flag = 1)
-            regs->ax = 0x8600;
-            regs->flags |= ISR_FLAGS_CF; // Set Carry Flag
-            break;
-
+    }else if (ah == 0x8A) {
+        // memsize3
+    }else{
+        // Unbekannte Funktion -> Fehler (AH = 0x86, Carry Flag = 1)
+        regs->ax = 0x8600;
+        regs->flags |= ISR_FLAGS_CF; // Set Carry Flag
     }
 }
 
@@ -898,56 +786,52 @@ __attribute__((externally_visible, regparm(1))) void c_int16_handler(struct inte
 
     uint8_t ah = regs->ax >> 8;
 
-    switch (ah) {
-        case 0x00: // Read key
-            // this function has to block if buffer is empty
-            while (1) {
-                uint16_t head = readFarWord(0x0000, BDA_KBD_HEAD);
-                uint16_t tail = readFarWord(0x0000, BDA_KBD_TAIL);
-                
-                if (head != tail) {
-                    // read char from ring-buffer
-                    regs->ax = readFarWord(0x0040, head); // head is stored at offset within segment 0x0040!
-
-                    // read start/end of ringbuffer from BDA
-                    uint16_t buf_start = readFarWord(0x0000, BDA_KBD_BUF_START_OFFSET);
-                    uint16_t buf_end = readFarWord(0x0000, BDA_KBD_BUF_END_OFFSET);
-
-                    // move head forwards
-                    uint16_t next_head = head + sizeof(uint16_t);
-                    if (next_head >= buf_end) {
-                        next_head = buf_start;
-                    }
-
-                    // write new head
-                    writeFarWord(0x0000, BDA_KBD_HEAD, next_head);
-                    break;
-                }else{
-                    __asm__ volatile ("sti; hlt; cli");
-                }
-            }
-            break;
-
-        case 0x01: { // Check for new key
+    if (ah == 0x00) {
+        // Read key
+        // this function has to block if buffer is empty
+        while (1) {
             uint16_t head = readFarWord(0x0000, BDA_KBD_HEAD);
-            uint16_t tail = readFarWord(0x0000, BDA_KBD_TAIL);    
+            uint16_t tail = readFarWord(0x0000, BDA_KBD_TAIL);
             
-            if (head == tail) {
-                // keyboard-buffer is empty -> set zero-flag
-                regs->flags |= ISR_FLAGS_ZF;
-            } else {
-                // keyboard-buffer has some new data -> copy char to AX without changing the buffer
-                regs->ax = readFarWord(0x0040, head); 
-                
-                // delete zero-flag to show that character is present
-                regs->flags &= ~ISR_FLAGS_ZF;
-            }            
-            break;
-        }
+            if (head != tail) {
+                // read char from ring-buffer
+                regs->ax = readFarWord(0x0040, head); // head is stored at offset within segment 0x0040!
 
-        default:
+                // read start/end of ringbuffer from BDA
+                uint16_t buf_start = readFarWord(0x0000, BDA_KBD_BUF_START_PTR);
+                uint16_t buf_end = readFarWord(0x0000, BDA_KBD_BUF_END_PTR);
+
+                // move head forwards
+                uint16_t next_head = head + sizeof(uint16_t);
+                if (next_head >= buf_end) {
+                    next_head = buf_start;
+                }
+
+                // write new head
+                writeFarWord(0x0000, BDA_KBD_HEAD, next_head);
+                break;
+            }else{
+                // buffer is empty -> enable interrupts and wait for new key-stroke
+                __asm__ volatile ("sti; hlt; cli");
+            }
+        }
+    }else if (ah == 0x01) {
+        // Check for new key
+        uint16_t head = readFarWord(0x0000, BDA_KBD_HEAD);
+        uint16_t tail = readFarWord(0x0000, BDA_KBD_TAIL);    
+        
+        if (head == tail) {
+            // keyboard-buffer is empty -> set zero-flag
             regs->flags |= ISR_FLAGS_ZF;
-            break;
+        } else {
+            // keyboard-buffer has some new data -> copy char to AX without changing the buffer
+            regs->ax = readFarWord(0x0040, head); 
+            
+            // delete zero-flag to show that character is present
+            regs->flags &= ~ISR_FLAGS_ZF;
+        }            
+    }else{
+        regs->flags |= ISR_FLAGS_ZF;
     }
 }
 
@@ -1002,46 +886,38 @@ __attribute__((externally_visible, regparm(1))) void c_int1a_handler(struct inte
 
     uint8_t ah = (uint8_t)(regs->ax >> 8);
 
-    switch (ah) {
-        case 0x00: { // Get system time
-            uint16_t timer_lo = readFarWord(0x0000, BDA_TIMER_COUNTER_LOW);
-            uint16_t timer_hi = readFarWord(0x0000, BDA_TIMER_COUNTER_HIGH);
-            uint8_t midnight = readFarByte(0x0000, BDA_MIDNIGHT_FLAG);
+    if (ah == 0x00) {
+        // Get system time
+        uint16_t timer_lo = readFarWord(0x0000, BDA_TIMER_COUNTER_LOW);
+        uint16_t timer_hi = readFarWord(0x0000, BDA_TIMER_COUNTER_HIGH);
+        uint8_t midnight = readFarByte(0x0000, BDA_MIDNIGHT_FLAG);
 
-            regs->cx = timer_hi;
-            regs->dx = timer_lo;
-            regs->ax = 0x0000 | midnight;       // AL = midnight flag, AH = 0
-            regs->flags &= ~ISR_FLAGS_CF;    // CF=0
+        regs->cx = timer_hi;
+        regs->dx = timer_lo;
+        regs->ax = 0x0000 | midnight;       // AL = midnight flag, AH = 0
+        regs->flags &= ~ISR_FLAGS_CF;    // CF=0
 
-            // Optional: clear IBM-compatible midnight-flag after reading
-            writeFarByte(0x0000, BDA_MIDNIGHT_FLAG, 0);
-            break;
-        }
+        // Optional: clear IBM-compatible midnight-flag after reading
+        writeFarByte(0x0000, BDA_MIDNIGHT_FLAG, 0);
+    }else if (ah == 0x01) {
+        // Set system time CX:DX
+        writeFarWord(0x0000, BDA_TIMER_COUNTER_LOW, regs->dx);
+        writeFarWord(0x0000, BDA_TIMER_COUNTER_HIGH, regs->cx);
+        writeFarByte(0x0000, BDA_MIDNIGHT_FLAG, 0);
+        regs->ax = 0x0000;
+        regs->flags &= ~ISR_FLAGS_CF;
+    }else if (ah == 0x02) {
+        // Read RTC
+        uint16_t hour = 0;
+        uint8_t min = 0;
+        uint16_t sec = 0;
 
-        case 0x01: { // Set system time CX:DX
-            writeFarWord(0x0000, BDA_TIMER_COUNTER_LOW, regs->dx);
-            writeFarWord(0x0000, BDA_TIMER_COUNTER_HIGH, regs->cx);
-            writeFarByte(0x0000, BDA_MIDNIGHT_FLAG, 0);
-            regs->ax = 0x0000;
-            regs->flags &= ~ISR_FLAGS_CF;
-            break;
-        }
-
-        case 0x02: { // Read RTC
-            uint16_t hour = 0;
-            uint8_t min = 0;
-            uint16_t sec = 0;
-
-            regs->cx = (hour << 8) | min;
-            regs->dx = (sec << 8);
-            regs->flags &= ~ISR_FLAGS_CF;
-            break;
-        }
-
-        default:
-            regs->ax = 0x8600;
-            regs->flags |= ISR_FLAGS_CF;
-            break;
+        regs->cx = (hour << 8) | min;
+        regs->dx = (sec << 8);
+        regs->flags &= ~ISR_FLAGS_CF;
+    }else{
+        regs->ax = 0x8600;
+        regs->flags |= ISR_FLAGS_CF;
     }
 }
 

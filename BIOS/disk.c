@@ -509,6 +509,34 @@ uint8_t ide_write_sector(uint32_t lba, uint16_t src_seg, uint16_t offset) {
     return 0x00; // no error
 }
 
+uint8_t ide_verify_sector(uint32_t lba) {
+    if (!ide_wait_ready()) return 0xAA;
+
+    outb(IDE_SECT_COUNT,  1);
+    outb(IDE_LBA_LOW,     (uint8_t)( lba        & 0xFF));
+    outb(IDE_LBA_MID,     (uint8_t)((lba >>  8) & 0xFF));
+    outb(IDE_LBA_HIGH,    (uint8_t)((lba >> 16) & 0xFF));
+    outb(IDE_DRIVE_HEAD,  0xE0 | (uint8_t)((lba >> 24) & 0x0F));
+    outb(IDE_COMMAND,     IDE_CMD_READ);
+
+    if (!ide_wait_drq()) {
+        return 0x10; // 0x10 = "Bad ECC / Readerror"
+    }
+
+    // we are reading data from CF-card, but read into nowhere
+    __asm__ __volatile__(
+        "cld\n\t"
+        "1:\n\t"
+        "inb %%dx, %%al\n\t"  // read data to nirvana
+        "loop 1b\n\t"
+        :
+        : "d"(IDE_DATA), "c"(512)
+        : "ax"
+    );
+
+    return 0x00; // Sektor ist fehlerfrei!
+}
+
 // LBA-calculation based on CHS
 // LBA = (C × H_max + H) × S_max + (S - 1)
 uint32_t disk_chs_to_lba(uint32_t c, uint32_t h, uint32_t s) {

@@ -29,8 +29,8 @@
 #define BDA_KBD_TAIL        	0x041C          // next writable position for scancode
 #define BDA_KBD_BUF_START   	0x001E          // begin of buffer within segment 0x0040
 #define BDA_KBD_BUF_END     	0x003E          // end of buffer within segment 0x0040
-#define BDA_KBD_BUF_START_OFFSET 0x0480         // offset in segment 0x0040 to begin of keyboardbuffer (hence 0x001E)
-#define BDA_KBD_BUF_END_OFFSET  0x0482          // offset in segment 0x0040 to end of keyboardbuffer (hence 0x003E)
+#define BDA_KBD_BUF_START_PTR   0x0480          // offset in segment 0x0040 to begin of keyboardbuffer (hence 0x001E)
+#define BDA_KBD_BUF_END_PTR     0x0482          // offset in segment 0x0040 to end of keyboardbuffer (hence 0x003E)
 
 #define UART_BASE				0x1000
 #define UART_CLK				14336000        // external UART is connected to CLK14OUT of SC300

@@ -79,6 +79,7 @@ bool ide_wait_drq(void);
 uint8_t ide_read_bootsector();
 uint8_t ide_read_sector(uint32_t lba, uint16_t dest_seg, uint16_t offset);
 uint8_t ide_write_sector(uint32_t lba, uint16_t src_seg, uint16_t offset);
+uint8_t ide_verify_sector(uint32_t lba);
 uint32_t disk_chs_to_lba(uint32_t c, uint32_t h, uint32_t s);
 
 struct floppy_param_table {
