@@ -178,7 +178,7 @@ __attribute__((externally_visible, regparm(1))) void c_int09_handler(struct inte
                 // if valid ascii-character, put it into the keyboard-buffer together with the scancode, otherwise ignore it
                 if ((ascii > 0) || (xt_scancode > 0)) {
                     // get current keyboard-buffer tail
-                    uint16_t tail = readFarWord(0x0000, BDA_KBD_TAIL);
+                    uint16_t tail = readFarWord(0x0000, BDA_KBD_TAIL_PTR);
 
                     // read start/end of ringbuffer from BDA
                     uint16_t buf_start = readFarWord(0x0000, BDA_KBD_BUF_START_PTR);
@@ -191,7 +191,7 @@ __attribute__((externally_visible, regparm(1))) void c_int09_handler(struct inte
                     }
 
                     // check if buffer is full: this is when (tail + 2 == head)
-                    if (next_tail == readFarWord(0x0000, BDA_KBD_HEAD)) {
+                    if (next_tail == readFarWord(0x0000, BDA_KBD_HEAD_PTR)) {
                         // buffer overflow -> ignore new key-press
                         // regular BIOS would beep here, but we have no speaker
                     } else {
@@ -205,7 +205,7 @@ __attribute__((externally_visible, regparm(1))) void c_int09_handler(struct inte
                         writeFarWord(0x0040, tail, key_data); // tail is stored as offset in segment 0x0040!
 
                         // update tail-pointer
-                        writeFarWord(0x0000, BDA_KBD_TAIL, next_tail);
+                        writeFarWord(0x0000, BDA_KBD_TAIL_PTR, next_tail);
                     }
                 }
 
@@ -786,12 +786,12 @@ __attribute__((externally_visible, regparm(1))) void c_int16_handler(struct inte
 
     uint8_t ah = regs->ax >> 8;
 
-    if (ah == 0x00) {
-        // Read key
+    if ((ah == 0x00) || (ah == 0x10)) {
+        // Read key blocking (Standard-Check (0x00) and Extended Check (0x10))
         // this function has to block if buffer is empty
         while (1) {
-            uint16_t head = readFarWord(0x0000, BDA_KBD_HEAD);
-            uint16_t tail = readFarWord(0x0000, BDA_KBD_TAIL);
+            uint16_t head = readFarWord(0x0000, BDA_KBD_HEAD_PTR);
+            uint16_t tail = readFarWord(0x0000, BDA_KBD_TAIL_PTR);
             
             if (head != tail) {
                 // read char from ring-buffer
@@ -808,17 +808,17 @@ __attribute__((externally_visible, regparm(1))) void c_int16_handler(struct inte
                 }
 
                 // write new head
-                writeFarWord(0x0000, BDA_KBD_HEAD, next_head);
+                writeFarWord(0x0000, BDA_KBD_HEAD_PTR, next_head);
                 break;
             }else{
                 // buffer is empty -> enable interrupts and wait for new key-stroke
                 __asm__ volatile ("sti; hlt; cli");
             }
         }
-    }else if (ah == 0x01) {
-        // Check for new key
-        uint16_t head = readFarWord(0x0000, BDA_KBD_HEAD);
-        uint16_t tail = readFarWord(0x0000, BDA_KBD_TAIL);    
+    }else if ((ah == 0x01) || (ah == 0x11)) {
+        // Check for new key (Standard-Check (0x01) and Extended Check (0x11))
+        uint16_t head = readFarWord(0x0000, BDA_KBD_HEAD_PTR);
+        uint16_t tail = readFarWord(0x0000, BDA_KBD_TAIL_PTR);    
         
         if (head == tail) {
             // keyboard-buffer is empty -> set zero-flag
@@ -826,10 +826,10 @@ __attribute__((externally_visible, regparm(1))) void c_int16_handler(struct inte
         } else {
             // keyboard-buffer has some new data -> copy char to AX without changing the buffer
             regs->ax = readFarWord(0x0040, head); 
-            
+
             // delete zero-flag to show that character is present
             regs->flags &= ~ISR_FLAGS_ZF;
-        }            
+        }
     }else{
         regs->flags |= ISR_FLAGS_ZF;
     }

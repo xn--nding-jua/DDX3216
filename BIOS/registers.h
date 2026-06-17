@@ -25,8 +25,8 @@
 #define BDA_TIMER_COUNTER_HIGH  0x046E
 #define BDA_MIDNIGHT_FLAG       0x0470
 
-#define BDA_KBD_HEAD        	0x041A          // next readable scancode
-#define BDA_KBD_TAIL        	0x041C          // next writable position for scancode
+#define BDA_KBD_HEAD_PTR     	0x041A          // next readable scancode
+#define BDA_KBD_TAIL_PTR      	0x041C          // next writable position for scancode
 #define BDA_KBD_BUF_START   	0x001E          // begin of buffer within segment 0x0040
 #define BDA_KBD_BUF_END     	0x003E          // end of buffer within segment 0x0040
 #define BDA_KBD_BUF_START_PTR   0x0480          // offset in segment 0x0040 to begin of keyboardbuffer (hence 0x001E)

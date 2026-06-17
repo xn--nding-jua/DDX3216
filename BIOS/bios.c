@@ -206,8 +206,8 @@ void kbd_init() {
         lcd_print_string("OK\n", 0x07);
 
         // initialize keyboard-buffer (set both pointers to begin of buffer)
-        writeFarWord(0x0000, BDA_KBD_HEAD, BDA_KBD_BUF_START);
-        writeFarWord(0x0000, BDA_KBD_TAIL, BDA_KBD_BUF_START);
+        writeFarWord(0x0000, BDA_KBD_HEAD_PTR, BDA_KBD_BUF_START);
+        writeFarWord(0x0000, BDA_KBD_TAIL_PTR, BDA_KBD_BUF_START);
         writeFarWord(0x0000, BDA_KBD_BUF_START_PTR, BDA_KBD_BUF_START); // set begin of keyboardbuffer within segment 0x0040
         writeFarWord(0x0000, BDA_KBD_BUF_END_PTR, BDA_KBD_BUF_END); // set end of keyboardbuffer within segment 0x0040
 
@@ -422,8 +422,8 @@ __attribute__((noreturn)) void bios_main() {
             if (c > 'z') c = 'A';
 
 
-            uint16_t head = readFarWord(0x0000, BDA_KBD_HEAD);
-            uint16_t tail = readFarWord(0x0000, BDA_KBD_TAIL);
+            uint16_t head = readFarWord(0x0000, BDA_KBD_HEAD_PTR);
+            uint16_t tail = readFarWord(0x0000, BDA_KBD_TAIL_PTR);
             if (head != tail) {
                 // read char from ring-buffer
                 uint16_t kbd_data = readFarWord(0x0040, head); // head is stored at offset within segment 0x0040!
@@ -436,7 +436,7 @@ __attribute__((noreturn)) void bios_main() {
                     next_head = buf_start;
                 }
                 // write new head
-                writeFarWord(0x0000, BDA_KBD_HEAD, next_head);
+                writeFarWord(0x0000, BDA_KBD_HEAD_PTR, next_head);
 
 
                 // display new data on screen
