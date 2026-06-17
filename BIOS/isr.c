@@ -23,29 +23,8 @@ void pirq_init() {
     write_sc300_cfg(0xB2, 0b00000100); // PIRQ0 -> INT04. See page p5-80
 }
 
-/*
-// IRQ0 -> INT 08h: timer-interrupt
-__attribute__((externally_visible, regparm(1))) void c_int08_handler(struct interrupt_registers *regs) {
-    #if BIOS_DEBUG == 1
-        uart_print_string("I08\n");
-        lcd_print_string("I08\n", 0x07);
-    #endif
-
-    // send End of Interrupt (EOI) to PIC
-    outb(0x20, 0x20);
-}
-
-// INT 1Ch: user-timer-interrupt
-__attribute__((externally_visible, regparm(1))) void c_int1c_handler(struct interrupt_registers *regs) {
-    #if BIOS_DEBUG == 1
-        uart_print_string("I1C\n");
-        lcd_print_string("I1C\n", 0x07);
-    #endif
-}
-*/
-
 // IRQ1 -> INT 09h: keyboard-interrupt
-__attribute__((externally_visible, regparm(1))) void c_int09_handler(struct interrupt_registers *regs) {
+__attribute__((externally_visible)) void c_int09_handler() {
     #if BIOS_DEBUG == 1
         uart_print_string("I09\n");
         lcd_print_string("I09", 0x07);
@@ -71,28 +50,28 @@ __attribute__((externally_visible, regparm(1))) void c_int09_handler(struct inte
         // check if one of the control-keys has been lifted up
         switch(xt_scancode & 0x7F) {
             case 0x2A: // Left Shift
-                writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, readFarByte(0x0000, BDA_KBD_STATUS_FLAGS) & ~KBD_FLAG_LSHIFT);
+                writeFarByte(0x0000, BDA_KBD_STATUS_FLAG0, readFarByte(0x0000, BDA_KBD_STATUS_FLAG0) & ~KBD_FLAG_LSHIFT);
                 break;
             case 0x36: // Right Shift
-                writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, readFarByte(0x0000, BDA_KBD_STATUS_FLAGS) & ~KBD_FLAG_RSHIFT);
+                writeFarByte(0x0000, BDA_KBD_STATUS_FLAG0, readFarByte(0x0000, BDA_KBD_STATUS_FLAG0) & ~KBD_FLAG_RSHIFT);
                 break;
             case 0x1D: // Ctrl
-                writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, readFarByte(0x0000, BDA_KBD_STATUS_FLAGS) & ~KBD_FLAG_CTRL);
+                writeFarByte(0x0000, BDA_KBD_STATUS_FLAG0, readFarByte(0x0000, BDA_KBD_STATUS_FLAG0) & ~KBD_FLAG_CTRL);
                 break;
             case 0x38: // Alt
-                writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, readFarByte(0x0000, BDA_KBD_STATUS_FLAGS) & ~KBD_FLAG_ALT);
+                writeFarByte(0x0000, BDA_KBD_STATUS_FLAG0, readFarByte(0x0000, BDA_KBD_STATUS_FLAG0) & ~KBD_FLAG_ALT);
                 break;
             case 0x46: // Scrolllock
-                writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, readFarByte(0x0000, BDA_KBD_STATUS_FLAGS) & ~KBD_FLAG_SCROLLLOCK);
+                writeFarByte(0x0000, BDA_KBD_STATUS_FLAG0, readFarByte(0x0000, BDA_KBD_STATUS_FLAG0) & ~KBD_FLAG_SCROLLLOCK);
                 break;
             case 0x45: // NumLock
-                writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, readFarByte(0x0000, BDA_KBD_STATUS_FLAGS) & ~KBD_FLAG_NUMLOCK);
+                writeFarByte(0x0000, BDA_KBD_STATUS_FLAG0, readFarByte(0x0000, BDA_KBD_STATUS_FLAG0) & ~KBD_FLAG_NUMLOCK);
                 break;
             case 0x3A: // CapsLock
-                writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, readFarByte(0x0000, BDA_KBD_STATUS_FLAGS) & ~KBD_FLAG_CAPSLOCK);
+                writeFarByte(0x0000, BDA_KBD_STATUS_FLAG0, readFarByte(0x0000, BDA_KBD_STATUS_FLAG0) & ~KBD_FLAG_CAPSLOCK);
                 break;
             case 0x52: // Insert
-                writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, readFarByte(0x0000, BDA_KBD_STATUS_FLAGS) & ~KBD_FLAG_INSERTMODE);
+                writeFarByte(0x0000, BDA_KBD_STATUS_FLAG0, readFarByte(0x0000, BDA_KBD_STATUS_FLAG0) & ~KBD_FLAG_INSERTMODE);
                 break;
             default:
                 // regular key-releases will not be handled here
@@ -102,34 +81,34 @@ __attribute__((externally_visible, regparm(1))) void c_int09_handler(struct inte
         // make (key is pressed down)
         switch(xt_scancode) {
             case 0x2A: // Left Shift
-                writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, readFarByte(0x0000, BDA_KBD_STATUS_FLAGS) | KBD_FLAG_LSHIFT);
+                writeFarByte(0x0000, BDA_KBD_STATUS_FLAG0, readFarByte(0x0000, BDA_KBD_STATUS_FLAG0) | KBD_FLAG_LSHIFT);
                 break;
             case 0x36: // Right Shift
-                writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, readFarByte(0x0000, BDA_KBD_STATUS_FLAGS) | KBD_FLAG_RSHIFT);
+                writeFarByte(0x0000, BDA_KBD_STATUS_FLAG0, readFarByte(0x0000, BDA_KBD_STATUS_FLAG0) | KBD_FLAG_RSHIFT);
                 break;
             case 0x1D: // Ctrl
-                writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, readFarByte(0x0000, BDA_KBD_STATUS_FLAGS) | KBD_FLAG_CTRL);
+                writeFarByte(0x0000, BDA_KBD_STATUS_FLAG0, readFarByte(0x0000, BDA_KBD_STATUS_FLAG0) | KBD_FLAG_CTRL);
                 break;
             case 0x38: // Alt
-                writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, readFarByte(0x0000, BDA_KBD_STATUS_FLAGS) | KBD_FLAG_ALT);
+                writeFarByte(0x0000, BDA_KBD_STATUS_FLAG0, readFarByte(0x0000, BDA_KBD_STATUS_FLAG0) | KBD_FLAG_ALT);
                 break;
             case 0x46: // Scrolllock
-                writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, readFarByte(0x0000, BDA_KBD_STATUS_FLAGS) | KBD_FLAG_SCROLLLOCK);
+                writeFarByte(0x0000, BDA_KBD_STATUS_FLAG0, readFarByte(0x0000, BDA_KBD_STATUS_FLAG0) | KBD_FLAG_SCROLLLOCK);
                 break;
             case 0x45: // NumLock
-                writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, readFarByte(0x0000, BDA_KBD_STATUS_FLAGS) | KBD_FLAG_NUMLOCK);
+                writeFarByte(0x0000, BDA_KBD_STATUS_FLAG0, readFarByte(0x0000, BDA_KBD_STATUS_FLAG0) | KBD_FLAG_NUMLOCK);
                 break;
             case 0x3A: // CapsLock
-                writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, readFarByte(0x0000, BDA_KBD_STATUS_FLAGS) | KBD_FLAG_CAPSLOCK);
+                writeFarByte(0x0000, BDA_KBD_STATUS_FLAG0, readFarByte(0x0000, BDA_KBD_STATUS_FLAG0) | KBD_FLAG_CAPSLOCK);
                 break;
             case 0x52: // Insert
-                writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, readFarByte(0x0000, BDA_KBD_STATUS_FLAGS) | KBD_FLAG_INSERTMODE);
+                writeFarByte(0x0000, BDA_KBD_STATUS_FLAG0, readFarByte(0x0000, BDA_KBD_STATUS_FLAG0) | KBD_FLAG_INSERTMODE);
                 break;
             default: {
                 // regular key, put scancode into keyboard-buffer
                 char ascii = 0; // DOS will receive and check the original XT scancode in AH if no ASCII-char is recognized below
 
-                uint8_t status_flags = readFarByte(0x0000, BDA_KBD_STATUS_FLAGS);
+                uint8_t status_flags = readFarByte(0x0000, BDA_KBD_STATUS_FLAG0);
 
                 // check if the XT-scancode is within the ASCII-characters
                 if (xt_scancode < sizeof(xt_to_ascii_normal)) {
@@ -216,7 +195,7 @@ __attribute__((externally_visible, regparm(1))) void c_int09_handler(struct inte
 }
 
 // INT04 (PIRQ0 is mapped here)
-__attribute__((externally_visible, regparm(1))) void c_int0c_handler(struct interrupt_registers *regs) {
+__attribute__((externally_visible)) void c_int0c_handler() {
     #if BIOS_DEBUG == 1
         uart_print_string("I0C\n");
         lcd_print_string("I0C", 0x07);
@@ -261,6 +240,8 @@ __attribute__((externally_visible, regparm(1))) void c_int10_handler(struct inte
         }else{
             // unsupported mode
         }
+    //}else if (ah == 0x01) {
+        // set text-mode cursor shape
     }else if (ah == 0x02) {
         // set cursor position
         writeFarByte(BASE_SEG, BDA_CURSOR_POS_ROW, (regs->dx >> 8) & 0xFF); // DH = Row
@@ -271,8 +252,10 @@ __attribute__((externally_visible, regparm(1))) void c_int10_handler(struct inte
         write_sc300_lcd_cfg(LCD_VID_IDX_CURSOR_ADDR_UPPER, (offset >> 9) & 0xFF); // upper 7 bits of offset (divide by 512)
         write_sc300_lcd_cfg(LCD_VID_IDX_CURSOR_ADDR_LOWER, (offset >> 1) & 0xFF); // lower 8 bits of offset (divide by 2)
     }else if (ah == 0x03) {
-        // get cursor position
+        // get cursor position and shape
         // return cursor position in DX (DH = Row, DL = Column)
+        regs->ax = 0x0000;
+        regs->cx = 0x0607; // CH = start scanline of cursor, CL = end scanline of cursor
         regs->dx = (readFarByte(BASE_SEG, BDA_CURSOR_POS_ROW) << 8) | readFarByte(BASE_SEG, BDA_CURSOR_POS_COL);
     }else if (ah == 0x06) {
         // scroll window up
@@ -286,6 +269,16 @@ __attribute__((externally_visible, regparm(1))) void c_int10_handler(struct inte
             lcd_scroll_up();
             lcd_scroll_up();
         }
+    //}else if (ah == 0x07) {
+        // scroll windows down
+    }else if (ah == 0x09) {
+        // write character and attribute at cursor position
+        // regs->cx contains number of timers of character
+        lcd_putc(al, regs->bx & 0xFF);
+    }else if (ah == 0x0A) {
+        // write character only at cursor position
+        // regs->cx contains number of timers of character
+        lcd_putc(al, 0x07); // light gray on black
     }else if (ah == 0x0C) {
         // write graphics pixel
         // AL = Color, BH = Page Number, CX = x, DX = y
@@ -417,65 +410,66 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
         regs->flags &= ~ISR_FLAGS_CF;
     }else if (ah == 0x01) {
         // Get Status of Last Drive Operation
-        regs->ax = 0x0000; // no error
+        regs->ax = 0x0000; // return no error every time. TODO: implement a global variable to return the correct error-code
         regs->flags &= ~ISR_FLAGS_CF;
     }else if (ah == 0x02) {
-        // Read Sectors
+        // Read Sectors from drive
         uint8_t  sectors_to_read = al;
         uint8_t  sector           = cl & 0x3F;
         uint16_t cylinder         = (((uint16_t)(cl & 0xC0)) << 2) | ch;
         uint8_t  head             = dh;
 
         // loop through all requested sectors
-        uint8_t err = do_read_sectors(
+        uint8_t error = do_read_sectors(
             disk_chs_to_lba(cylinder, head, sector),
-            regs->es,   // offset within ES
-            regs->bx,   // segment of destination buffer
+            regs->es,   // segment of destination buffer
+            regs->bx,   // offset within ES
             sectors_to_read
         );
 
-        if (err) {
-            regs->ax     = ((uint16_t)err << 8) | 0;
+        if (error) {
+            regs->ax     = ((uint16_t)error << 8) | 0;
             regs->flags |= ISR_FLAGS_CF;
         }else{
             regs->ax     = sectors_to_read;
             regs->flags &= ~ISR_FLAGS_CF;
         }
     }else if (ah == 0x03) {
+        // write sectors to drive
         uint8_t  sectors_to_write = al;
         uint8_t  sector           = cl & 0x3F;
         uint16_t cylinder         = (((uint16_t)(cl & 0xC0)) << 2) | ch;
         uint8_t  head             = dh;
 
-        uint8_t err = do_write_sectors(
+        uint8_t error = do_write_sectors(
             disk_chs_to_lba(cylinder, head, sector),
-            regs->es,
-            regs->bx,
+            regs->es,   // segment of destination
+            regs->bx,   // offset within destination-segment
             sectors_to_write
         );
 
-        if (err) {
-            regs->ax     = ((uint16_t)err << 8) | 0;
+        if (error) {
+            regs->ax     = ((uint16_t)error << 8) | 0;
             regs->flags |= ISR_FLAGS_CF;
         }else{
             regs->ax     = sectors_to_write;
             regs->flags &= ~ISR_FLAGS_CF;
         }
     }else if (ah == 0x04) {
-        // Verify Sectors
+        // verify Sectors
         uint8_t  sectors_to_verify = al;
         uint8_t  sector            = cl & 0x3F;
         uint16_t cylinder          = (((uint16_t)(cl & 0xC0)) << 2) | ch;
         uint8_t  head              = dh;
 
         // loop through all requested sectors
-        uint8_t err = do_verify_sectors(
+        uint8_t error = do_verify_sectors(
             disk_chs_to_lba(cylinder, head, sector),
             sectors_to_verify
         );
 
-        if (err) {
-            regs->ax     = ((uint16_t)err << 8) | 0;
+        if (error) {
+            regs->ax     = ((uint16_t)error << 8) | 0;
             regs->flags |= ISR_FLAGS_CF;
         }else{
             regs->ax     = sectors_to_verify;
@@ -572,42 +566,72 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
         }
 
         // check the structure
-        if (dap.size != 0x10) {
+        if (dap.size < 0x10) {
             regs->ax    = 0x0100; // bad data
             regs->flags |= ISR_FLAGS_CF;
         }else if (dap.lba_high != 0) { // 64-bit LBA: upper 32 Bit must be 0 (CF-Card < 4GB)
-            regs->ax    = 0x0100; // LBA out of border
+            regs->ax    = 0x0B00; // Data error / LBA out of bounds (AH=0Bh)
             regs->flags |= ISR_FLAGS_CF;
         }else{
-            uint32_t lba          = dap.lba_low;
-            uint16_t sector_count = dap.sector_count;
-            uint16_t dest_offset  = dap.dest_offset;
-            uint16_t dest_segment = dap.dest_segment;
-            uint16_t sectors_done = 0;
-            uint8_t  error        = 0;
+            // loop through all requested sectors
+            uint8_t error = do_read_sectors(
+                dap.lba_low,
+                dap.dest_segment,  // segment of destination buffer
+                dap.dest_offset,   // offset within segment
+                dap.sector_count
+            );
 
-            for (uint32_t s = 0; s < sector_count; s++) {
-                uint32_t total_offset = (uint32_t)dest_offset + ((uint32_t)s * 512);
-                uint16_t cur_seg    = dest_segment + (uint16_t)((total_offset >> 4) & 0xF000);
-                uint16_t cur_offset = (uint16_t)(total_offset & 0xFFFF);
+            if (error) {
+                // update read sectors in DAP
+                //writeFarByte(dap_segment, dap_offset + 2, (uint8_t)(sectors_read & 0xFF));
+                //writeFarByte(dap_segment, dap_offset + 3, (uint8_t)(sectors_read >> 8));
 
-                error = ide_read_sector(lba + s, dest_segment, cur_offset);                
-                if (error != 0x00) {
-                    break;
-                }
-                sectors_done++;
-            }
-
-            // update sector-count in DAP
-            //writeFarByte(dap_segment, dap_offset + 2, (uint8_t)(sectors_done & 0xFF));
-            //writeFarByte(dap_segment, dap_offset + 3, (uint8_t)(sectors_done >> 8));
-
-            if (error == 0) {
-                regs->ax    = 0x0000; // Return-Code = Success
-                regs->flags &= ~ISR_FLAGS_CF;
-            } else {
-                regs->ax    = ((uint16_t)error << 8);
+                regs->ax     = ((uint16_t)error << 8) | 0;
                 regs->flags |= ISR_FLAGS_CF;
+            }else{
+                regs->ax     = 0x0000; // return code = no error
+                regs->flags &= ~ISR_FLAGS_CF;
+            }
+        }
+    }else if (ah == 0x43) {
+        // Extended Write Sectors
+        // DAP is at DS:SI
+        uint16_t dap_segment = regs->ds;
+        uint16_t dap_offset  = regs->si;
+
+        // read DAP bytewise from caller
+        struct disk_address_packet dap;
+        uint8_t* dap_ptr = (uint8_t*)&dap;
+        for (uint8_t i = 0; i < sizeof(dap); i++) {
+            dap_ptr[i] = readFarByte(dap_segment, dap_offset + i);
+        }
+
+        // check the structure
+        if (dap.size < 0x10) {
+            regs->ax    = 0x0100; // bad data
+            regs->flags |= ISR_FLAGS_CF;
+        }else if (dap.lba_high != 0) { // 64-bit LBA: upper 32 Bit must be 0 (CF-Card < 4GB)
+            regs->ax    = 0x0B00; // Data error / LBA out of bounds (AH=0Bh)
+            regs->flags |= ISR_FLAGS_CF;
+        }else{
+            // loop through all requested sectors
+            uint8_t error = do_write_sectors(
+                dap.lba_low,
+                dap.dest_segment,  // segment of destination buffer
+                dap.dest_offset,   // offset within segment
+                dap.sector_count
+            );
+
+            if (error) {
+                // update read sectors in DAP
+                //writeFarByte(dap_segment, dap_offset + 2, (uint8_t)(sectors_written & 0xFF));
+                //writeFarByte(dap_segment, dap_offset + 3, (uint8_t)(sectors_written >> 8));
+
+                regs->ax     = ((uint16_t)error << 8) | 0;
+                regs->flags |= ISR_FLAGS_CF;
+            }else{
+                regs->ax     = 0x0000; // return code = no error
+                regs->flags &= ~ISR_FLAGS_CF;
             }
         }
     }else if (ah == 0x48) {
@@ -705,29 +729,66 @@ __attribute__((externally_visible, regparm(1))) void c_int15_handler(struct inte
             regs->flags |= ISR_FLAGS_CF;
         }
     }else if (ah == 0x41) {
-        // the following functions are rarely documented and are related to the IBM Micro Channel
-        // we do not support this
-
-        // DOS hangs after this interrupt. AX=0x4101 which stands for
-        // "Wait for External Event"
+        // Wait for External Event
 
         if (al == 0x01) {
-            regs->ax = 0x0000;
-            regs->flags &= ~ISR_FLAGS_CF; 
+            // wait for keypress
+            uint16_t head = readFarWord(0x0000, BDA_KBD_HEAD_PTR);
+            uint16_t tail = readFarWord(0x0000, BDA_KBD_TAIL_PTR);
+
+            // wait until a key is within the buffer
+            while (tail == head) {
+                __asm__ volatile ("sti; hlt; cli"); // halt CPU until next interrupt
+                
+                // read buffers again and check if a key has been pressed
+                head = readFarWord(0x0000, BDA_KBD_HEAD_PTR);
+                tail = readFarWord(0x0000, BDA_KBD_TAIL_PTR);
+            }
+            
+            // a new char is in buffer
+            regs->ax &= 0x00FF;
+            regs->flags &= ~ISR_FLAGS_CF;
         }else{
-            regs->ax = 0x8600;
-            regs->flags |= ISR_FLAGS_CF;
+            regs->ax &= 0x00FF; // clear AH, but keep AL
+            regs->flags &= ~ISR_FLAGS_CF;
+        }
+    }else if (ah == 0x83) {
+        // Set Event Wait Interval
+        if (al == 0x00) {
+            // set interval
+            uint16_t microsec_low = regs->cx;
+            uint16_t microsec_high = regs->dx;
+            
+            // store address of User-Flag (will be submitted in ES:BX)
+            writeFarWord(0x0000, BDA_WAIT_COMPLETE, regs->bx);       // Offset
+            writeFarWord(0x0000, BDA_WAIT_SEGMENT, regs->es);       // Segment
+            
+            // convert microseconds to timer-ticks (value / 55000)
+            uint32_t total_micro = ((uint32_t)microsec_high << 16) | microsec_low;
+            uint32_t ticks = total_micro / 55000; // 1 Sekunde / 18.207 Ticks ~ 0.055000 Sekunden
+            if (ticks == 0) ticks = 1;
+            
+            writeFarWord(0x0000, BDA_WAIT_COUNT_LOW, (uint16_t)(ticks & 0xFFFF));
+            writeFarWord(0x0000, BDA_WAIT_COUNT_HIGH, (uint16_t)(ticks >> 16));
+            
+            // set Wait Active Flag
+            writeFarByte(0x0000, BDA_WAIT_ACTIVE_FLAG, 0x01);
+            
+            regs->flags &= ~ISR_FLAGS_CF; // success
+        } else if (al == 0x01) { // delete interval
+            writeFarByte(0x0000, BDA_WAIT_ACTIVE_FLAG, 0x00); // disable
+            regs->flags &= ~ISR_FLAGS_CF;
         }
     }else if (ah == 0x86) {
-        uint32_t usec = ((uint32_t)regs->cx << 16) | regs->dx;
+        // BIOS Wait / Delay (synchroneous waiting)
+        uint32_t total_micro = ((uint32_t)regs->dx << 16) | regs->cx;
+        uint32_t ticks_to_wait = total_micro / 55000; // 1 Sekunde / 18.207 Ticks ~ 0.055000 Sekunden
 
-        if (usec > 1000000UL) {
-            usec = 1000000UL;
+        uint32_t start_ticks = readFarLong(0x0000, BDA_TIMER_COUNTER_LOW);
+        while ((readFarLong(0x0000, BDA_TIMER_COUNTER_LOW) - start_ticks) < ticks_to_wait) {
+            __asm__ volatile("hlt"); // halt CPU until next tick
         }
 
-        delay_us(usec);
-
-        regs->ax = 0x0000;
         regs->flags &= ~ISR_FLAGS_CF;
     }else if (ah == 0x87) {
         // Move block to/from extended memory -> unsupported
@@ -787,7 +848,8 @@ __attribute__((externally_visible, regparm(1))) void c_int16_handler(struct inte
     uint8_t ah = regs->ax >> 8;
 
     if ((ah == 0x00) || (ah == 0x10)) {
-        // Read key blocking (Standard-Check (0x00) and Extended Check (0x10))
+        // Read key press (0x00) or Read expanded keyboard character (0x10)
+
         // this function has to block if buffer is empty
         while (1) {
             uint16_t head = readFarWord(0x0000, BDA_KBD_HEAD_PTR);
@@ -816,7 +878,7 @@ __attribute__((externally_visible, regparm(1))) void c_int16_handler(struct inte
             }
         }
     }else if ((ah == 0x01) || (ah == 0x11)) {
-        // Check for new key (Standard-Check (0x01) and Extended Check (0x11))
+        // Get the State of the keyboard buffer (0x01) or Obtain status of the expanded keyboard buffer (0x11)
         uint16_t head = readFarWord(0x0000, BDA_KBD_HEAD_PTR);
         uint16_t tail = readFarWord(0x0000, BDA_KBD_TAIL_PTR);    
         
@@ -830,6 +892,53 @@ __attribute__((externally_visible, regparm(1))) void c_int16_handler(struct inte
             // delete zero-flag to show that character is present
             regs->flags &= ~ISR_FLAGS_ZF;
         }
+    }else if (ah == 0x02) {
+        // Get the State of the keyboard
+        regs->ax = (uint16_t)readFarByte(0x0000, BDA_KBD_STATUS_FLAG0);
+    }else if (ah == 0x05) {
+        // Simulate a keystroke
+
+        // get current keyboard-buffer tail
+        uint16_t tail = readFarWord(0x0000, BDA_KBD_TAIL_PTR);
+
+        // read start/end of ringbuffer from BDA
+        uint16_t buf_start = readFarWord(0x0000, BDA_KBD_BUF_START_PTR);
+        uint16_t buf_end = readFarWord(0x0000, BDA_KBD_BUF_END_PTR);
+
+        // calc next tail with wraparound
+        uint16_t next_tail = tail + sizeof(uint16_t);
+        if (next_tail >= buf_end) {
+            next_tail = buf_start;
+        }
+
+        if (next_tail == readFarWord(0x0000, BDA_KBD_HEAD_PTR)) {
+            // buffer overflow -> ignore new key-press
+            // regular BIOS would beep here, but we have no speaker
+            regs->ax = 0x0001;
+            regs->flags |= ISR_FLAGS_CF;
+        }else{
+            // get the simulated key-data (CH = ScanCode, CL = ASCII Character)
+            uint16_t key_data = regs->cx;
+
+            // write current keydata to keyboard-buffer
+            writeFarWord(0x0040, tail, key_data); // tail is stored as offset in segment 0x0040!
+
+            // update tail-pointer
+            writeFarWord(0x0000, BDA_KBD_TAIL_PTR, next_tail);
+
+            regs->ax = 0x0000;
+            regs->flags &= ~ISR_FLAGS_CF;
+        }
+    }else if (ah == 0x0A) {
+        // Get the ID of the keyboard
+
+        // if we would have a modern keyboard, we could return 0xAB41 in register BX
+        //regs->bx = 0xAB41; // extended keyboard MF-II
+
+        // but the AMD ELAN SC300 only supports XT-keyboards, so we must not alter register BX
+        regs->ax &= 0x00FF; // clear AH, but leave AL unchanged
+    }else if (ah == 0x12) {
+        // Get expanded keyboard status
     }else{
         regs->flags |= ISR_FLAGS_ZF;
     }
@@ -894,7 +1003,7 @@ __attribute__((externally_visible, regparm(1))) void c_int1a_handler(struct inte
 
         regs->cx = timer_hi;
         regs->dx = timer_lo;
-        regs->ax = 0x0000 | midnight;       // AL = midnight flag, AH = 0
+        regs->ax = 0x0000 | midnight;    // AL = midnight flag, AH = 0
         regs->flags &= ~ISR_FLAGS_CF;    // CF=0
 
         // Optional: clear IBM-compatible midnight-flag after reading

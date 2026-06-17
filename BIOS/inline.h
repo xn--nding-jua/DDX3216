@@ -174,6 +174,14 @@ static inline void writeFarWord(uint16_t segment, uint16_t offset, uint16_t valu
 */
 }
 
+static inline void writeFarLong(uint16_t segment, uint16_t offset, uint32_t value) {
+    uint16_t low_word  = (uint16_t)(value & 0xFFFF);
+    uint16_t high_word = (uint16_t)(value >> 16);
+
+    writeFarWord(segment, offset, low_word);
+    writeFarWord(segment, offset + 2, high_word);
+}
+
 static inline uint8_t readFarByte(uint16_t segment, uint16_t offset) {
     uint8_t value;
 
@@ -230,6 +238,13 @@ static inline uint16_t readFarWord(uint16_t segment, uint16_t offset) {
     
     return value;
 */
+}
+
+static inline uint32_t readFarLong(uint16_t segment, uint16_t offset) {
+    uint16_t low_word  = readFarWord(segment, offset);
+    uint16_t high_word = readFarWord(segment, offset + 2);
+
+    return ((uint32_t)high_word << 16) | low_word;
 }
 
 static inline void copyFarBlock(uint16_t segment, uint16_t srcOffset, void* destOffset, uint32_t len) {

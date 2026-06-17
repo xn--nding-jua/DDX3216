@@ -34,11 +34,8 @@ struct interrupt_registers {
 
 void pirq_init();
 // hardware-interrupts
-__attribute__((externally_visible, regparm(1))) void c_int09_handler(struct interrupt_registers *regs);
-__attribute__((externally_visible, regparm(1))) void c_int0c_handler(struct interrupt_registers *regs);
-
-//__attribute__((externally_visible, regparm(1))) void c_int08_handler(struct interrupt_registers *regs);
-//__attribute__((externally_visible, regparm(1))) void c_int1c_handler(struct interrupt_registers *regs);
+__attribute__((externally_visible)) void c_int09_handler();
+__attribute__((externally_visible)) void c_int0c_handler();
 
 // software-interrupts
 __attribute__((externally_visible, regparm(1))) void c_int10_handler(struct interrupt_registers *regs);

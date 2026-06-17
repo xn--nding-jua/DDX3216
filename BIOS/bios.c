@@ -44,6 +44,7 @@ void setup_ivt() {
     set_ivt_entry(0x15, (uint16_t)(uintptr_t)isr_int15, ROM_SEG);
     set_ivt_entry(0x16, (uint16_t)(uintptr_t)isr_int16, ROM_SEG);
     set_ivt_entry(0x17, (uint16_t)(uintptr_t)isr_int17, ROM_SEG);
+    set_ivt_entry(0x18, (uint16_t)(uintptr_t)isr_int18, ROM_SEG);
     set_ivt_entry(0x19, (uint16_t)(uintptr_t)isr_int19, ROM_SEG);
     set_ivt_entry(0x1a, (uint16_t)(uintptr_t)isr_int1a, ROM_SEG);
     set_ivt_entry(0x1c, (uint16_t)(uintptr_t)isr_int1c, ROM_SEG);
@@ -81,12 +82,14 @@ void setup_bda() {
 	writeFarWord(0x0000, BDA_MEM_SIZE, BIOS_CONVENTIONAL_KB);
 	
     // set keyboard state flag
-	writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS, 0x0000);
-	writeFarByte(0x0000, BDA_KBD_STATUS_FLAGS + 1, 0x0000);
+	writeFarByte(0x0000, BDA_KBD_STATUS_FLAG0, 0x00); // insert | capslock | numlock | scrolllock | altkey | ctrlkey | Lshift | Rshift
+	writeFarByte(0x0000, BDA_KBD_STATUS_FLAG1, 0x00); // insertlock | capslock | numlock | scrolllock | Raltkey | Rctrlkey | lastScancode was 0xE0 | lastScancode was 0xE1
+    writeFarByte(0x0000, BDA_KBD_STATUS_EXTFLAG, 0x00); // 2-byte keyboard | last char was first ID char | numlock | 101/102 not present | AltGr is active | Rctrl is active | keyboard suspend | keyboarderror 0xE0/0xFF
 	
 	// set video information
-    writeFarByte(0x0000, BDA_VIDEO_MODE, 0x00);    // video-mode = text
-	writeFarWord(0x0000, BDA_VIDEO_COLUMS, 40);    // number of columns. We have only 30 rows, but we tell DOS that we have 40 columns, because otherwise some software would not work at all
+    writeFarByte(0x0000, BDA_VIDEO_MODE, 0x00); // video-mode = text
+	writeFarWord(0x0000, BDA_VIDEO_COLUMS, 30); // number of columns. With 240 pixels we only have 30 rows available
+    writeFarByte(0x0000, BDA_VIDEO_ROWS, (LCD_HEIGHT / 8) - 1); //  number of rows - 1
 	writeFarWord(0x0000, 0x044C, 512);     // size of Video-Page in bytes: (LCD_WIDTH / 8) * (LCD_HEIGHT / 8) * 2 = 480 -> rounded to 512 // size of one video page in bytes (virtual CGA resolution)
     writeFarWord(0x0000, 0x044E, 0x0000);  //  Start-Offset of VRAM for current page (in Bytes, relative to 0xB8000)
 
@@ -107,14 +110,15 @@ void setup_bda() {
     // set I/O Port of Videochip (z.B. 0x3D4 für CGA)
     writeFarWord(0x0000, BDA_VIDEO_IO_BASE, LCD_CGA_IDX_ADDR); // I/O Port of Videochip (CGA = 0x3D4)
 
-    // Number of screen rows MINUS 1 (Important for your 8-row LCD!)
-    writeFarByte(0x0000, BDA_VIDEO_ROWS, (LCD_HEIGHT / 8) - 1); //  number of rows - 1
-
     // set Bytes per character (Font height, e.g. 8)
-    writeFarWord(0x0000, 0x0485, 8);
+    writeFarWord(0x0000, BDA_VIDEO_CHAR_HEIGHT, 8);
 
-    // extended memory size in kB above 1MB (for INT15h)
-    writeFarWord(0x0000, 0x49B, 1024);
+    // reset WAIT_REGISTERS
+    writeFarWord(0x0000, BDA_WAIT_COMPLETE, 0x0000);
+    writeFarWord(0x0000, BDA_WAIT_SEGMENT, 0x0000);
+    writeFarLong(0x0000, BDA_WAIT_COUNT_LOW, 0x00000000);
+    writeFarByte(0x0000, BDA_WAIT_ACTIVE_FLAG, 0x00);
+
 }
 
 // in 16-bit RealMode we can only access RAM below 1MB

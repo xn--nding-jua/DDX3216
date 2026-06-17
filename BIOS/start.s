@@ -433,58 +433,9 @@ launch_bootsector:
     pop cx
     pop bx
     pop ax
-
-    iret
-.endm
-
-.macro ISR_SW_ENTRY cfunc
-    // store all 16-bit registers
-    cld
-
-    push ax
-    push bx
-    push cx
-    push dx
-    push si
-    push di
-    push bp
-    push es
-    push ds
-
-    // prepare segments for C-code: set DataSegment to BIOS_SEG to access global variables
-    mov ax, BIOS_SEG
-    mov ds, ax
-    mov es, ax
-
-    mov bp, sp
-    mov ax, bp
-
-    cld
-
-    // call the C-Interrupt-Handler
-    .code16gcc
-    call \cfunc
-    .code16
-
-    // force stackpointer back to original value
-    mov sp, bp
-
-    // restore all registers in inverted order
-    pop ds
-    pop es
-    pop bp
-    pop di
-    pop si
-    pop dx
-    pop cx
-    pop bx
-    pop ax
-
-    iret
 .endm
 
 .equ INT_FRAME_WORDS,  12
-
 
 .macro ISR_SAFE_STACK_ENTRY cfunc, save_old_ss, save_old_sp, save_old_fs, save_old_gs, save_frame_sp
     cld
@@ -604,8 +555,6 @@ launch_bootsector:
     pop cx
     pop bx
     pop ax
-
-    iret
 .endm
 
 // ========================================================
@@ -656,6 +605,9 @@ isr_int08:
     cld
 
     push ax
+    push bx
+    push cx
+    push dx
     push ds
 
     // set DS to 0x0000 to access BDA at 0x0000:0x0400
@@ -664,27 +616,68 @@ isr_int08:
 
     // increase BIOS-timer-tick in BDA
     inc WORD PTR ds:[0x046C]
-    jnz 1f                          // no overflow
+    jnz .timer_no_overflow           // no overflow
     inc WORD PTR ds:[0x046E]
-1:
+.timer_no_overflow:
     // check for 24h overflow (0x1800B0 Ticks)
     mov ax, WORD PTR ds:[0x046E]
     cmp ax, 0x0018
-    jne 2f                          // no 24h overflow
+    jne .timer_no_24h_wrap           // no 24h overflow
     mov ax, WORD PTR ds:[0x046C]
     cmp ax, 0x00B0
-    jne 2f                          // no 24h overflow
+    jne .timer_no_24h_wrap           // no 24h overflow
 
     // reset and set overflow-flag
     xor ax, ax
     mov WORD PTR ds:[0x046C], ax
     mov WORD PTR ds:[0x046E], ax
     mov BYTE PTR ds:[0x0470], 1     // overflow-flag in BDA
-2:
+.timer_no_24h_wrap:
+
+    // handle INT15, Function 0x83
+    mov al, BYTE PTR ds:[0x04A0]    // check BDA_WAIT_ACTIVE_FLAG
+    test al, 0x01                   // check if bit 1 is set
+    jz .timer_done                  // nothing to do here
+
+    mov ax, WORD PTR ds:[0x049C]    // load counter LOW
+    mov dx, WORD PTR ds:[0x049E]    // load counter HIGH
+
+    mov cx, ax
+    or  cx, dx
+    jz .check_timer_done            // if CX == 0, counter was 0
+
+    // decrement counter
+    sub ax, 1
+    sbb dx, 0
+    mov WORD PTR ds:[0x049C], ax    // write back counter LOW
+    mov WORD PTR ds:[0x049E], dx    // write back counter HIGH
+
+.check_timer_done:
+    mov cx, ax
+    or  cx, dx
+    jnz .timer_done                       // if not zero -> done
+
+    // timer has finished
+    mov bx, WORD PTR ds:[0x0498]
+    mov cx, WORD PTR ds:[0x049A]
+    mov es, cx                      // set user-segment to ES
+
+    // set bit 7 in user-segment
+    mov al, es:[bx]
+    or al, 0x80
+    mov es:[bx], al                 // write value back
+
+    // reset WAIT ACTIVE FLAG bit
+    mov BYTE PTR ds:[0x04A0], 0x00     // BDA_WAIT_ACTIVE_FLAG = 0
+
+.timer_done:
     mov al, 0x20
     out 0x20, al
 
     pop ds
+    pop dx
+    pop cx
+    pop bx
     pop ax
 
     // call user-interrupt INT 1C
@@ -701,10 +694,12 @@ isr_int1c:
 .global isr_int09
 isr_int09:
     ISR_HW_ENTRY c_int09_handler // keyboard-interrupt
+    iret
 
 .global isr_int0c
 isr_int0c:
     ISR_HW_ENTRY c_int0c_handler // UART-interrupt
+    iret
 
 
 // software-interrupts without EOI
@@ -712,46 +707,61 @@ isr_int0c:
 .global isr_int10
 isr_int10:
     ISR_SAFE_STACK_ENTRY c_int10_handler, BIOS_INT10_ISR_SS, BIOS_INT10_ISR_SP, BIOS_INT10_ISR_FS, BIOS_INT10_ISR_GS, BIOS_INT10_ISR_FRAME
+    iret
 
 .global isr_int11
 isr_int11:
     ISR_SAFE_STACK_ENTRY c_int11_handler, BIOS_SW_ISR_SS, BIOS_SW_ISR_SP, BIOS_SW_ISR_FS, BIOS_SW_ISR_GS, BIOS_SW_ISR_FRAME
+    iret
 
 .global isr_int12
 isr_int12:
     ISR_SAFE_STACK_ENTRY c_int12_handler, BIOS_SW_ISR_SS, BIOS_SW_ISR_SP, BIOS_SW_ISR_FS, BIOS_SW_ISR_GS, BIOS_SW_ISR_FRAME
+    iret
 
 .global isr_int13
 isr_int13:
     ISR_SAFE_STACK_ENTRY c_int13_handler, BIOS_INT13_ISR_SS, BIOS_INT13_ISR_SP, BIOS_INT13_ISR_FS, BIOS_INT13_ISR_GS, BIOS_INT13_ISR_FRAME
+    iret
 
 .global isr_int14
 isr_int14:
     ISR_SAFE_STACK_ENTRY c_int14_handler, BIOS_SW_ISR_SS, BIOS_SW_ISR_SP, BIOS_SW_ISR_FS, BIOS_SW_ISR_GS, BIOS_SW_ISR_FRAME
+    iret
 
 .global isr_int15
 isr_int15:
     ISR_SAFE_STACK_ENTRY c_int15_handler, BIOS_INT15_ISR_SS, BIOS_INT15_ISR_SP, BIOS_INT15_ISR_FS, BIOS_INT15_ISR_GS, BIOS_INT15_ISR_FRAME
+    iret
 
 .global isr_int16
 isr_int16:
     ISR_SAFE_STACK_ENTRY c_int16_handler, BIOS_INT16_ISR_SS, BIOS_INT16_ISR_SP, BIOS_INT16_ISR_FS, BIOS_INT16_ISR_GS, BIOS_INT16_ISR_FRAME
+    iret
 
 .global isr_int17
 isr_int17:
     ISR_SAFE_STACK_ENTRY c_int17_handler, BIOS_SW_ISR_SS, BIOS_SW_ISR_SP, BIOS_SW_ISR_FS, BIOS_SW_ISR_GS, BIOS_SW_ISR_FRAME
+    iret
+
+.global isr_int18
+isr_int18:
+    jmp launch_basic
 
 .global isr_int19
 isr_int19:
     ISR_SAFE_STACK_ENTRY c_int19_handler, BIOS_SW_ISR_SS, BIOS_SW_ISR_SP, BIOS_SW_ISR_FS, BIOS_SW_ISR_GS, BIOS_SW_ISR_FRAME
+    iret
 
 .global isr_int1a
 isr_int1a:
     ISR_SAFE_STACK_ENTRY c_int1a_handler, BIOS_SW_ISR_SS, BIOS_SW_ISR_SP, BIOS_SW_ISR_FS, BIOS_SW_ISR_GS, BIOS_SW_ISR_FRAME
+    iret
 
 .global isr_int29
 isr_int29:
     ISR_SAFE_STACK_ENTRY c_int29_handler, BIOS_SW_ISR_SS, BIOS_SW_ISR_SP, BIOS_SW_ISR_FS, BIOS_SW_ISR_GS, BIOS_SW_ISR_FRAME
+    iret
 
 
 // special interrupts
@@ -814,7 +824,7 @@ isr_spurious_irq15:
 .global isr_int_error
 isr_int_error:
     ISR_SAFE_STACK_ENTRY c_int_error_handler, BIOS_SW_ISR_SS, BIOS_SW_ISR_SP, BIOS_SW_ISR_FS, BIOS_SW_ISR_GS, BIOS_SW_ISR_FRAME 
-    //iret
+    iret
 
 .global isr_hw_int_dummy
 isr_hw_int_dummy:

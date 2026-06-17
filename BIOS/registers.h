@@ -13,7 +13,9 @@
 #define BDA_EBDA_BASE           0x040E
 #define BDA_EQUIPMENT_WORD		0x0410
 #define BDA_MEM_SIZE			0x0413
-#define BDA_KBD_STATUS_FLAGS	0x0417
+#define BDA_KBD_STATUS_FLAG0	0x0417
+#define BDA_KBD_STATUS_FLAG1	0x0418
+#define BDA_KBD_STATUS_EXTFLAG	0x0496
 #define BDA_VIDEO_MODE			0x0449
 #define BDA_CURSOR_POS_COL      0x0450
 #define BDA_CURSOR_POS_ROW      0x0451
@@ -21,6 +23,7 @@
 #define BDA_SOFT_RESET_FLAGS    0x0472
 #define BDA_VIDEO_COLUMS		0x044A
 #define BDA_VIDEO_ROWS          0x0484
+#define BDA_VIDEO_CHAR_HEIGHT   0x0485
 #define BDA_TIMER_COUNTER_LOW   0x046C
 #define BDA_TIMER_COUNTER_HIGH  0x046E
 #define BDA_MIDNIGHT_FLAG       0x0470
@@ -31,6 +34,12 @@
 #define BDA_KBD_BUF_END     	0x003E          // end of buffer within segment 0x0040
 #define BDA_KBD_BUF_START_PTR   0x0480          // offset in segment 0x0040 to begin of keyboardbuffer (hence 0x001E)
 #define BDA_KBD_BUF_END_PTR     0x0482          // offset in segment 0x0040 to end of keyboardbuffer (hence 0x003E)
+
+#define BDA_WAIT_COMPLETE       0x0498
+#define BDA_WAIT_SEGMENT        0x049A
+#define BDA_WAIT_COUNT_LOW      0x049C
+#define BDA_WAIT_COUNT_HIGH     0x049E
+#define BDA_WAIT_ACTIVE_FLAG    0x04A0
 
 #define UART_BASE				0x1000
 #define UART_CLK				14336000        // external UART is connected to CLK14OUT of SC300

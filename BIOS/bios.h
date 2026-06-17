@@ -60,6 +60,7 @@ extern void isr_int14(void);
 extern void isr_int15(void);
 extern void isr_int16(void);
 extern void isr_int17(void);
+extern void isr_int18(void);
 extern void isr_int19(void);
 extern void isr_int1a(void);
 extern void isr_int1c(void);
