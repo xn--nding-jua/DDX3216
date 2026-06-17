@@ -19,6 +19,7 @@
 #define BDA_VIDEO_MODE			0x0449
 #define BDA_CURSOR_POS_COL      0x0450
 #define BDA_CURSOR_POS_ROW      0x0451
+#define BDA_CURSOR_STYLE        0x0460
 #define BDA_VIDEO_IO_BASE       0x0463
 #define BDA_SOFT_RESET_FLAGS    0x0472
 #define BDA_VIDEO_COLUMS		0x044A

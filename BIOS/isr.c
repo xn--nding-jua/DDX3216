@@ -240,22 +240,27 @@ __attribute__((externally_visible, regparm(1))) void c_int10_handler(struct inte
         }else{
             // unsupported mode
         }
-    //}else if (ah == 0x01) {
+    }else if (ah == 0x01) {
         // set text-mode cursor shape
+        writeFarWord(0x0000, BDA_CURSOR_STYLE, regs->cx);
     }else if (ah == 0x02) {
         // set cursor position
-        writeFarByte(BASE_SEG, BDA_CURSOR_POS_ROW, (regs->dx >> 8) & 0xFF); // DH = Row
-        writeFarByte(BASE_SEG, BDA_CURSOR_POS_COL, regs->dx & 0xFF); // DL = Column
+        uint8_t dh = (uint8_t)(regs->dx >> 8); // DH = Row
+        uint8_t dl = (uint8_t)(regs->dx & 0xFF); // DL = Column
+        if ((dh < 7) && (dl < 30)) {
+            writeFarByte(BASE_SEG, BDA_CURSOR_POS_ROW, dh);
+            writeFarByte(BASE_SEG, BDA_CURSOR_POS_COL, dl);
 
-        // update hardware cursor position
-        uint16_t offset = ((readFarByte(BASE_SEG, BDA_CURSOR_POS_ROW) * (LCD_WIDTH / 8)) + readFarByte(BASE_SEG, BDA_CURSOR_POS_COL)) * 2;
-        write_sc300_lcd_cfg(LCD_VID_IDX_CURSOR_ADDR_UPPER, (offset >> 9) & 0xFF); // upper 7 bits of offset (divide by 512)
-        write_sc300_lcd_cfg(LCD_VID_IDX_CURSOR_ADDR_LOWER, (offset >> 1) & 0xFF); // lower 8 bits of offset (divide by 2)
+            // update hardware cursor position
+            uint16_t offset = ((readFarByte(BASE_SEG, BDA_CURSOR_POS_ROW) * (LCD_WIDTH / 8)) + readFarByte(BASE_SEG, BDA_CURSOR_POS_COL)) * 2;
+            write_sc300_lcd_cfg(LCD_VID_IDX_CURSOR_ADDR_UPPER, (offset >> 9) & 0xFF); // upper 7 bits of offset (divide by 512)
+            write_sc300_lcd_cfg(LCD_VID_IDX_CURSOR_ADDR_LOWER, (offset >> 1) & 0xFF); // lower 8 bits of offset (divide by 2)
+        }
     }else if (ah == 0x03) {
         // get cursor position and shape
         // return cursor position in DX (DH = Row, DL = Column)
         regs->ax = 0x0000;
-        regs->cx = 0x0607; // CH = start scanline of cursor, CL = end scanline of cursor
+        regs->cx = readFarWord(0x0000, BDA_CURSOR_STYLE); // CH = start scanline of cursor, CL = end scanline of cursor
         regs->dx = (readFarByte(BASE_SEG, BDA_CURSOR_POS_ROW) << 8) | readFarByte(BASE_SEG, BDA_CURSOR_POS_COL);
     }else if (ah == 0x06) {
         // scroll window up
@@ -302,7 +307,7 @@ __attribute__((externally_visible, regparm(1))) void c_int10_handler(struct inte
 
         // AH = Columns (40), AL = Video Mode (00h), BH = Page (0)
         // number of rows is set in BDA and not returned via INT10h, because DOS will ignore the returned value anyway and would always assume 25 rows
-        regs->ax = ((uint16_t)40 << 8) | 0x00; // 40x25 char in grayscale-text mode
+        regs->ax = ((uint16_t)30 << 8) | 0x03; // 40x25 char in grayscale-text mode
         regs->bx = 0x0000; // BH = 0
     }else{
         // simply ignore other video-functions like set cursor, etc.

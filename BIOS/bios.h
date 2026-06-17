@@ -65,6 +65,7 @@ extern void isr_int19(void);
 extern void isr_int1a(void);
 extern void isr_int1c(void);
 extern void isr_int29(void);
+extern void isr_int33(void);
 
 extern void isr_spurious_irq7(void);
 extern void isr_spurious_irq15(void);

@@ -49,6 +49,7 @@ void setup_ivt() {
     set_ivt_entry(0x1a, (uint16_t)(uintptr_t)isr_int1a, ROM_SEG);
     set_ivt_entry(0x1c, (uint16_t)(uintptr_t)isr_int1c, ROM_SEG);
     set_ivt_entry(0x29, (uint16_t)(uintptr_t)isr_int29, ROM_SEG);
+    set_ivt_entry(0x33, (uint16_t)(uintptr_t)isr_int33, ROM_SEG);
     
     // spurious interrupts
     set_ivt_entry(0x0F, (uint16_t)(uintptr_t)isr_spurious_irq7, ROM_SEG);
@@ -102,7 +103,7 @@ void setup_bda() {
     writeFarWord(0x0000, BDA_CURSOR_POS_COL + 10, 0x0000);
     writeFarWord(0x0000, BDA_CURSOR_POS_COL + 12, 0x0000);
     writeFarWord(0x0000, BDA_CURSOR_POS_COL + 14, 0x0000);
-    writeFarWord(0x0000, 0x0460, 0x0607);
+    writeFarWord(0x0000, BDA_CURSOR_STYLE, 0x0607);
 	
     // set Active Video-Page index
     writeFarByte(0x0000, 0x0462, 0);

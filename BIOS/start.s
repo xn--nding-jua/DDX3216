@@ -655,20 +655,20 @@ isr_int08:
 .check_timer_done:
     mov cx, ax
     or  cx, dx
-    jnz .timer_done                       // if not zero -> done
+    jnz .timer_done                 // if not zero -> done
+
+    // reset WAIT ACTIVE FLAG bit
+    mov BYTE PTR ds:[0x04A0], 0x00  // BDA_WAIT_ACTIVE_FLAG = 0
 
     // timer has finished
     mov bx, WORD PTR ds:[0x0498]
     mov cx, WORD PTR ds:[0x049A]
-    mov es, cx                      // set user-segment to ES
+    mov ds, cx                      // set user-segment to DS
 
     // set bit 7 in user-segment
-    mov al, es:[bx]
+    mov al, [bx]
     or al, 0x80
-    mov es:[bx], al                 // write value back
-
-    // reset WAIT ACTIVE FLAG bit
-    mov BYTE PTR ds:[0x04A0], 0x00     // BDA_WAIT_ACTIVE_FLAG = 0
+    mov [bx], al                    // write value back
 
 .timer_done:
     mov al, 0x20
@@ -839,6 +839,11 @@ isr_hw_int_dummy:
 isr_sw_int_dummy:
     //ISR_SAFE_STACK_ENTRY c_int_dummy_handler, BIOS_SW_ISR_SS, BIOS_SW_ISR_SP, BIOS_SW_ISR_FS, BIOS_SW_ISR_GS, BIOS_SW_ISR_FRAME
 	iret
+
+.global isr_int33
+isr_int33:
+    xor ax, ax
+    iret    
 
 // ========================================================
 // FUNCTIONS FOR TINY8086 BASIC
