@@ -722,12 +722,14 @@ __attribute__((externally_visible, regparm(1))) void c_int15_handler(struct inte
         // A20 Gate Control
         if (al == 0x00) { // disable Gate A20
             a20_disable();
+            regs->ax = 0x0000;
             regs->flags &= ~ISR_FLAGS_CF; // Success
         }else if (al == 0x01) { // enable Gate A20
             a20_enable();
+            regs->ax = 0x0000;
             regs->flags &= ~ISR_FLAGS_CF; // Success
         } else if (al == 0x02) { // request if Gate A20 is opened
-            regs->ax = a20_is_enabled() ? ISR_FLAGS_CF : 0x0000;
+            regs->ax = a20_is_enabled() ? 0x0001 : 0x0000;
             regs->flags &= ~ISR_FLAGS_CF;
         } else {
             regs->ax = 0x8600; // unknown AL-Subcode
@@ -743,7 +745,7 @@ __attribute__((externally_visible, regparm(1))) void c_int15_handler(struct inte
 
             // wait until a key is within the buffer
             while (tail == head) {
-                __asm__ volatile ("sti; hlt; cli"); // halt CPU until next interrupt
+                __asm__ volatile ("sti; hlt; cli" : : : "memory"); // halt CPU until next interrupt
                 
                 // read buffers again and check if a key has been pressed
                 head = readFarWord(0x0000, BDA_KBD_HEAD_PTR);
@@ -791,17 +793,47 @@ __attribute__((externally_visible, regparm(1))) void c_int15_handler(struct inte
 
         uint32_t start_ticks = readFarLong(0x0000, BDA_TIMER_COUNTER_LOW);
         while ((readFarLong(0x0000, BDA_TIMER_COUNTER_LOW) - start_ticks) < ticks_to_wait) {
-            __asm__ volatile("hlt"); // halt CPU until next tick
+            __asm__ volatile ("hlt" : : : "memory"); // halt CPU until next tick
         }
 
         regs->flags &= ~ISR_FLAGS_CF;
     }else if (ah == 0x87) {
-        // Move block to/from extended memory -> unsupported
-        regs->ax = 0x8600;
-        regs->flags |= ISR_FLAGS_CF;
+        // Move block to/from extended memory
+
+        // read GDT-descriptors from ES:SI
+        uint16_t gdt_seg = regs->es;
+        uint16_t gdt_off = regs->si;
+        
+        // source-descriptor: Offset 0x10 in GDT-table
+        uint32_t src_base =
+            ((uint32_t)readFarByte(gdt_seg, gdt_off + 0x12))       |
+            ((uint32_t)readFarByte(gdt_seg, gdt_off + 0x13) << 8)  |
+            ((uint32_t)readFarByte(gdt_seg, gdt_off + 0x14) << 16) |
+            ((uint32_t)readFarByte(gdt_seg, gdt_off + 0x17) << 24);
+        
+        // destination-descriptor: Offset 0x18 in GDT-table
+        uint32_t dst_base =
+            ((uint32_t)readFarByte(gdt_seg, gdt_off + 0x1A))       |
+            ((uint32_t)readFarByte(gdt_seg, gdt_off + 0x1B) << 8)  |
+            ((uint32_t)readFarByte(gdt_seg, gdt_off + 0x1C) << 16) |
+            ((uint32_t)readFarByte(gdt_seg, gdt_off + 0x1F) << 24);
+        
+        uint32_t count = (uint32_t)regs->cx * 2; // CX = number of words
+        
+        a20_enable();
+
+        // copy data in extended memory using protected mode
+        struct pm_memcpy_params p;
+        p.src   = src_base;
+        p.dst   = dst_base;
+        p.count = count;
+        pm_memcpy(&p);
+
+        regs->ax = 0x0000;
+        regs->flags &= ~ISR_FLAGS_CF;
     }else if (ah == 0x88) {
         // Request Extended Memory Size
-        regs->ax = BIOS_TOTAL_MEMORY_MB * 1024;
+        regs->ax = (BIOS_TOTAL_MEMORY_MB * 1024) - 1024; // remove the lower 1MB
         regs->flags &= ~ISR_FLAGS_CF; // Clear Carry Flag (Success)
     }else if ((ah == 0x90) || (ah == 0x91)) {
         // AH=90h: Device busy
@@ -810,13 +842,17 @@ __attribute__((externally_visible, regparm(1))) void c_int15_handler(struct inte
         regs->flags &= ~ISR_FLAGS_CF;
     }else if (ah == 0xC0) {
         // Get Configuration Table
-
         regs->es = 0xF000;
         regs->bx = (uint16_t)(uintptr_t)&sysconfig; // pointer to config. TODO: check if this is correct
 
-        // we do not support this for now
         regs->ax = 0x0000;
-        regs->flags &= ~ISR_FLAGS_CF;  // Set Carry Flag
+        regs->flags &= ~ISR_FLAGS_CF;  // clear Carry Flag
+
+        /*
+        // we do not support this for now
+        regs->ax = 0x8600;
+        regs->flags |= ISR_FLAGS_CF;  // Set Carry Flag
+        */
     }else if (ah == 0xC1) {
         // Get EBDA segment
         regs->es = BIOS_SEG;
@@ -830,11 +866,23 @@ __attribute__((externally_visible, regparm(1))) void c_int15_handler(struct inte
     }else if (ah == 0xE8) {
         if (al == 0x20) {
             // memmap
+            // unsupported
+            regs->ax = 0x8600;
+            regs->flags |= ISR_FLAGS_CF; // Set Carry Flag
         }else if (al == 0x01) {
             // memsize2
+            // unsupported
+            regs->ax = 0x8600;
+            regs->flags |= ISR_FLAGS_CF; // Set Carry Flag
+        }else{
+            // unsupported
+            regs->ax = 0x8600;
+            regs->flags |= ISR_FLAGS_CF; // Set Carry Flag
         }
     }else if (ah == 0x8A) {
         // memsize3
+        // unsupported
+        regs->flags |= ISR_FLAGS_CF; // Set Carry Flag
     }else{
         // Unbekannte Funktion -> Fehler (AH = 0x86, Carry Flag = 1)
         regs->ax = 0x8600;
@@ -879,7 +927,7 @@ __attribute__((externally_visible, regparm(1))) void c_int16_handler(struct inte
                 break;
             }else{
                 // buffer is empty -> enable interrupts and wait for new key-stroke
-                __asm__ volatile ("sti; hlt; cli");
+                __asm__ volatile ("sti; hlt; cli" : : : "memory");
             }
         }
     }else if ((ah == 0x01) || (ah == 0x11)) {

@@ -845,6 +845,168 @@ isr_int33:
     xor ax, ax
     iret    
 
+
+// ========================================================
+// Global Descriptor Table (GDT) for temporary Protected-Mode-change
+// this GDT is in ROM (CS-Segment)
+// ========================================================
+.code16
+.align 8
+gdt_start:
+    // mandatory null-descriptor
+    .long 0x00000000, 0x00000000
+
+    // 0x0008: 32-bit code-segment (Base=0x0, Limit=0xFFFFF, 4KB-Granularity = 4GB Flat)
+    .word 0xFFFF        // Limit (Bits 0-15)
+    .word 0x0000        // Base (Bits 0-15)
+    .byte 0x00          // Base (Bits 16-23)
+    //.byte 0b10011010    // Access Byte (Code, Callable, Read)
+    .byte 0x9B
+    .byte 0b11001111    // Flags (32-Bit Mode, 4KB Granularity) + Limit (16-19)
+    .byte 0x00          // Base (Bits 24-31)
+
+    // 0x0010: 32-bit data-Segment (Base=0x0, Limit=0xFFFFF, 4KB-Granularity = 4GB Flat)
+    .word 0xFFFF        // Limit (Bits 0-15)
+    .word 0x0000        // Base (Bits 0-15)
+    .byte 0x00          // Base (Bits 16-23)
+    //.byte 0b10010010    // Access Byte (Daten, Writable)
+    .byte 0x93
+    .byte 0b11001111    // Flags (32-Bit Modus, 4KB Granularity) + Limit (16-19)
+    .byte 0x00          // Base (Bits 24-31)
+
+
+    // 0x0018: 16-bit code-segment, Base=0, Limit=4GB
+    .word 0xFFFF
+    .word 0x0000
+    .byte 0x00
+    .byte 0x9B          // Present, Ring0, Code, Readable, Accessed=1
+    .byte 0x8F          // G=1, D=0, Limit[19:16]=0xF
+    .byte 0x00
+gdt_end:
+
+// ========================================================
+// pm_memcpy: copy memory via temporary Protected Mode
+//
+// Call:  __attribute__((regparm(1))) void pm_memcpy(struct pm_memcpy_params *params)
+//
+// AX = Pointer to pm_memcpy_params in BIOS_SEG:
+//   [AX+0] uint32_t src    Source-Address      (linear, 32-Bit)
+//   [AX+4] uint32_t dst    Destination-Address (linear, 32-Bit)
+//   [AX+8] uint32_t count  Number of Bytes
+//
+// ========================================================
+.global pm_memcpy
+pm_memcpy:
+    pushad
+    push ds
+    push es
+    push fs
+    push gs
+
+    cli
+
+    mov  bx, ax // copy pointer to struct to BX
+
+    // get real linear 32-bit address of GDT
+    mov  eax, OFFSET gdt_start
+    
+    // build the GDTR on the stack temporary as we cannot write to the ROM
+    sub  sp, 6
+    mov  bp, sp
+    mov  WORD PTR ss:[bp+0], (gdt_end - gdt_start - 1)
+    mov  DWORD PTR ss:[bp+2], eax
+
+    // load GDTR
+    lgdt ss:[bp]                            // load GDT with absolute 32-bit-base from stack
+    add  sp, 6                              // cleanup the stack
+
+    // read parameters from C-struct
+    mov  ax, BIOS_SEG
+    mov  ds, ax
+    mov  esi, DWORD PTR [bx+0]   // src
+    mov  edi, DWORD PTR [bx+4]   // dst
+    mov  ecx, DWORD PTR [bx+8]   // count
+
+    // if count is zero -> return immediately
+    test ecx, ecx
+    jz   .pm_memcpy_done
+
+    // store SP in EBX (BX is unused now)
+    movzx ebx, sp        // EBX = current 16-bit SP
+
+    // -------------------------------------------------------
+    // enable Protected Mode: CR0 Bit 0 setzen
+    // -------------------------------------------------------
+    mov  eax, cr0
+    or   al, 0x01
+    mov  cr0, eax
+
+    // far-jmp to 32-bit code-segment
+    data32 jmp 0x0008:OFFSET .init_pm
+
+    // -------------------------------------------------------
+    // from here: 32-Bit Protected Mode with flat memory model
+    // -------------------------------------------------------
+.code32
+.init_pm:
+    // Selector 0x10 = Data-Descriptor (4GB Flat)
+    mov  ax, 0x0010         // 32-bit data selector
+    mov  ds, ax
+    mov  es, ax
+    mov  fs, ax
+    mov  gs, ax
+    mov  ss, ax
+
+    // restore ESP from stored SP in BX
+    movzx esp, bx
+
+    // copy memory with 32-bit addresses
+    cld
+    rep  movsb                              // use esi, edi and ecx to copy data using flat-32-bit-memory-model
+
+    // push 6 bytes to stack to prepare 32-bit RETF back to 16-bit code
+    .byte 0x66, 0x68                        // 16-bit push
+    .word 0x0018                            // 16-bit code selector
+    push OFFSET .init_rm
+    retf
+
+    // -------------------------------------------------------
+    // from here: 16-Bit Real Mode
+    // -------------------------------------------------------
+.code16
+.init_rm:
+    mov  eax, cr0
+    and  al, 0xFE
+    mov  cr0, eax
+
+    .byte 0xEA
+    .word .pm_memcpy_back_to_rm
+    .word ROM_SEG
+
+.pm_memcpy_back_to_rm:
+    // restore stack to the value before change to ProtectedMode
+    mov  ax, BIOS_SEG
+    mov  ss, ax
+    mov  sp, bx     // restore SP from EBX
+
+    // restore segments for real-mode
+    mov  ds, ax
+    mov  es, ax
+    mov  fs, ax
+    mov  gs, ax
+
+.pm_memcpy_done:
+    pop  gs
+    pop  fs
+    pop  es
+    pop  ds
+    popad
+
+    sti
+    ret
+
+
+
 // ========================================================
 // FUNCTIONS FOR TINY8086 BASIC
 // ========================================================
@@ -916,3 +1078,21 @@ basic_binary:
 // ========================================================
 // END OF TINY8086 BASIC
 // ========================================================
+
+
+
+
+// ========================================================
+// Some codes for testing and debugging
+// ========================================================
+/*
+    // write char on UART
+    mov dx, 0x1005  // load UART_LSR
+    .wait_for_uart1:
+    in al, dx
+    test al, 0x20
+    jz .wait_for_uart1
+    mov ax, 0x0041  // 'A'
+    mov dx, 0x1000  // load UART_THR
+    out dx, al      // send char
+*/

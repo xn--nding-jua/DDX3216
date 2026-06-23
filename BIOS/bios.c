@@ -303,6 +303,37 @@ void wdt_disable() {
 	write_sc300_cfg(0xCB, 0x00);
 }
 
+/*
+    The following function switches the CPU to ProtectedMode, copies data and switches back to RealMode
+    
+    As all variables in the BIOS are based on ROM_SEG, we first have to convert the near-pointers
+    to flat-32-bit-pointers using the desired segment
+
+    Usage:
+    ==========================================
+    diy_memcpy(nearPtr_to_linearPtr(&dst_in_ROM_SEG, BIOS_SEG), nearPtr_to_linearPtr(&src_in_ROM_SEGm, BIOS_SEG), len);
+
+    Example:
+    ==========================================
+    uint16_t test1 = 0x1234;
+    uint16_t test2 = 0x0000;
+    uint16_t test3 = 0x0000;
+    memcpy(nearPtr_to_linearPtr(&test3, BIOS_SEG), nearPtr_to_linearPtr(&test1, BIOS_SEG), sizeof(uint16_t));
+    memcpy(nearPtr_to_linearPtr(&test2, BIOS_SEG), nearPtr_to_linearPtr(&test3, BIOS_SEG), sizeof(uint16_t));
+    lcd_print_uint16(test2, true);
+    while(1) { __asm__("hlt"); }
+*/
+static inline uint32_t* nearPtr_to_linearPtr(void *ptr, uint16_t segment) {
+    return (uint32_t*)(((uint32_t)segment << 4) + (uint16_t)(uintptr_t)ptr);
+}
+void memcpy(void* dst, void* src, uint32_t len) {
+    struct pm_memcpy_params p;
+    p.src   = (uint32_t)src;
+    p.dst   = (uint32_t)dst;
+    p.count = len;
+    pm_memcpy(&p);
+}
+
 void boot_dos() {
     /*
     Phase 1: Loading MBR into RAM at 0x7C00 (512 Bytes)
