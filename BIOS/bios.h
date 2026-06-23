@@ -52,6 +52,7 @@ struct pm_memcpy_params {
     uint32_t count;
 } __attribute__((packed));
 extern void __attribute__((regparm(1))) pm_memcpy(struct pm_memcpy_params *params);
+void memcpy(void* dst, void* src, uint32_t len);
 
 // ISRs from Assembler-Part
 extern void launch_bootsector(void) __attribute__((cdecl));
@@ -91,7 +92,6 @@ void boot_dos();
 bool a20_is_enabled();
 void a20_enable();
 void a20_disable();
-void memcpy(void* dst, void* src, uint32_t len);
 
 static const char hex_chars[] = "0123456789ABCDEF";
 

@@ -361,4 +361,8 @@ static inline void set_ivt_entry(uint8_t int_no, uint16_t offset, uint16_t segme
     writeFarWord(0x0000, base + 2, segment);
 }
 
+static inline uint32_t* nearToLinearPtr(void *ptr, uint16_t segment) {
+    return (uint32_t*)(((uint32_t)segment << 4) + (uint16_t)(uintptr_t)ptr);
+}
+
 #endif

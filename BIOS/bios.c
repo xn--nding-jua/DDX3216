@@ -311,21 +311,18 @@ void wdt_disable() {
 
     Usage:
     ==========================================
-    diy_memcpy(nearPtr_to_linearPtr(&dst_in_ROM_SEG, BIOS_SEG), nearPtr_to_linearPtr(&src_in_ROM_SEGm, BIOS_SEG), len);
+    diy_memcpy(nearToLinearPtr(&dst_in_ROM_SEG, BIOS_SEG), nearToLinearPtr(&src_in_ROM_SEGm, BIOS_SEG), len);
 
     Example:
     ==========================================
     uint16_t test1 = 0x1234;
     uint16_t test2 = 0x0000;
     uint16_t test3 = 0x0000;
-    memcpy(nearPtr_to_linearPtr(&test3, BIOS_SEG), nearPtr_to_linearPtr(&test1, BIOS_SEG), sizeof(uint16_t));
-    memcpy(nearPtr_to_linearPtr(&test2, BIOS_SEG), nearPtr_to_linearPtr(&test3, BIOS_SEG), sizeof(uint16_t));
+    memcpy(nearToLinearPtr(&test3, BIOS_SEG), nearToLinearPtr(&test1, BIOS_SEG), sizeof(uint16_t));
+    memcpy(nearToLinearPtr(&test2, BIOS_SEG), nearToLinearPtr(&test3, BIOS_SEG), sizeof(uint16_t));
     lcd_print_uint16(test2, true);
     while(1) { __asm__("hlt"); }
 */
-static inline uint32_t* nearPtr_to_linearPtr(void *ptr, uint16_t segment) {
-    return (uint32_t*)(((uint32_t)segment << 4) + (uint16_t)(uintptr_t)ptr);
-}
 void memcpy(void* dst, void* src, uint32_t len) {
     struct pm_memcpy_params p;
     p.src   = (uint32_t)src;
@@ -424,8 +421,8 @@ __attribute__((noreturn)) void bios_main() {
 
     lcd_print_string("Init UART...\n", 0x07);
     uart_init(9600);
-    pirq_init();
-	uart_interrupt_enable();
+    //pirq_init();
+	//uart_interrupt_enable();
 	uart_print_string("AMD Elan SC300 BIOS v0.01\n");
 
     lcd_print_string("Init keyboard...", 0x07); // no linefeed here
@@ -436,6 +433,21 @@ __attribute__((noreturn)) void bios_main() {
 
     __asm__ volatile ("sti");
     ddx3216_setLEDs();
+
+    /*
+    //////// DEBUG START
+        // the following functions copys a 16-bit data from the ROM_SEG into the extended DRAM
+        // and then back to the ROM_SEG to test if the external DRAM is working. The
+        // LCD should show the value of test1 in test2 afterwards
+        uint16_t test1 = 0x1234;
+        uint16_t test2 = 0x0000;
+        uint16_t test3 = 0x0000;
+        memcpy(nearToLinearPtr(&test3, BIOS_SEG), nearToLinearPtr(&test1, BIOS_SEG), sizeof(uint16_t));
+        memcpy(nearToLinearPtr(&test2, BIOS_SEG), nearToLinearPtr(&test3, BIOS_SEG), sizeof(uint16_t));
+        lcd_print_uint16(test2, true);
+        while(1) { __asm__("hlt"); }
+    //////// DEBUG END
+    */
 
     #if BIOS_SKIP_DOS_OR_BASIC == 0
         lcd_print_string("Init CF-Card...", 0x07); // no linefeed here

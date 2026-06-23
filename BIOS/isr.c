@@ -247,7 +247,7 @@ __attribute__((externally_visible, regparm(1))) void c_int10_handler(struct inte
         // set cursor position
         uint8_t dh = (uint8_t)(regs->dx >> 8); // DH = Row
         uint8_t dl = (uint8_t)(regs->dx & 0xFF); // DL = Column
-        if ((dh < 7) && (dl < 30)) {
+        if ((dh < 8) && (dl < 30)) {
             writeFarByte(BASE_SEG, BDA_CURSOR_POS_ROW, dh);
             writeFarByte(BASE_SEG, BDA_CURSOR_POS_COL, dl);
 
@@ -279,10 +279,18 @@ __attribute__((externally_visible, regparm(1))) void c_int10_handler(struct inte
     }else if (ah == 0x09) {
         // write character and attribute at cursor position
         // regs->cx contains number of timers of character
+
+        //uint8_t attr = regs->bx & 0xFF;
+        //for (uint16_t i = 0; i < regs->cx; i++) {
+        //    lcd_putc(al, attr);
+        //}
         lcd_putc(al, regs->bx & 0xFF);
     }else if (ah == 0x0A) {
         // write character only at cursor position
         // regs->cx contains number of timers of character
+        //for (uint16_t i = 0; i < regs->cx; i++) {
+        //    lcd_putc(al, 0x07);
+        //}
         lcd_putc(al, 0x07); // light gray on black
     }else if (ah == 0x0C) {
         // write graphics pixel
@@ -309,6 +317,39 @@ __attribute__((externally_visible, regparm(1))) void c_int10_handler(struct inte
         // number of rows is set in BDA and not returned via INT10h, because DOS will ignore the returned value anyway and would always assume 25 rows
         regs->ax = ((uint16_t)30 << 8) | 0x03; // 40x25 char in grayscale-text mode
         regs->bx = 0x0000; // BH = 0
+    }else if (ah == 0x13) {
+        // write string
+
+        bool update_cursor = al & 0x01;
+        bool has_attr      = al & 0x02;
+
+        uint8_t row = regs->dx >> 8;
+        uint8_t col = regs->dx & 0xFF;
+
+        writeFarByte(BASE_SEG, BDA_CURSOR_POS_ROW, row);
+        writeFarByte(BASE_SEG, BDA_CURSOR_POS_COL, col);
+
+        uint16_t ptr = regs->bp;
+
+        for (uint16_t i = 0; i < regs->cx; i++) {
+            char ch = (char)readFarByte(regs->es, ptr++);
+
+            uint8_t attr;
+            if (has_attr) {
+                attr = readFarByte(regs->es, ptr++);
+            } else {
+                attr = regs->bx & 0xFF;
+            }
+
+            lcd_putc(ch, attr);
+        }
+
+        if (!update_cursor) {
+            writeFarByte(BASE_SEG, BDA_CURSOR_POS_ROW, row);
+            writeFarByte(BASE_SEG, BDA_CURSOR_POS_COL, col);
+        }
+
+        regs->flags &= ~ISR_FLAGS_CF;
     }else{
         // simply ignore other video-functions like set cursor, etc.
     }
@@ -345,24 +386,42 @@ __attribute__((externally_visible, regparm(1))) void c_int12_handler(struct inte
 	regs->ax = readFarWord(0x0000, BDA_MEM_SIZE);
 }
 
-static uint8_t __attribute__((noinline)) do_read_sectors(uint32_t start_lba, uint16_t seg, uint16_t off, uint8_t count) {
-    for (uint8_t s = 0; s < count; s++) {
-        uint8_t err = ide_read_sector(start_lba + (uint32_t)s, seg, off + ((uint16_t)s * 512));
-        if (err) return err;
+static uint8_t __attribute__((noinline)) do_read_sectors(uint32_t start_lba, uint16_t seg, uint16_t off, uint16_t count) {
+    uint32_t linear = ((uint32_t)seg << 4) + off;
+
+    for (uint16_t s = 0; s < count; s++) {
+        uint16_t cur_seg = (uint16_t)(linear >> 4);
+        uint16_t cur_off = (uint16_t)(linear & 0x000F);
+
+        uint8_t err = ide_read_sector(start_lba + (uint32_t)s, cur_seg, cur_off);
+        if (err) {
+            return err;
+        }
+
+        linear += 512;
     }
     return 0;
 }
 
-static uint8_t __attribute__((noinline)) do_write_sectors(uint32_t start_lba, uint16_t seg, uint16_t off, uint8_t count) {
-    for (uint8_t s = 0; s < count; s++) {
-        uint8_t err = ide_write_sector(start_lba + (uint32_t)s, seg, off + ((uint16_t)s * 512));
-        if (err) return err;
+static uint8_t __attribute__((noinline)) do_write_sectors(uint32_t start_lba, uint16_t seg, uint16_t off, uint16_t count) {
+    uint32_t linear = ((uint32_t)seg << 4) + off;
+
+    for (uint16_t s = 0; s < count; s++) {
+        uint16_t cur_seg = (uint16_t)(linear >> 4);
+        uint16_t cur_off = (uint16_t)(linear & 0x000F);
+
+        uint8_t err = ide_write_sector(start_lba + (uint32_t)s, cur_seg, cur_off);
+        if (err) {
+            return err;
+        }
+
+        linear += 512;
     }
     return 0;
 }
 
-static uint8_t __attribute__((noinline)) do_verify_sectors(uint32_t start_lba, uint8_t count) {
-    for (uint8_t s = 0; s < count; s++) {
+static uint8_t __attribute__((noinline)) do_verify_sectors(uint32_t start_lba, uint16_t count) {
+    for (uint16_t s = 0; s < count; s++) {
         uint8_t err = ide_verify_sector(start_lba + (uint32_t)s);
         if (err) return err;
     }
@@ -551,10 +610,13 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
         }else{
             // enable LBA-support
             regs->bx    = 0xAA55;      // send back magic word
-            regs->ax    = 0x3000;      // AH = Version 3.0
-            regs->cx    = 0x0007;      // Bit 0: Extended Disk Access
+            //regs->ax    = 0x3000;      // AH = Version 3.0
+            //regs->cx    = 0x0007;      // Bit 0: Extended Disk Access
                                         // Bit 1: Removable Drive Support
                                         // Bit 2: EDD (Enhanced Disk Drive)
+            regs->ax = 0x2100;
+            regs->cx = 0x0001;          // only support extended Read/Write AH=42h/43h
+
             regs->flags &= ~ISR_FLAGS_CF;    // CF=0: Extensions available
         }
     }else if (ah == 0x42) {
@@ -644,26 +706,35 @@ __attribute__((externally_visible, regparm(1))) void c_int13_handler(struct inte
         uint16_t buf_segment = regs->ds;
         uint16_t buf_offset  = regs->si;
 
-        // check buffer-size (first two bytes)
-        uint16_t buf_size = readFarWord(buf_segment, buf_offset);
+        uint16_t caller_size = readFarWord(buf_segment, buf_offset);
 
-        struct drive_params_ext params;
-        params.size           = buf_size;
-        params.flags          = 0x0002;        // Bit 1: LBA supported
-        params.cylinders      = hd0_params.cylinders;
-        params.heads          = hd0_params.heads;
-        params.sectors        = hd0_params.sectors_per_track;
-        params.total          = (uint64_t)hd0_params.cylinders * (uint64_t)hd0_params.heads * (uint64_t)hd0_params.sectors_per_track;
-        params.bytes_per_sect = 512; // we only support 512 bytes per sector, so this is fixed to 512
+        if (caller_size < 0x1A) {
+            regs->ax = 0x0100;
+            regs->flags |= ISR_FLAGS_CF;
+        }else{
+            struct drive_params_ext params;
+            params.size           = 0x001A;
+            params.flags          = 0x0002;        // geometry valid / LBA info
+            params.cylinders      = hd0_params.cylinders;
+            params.heads          = hd0_params.heads;
+            params.sectors        = hd0_params.sectors_per_track;
+            params.total          = (uint64_t)hd0_params.cylinders * (uint64_t)hd0_params.heads * (uint64_t)hd0_params.sectors_per_track;
+            params.bytes_per_sect = 512; // we only support 512 bytes per sector, so this is fixed to 512
 
-        // write structure in buffer of caller
-        uint8_t *p = (uint8_t*)&params;
-        for (uint8_t i = 0; i < sizeof(params); i++) {
-            writeFarByte(buf_segment, buf_offset + i, p[i]);
+            // write structure in buffer of caller
+            uint16_t write_size = sizeof(params);
+            if (write_size > caller_size) {
+                write_size = caller_size;
+            }
+
+            uint8_t *p = (uint8_t*)&params;
+            for (uint16_t i = 0; i < write_size; i++) {
+                writeFarByte(buf_segment, buf_offset + i, p[i]);
+            }
+
+            regs->ax    = 0x0000;
+            regs->flags &= ~ISR_FLAGS_CF;
         }
-
-        regs->ax    = 0x0000;
-        regs->flags &= ~ISR_FLAGS_CF;
     }else{
         regs->ax = 0x0100;
         regs->flags |= ISR_FLAGS_CF; // Carry Set
@@ -805,35 +876,29 @@ __attribute__((externally_visible, regparm(1))) void c_int15_handler(struct inte
         uint16_t gdt_off = regs->si;
         
         // source-descriptor: Offset 0x10 in GDT-table
-        uint32_t src_base =
+        uint32_t* src_base = (uint32_t*)(
             ((uint32_t)readFarByte(gdt_seg, gdt_off + 0x12))       |
             ((uint32_t)readFarByte(gdt_seg, gdt_off + 0x13) << 8)  |
             ((uint32_t)readFarByte(gdt_seg, gdt_off + 0x14) << 16) |
-            ((uint32_t)readFarByte(gdt_seg, gdt_off + 0x17) << 24);
+            ((uint32_t)readFarByte(gdt_seg, gdt_off + 0x17) << 24));
         
         // destination-descriptor: Offset 0x18 in GDT-table
-        uint32_t dst_base =
+        uint32_t* dst_base = (uint32_t*)(
             ((uint32_t)readFarByte(gdt_seg, gdt_off + 0x1A))       |
             ((uint32_t)readFarByte(gdt_seg, gdt_off + 0x1B) << 8)  |
             ((uint32_t)readFarByte(gdt_seg, gdt_off + 0x1C) << 16) |
-            ((uint32_t)readFarByte(gdt_seg, gdt_off + 0x1F) << 24);
+            ((uint32_t)readFarByte(gdt_seg, gdt_off + 0x1F) << 24));
         
-        uint32_t count = (uint32_t)regs->cx * 2; // CX = number of words
+        uint32_t byte_count = (uint32_t)regs->cx * 2; // CX contains number of words
         
-        a20_enable();
-
         // copy data in extended memory using protected mode
-        struct pm_memcpy_params p;
-        p.src   = src_base;
-        p.dst   = dst_base;
-        p.count = count;
-        pm_memcpy(&p);
+        memcpy(dst_base, src_base, byte_count);
 
         regs->ax = 0x0000;
         regs->flags &= ~ISR_FLAGS_CF;
     }else if (ah == 0x88) {
         // Request Extended Memory Size
-        regs->ax = (BIOS_TOTAL_MEMORY_MB * 1024) - 1024; // remove the lower 1MB
+        regs->ax = ((BIOS_TOTAL_MEMORY_MB - 1) * 1024); // remove the lower 1MB
         regs->flags &= ~ISR_FLAGS_CF; // Clear Carry Flag (Success)
     }else if ((ah == 0x90) || (ah == 0x91)) {
         // AH=90h: Device busy
@@ -842,8 +907,8 @@ __attribute__((externally_visible, regparm(1))) void c_int15_handler(struct inte
         regs->flags &= ~ISR_FLAGS_CF;
     }else if (ah == 0xC0) {
         // Get Configuration Table
-        regs->es = 0xF000;
-        regs->bx = (uint16_t)(uintptr_t)&sysconfig; // pointer to config. TODO: check if this is correct
+        regs->es = BIOS_SEG;
+        regs->bx = (uint16_t)(uintptr_t)&sysconfig; // pointer to config
 
         regs->ax = 0x0000;
         regs->flags &= ~ISR_FLAGS_CF;  // clear Carry Flag
@@ -870,10 +935,15 @@ __attribute__((externally_visible, regparm(1))) void c_int15_handler(struct inte
             regs->ax = 0x8600;
             regs->flags |= ISR_FLAGS_CF; // Set Carry Flag
         }else if (al == 0x01) {
-            // memsize2
-            // unsupported
-            regs->ax = 0x8600;
-            regs->flags |= ISR_FLAGS_CF; // Set Carry Flag
+            // memsize
+
+            // AX/CX = Memory-size in kB between 1MB and 16MB
+            // BX/DX = 64KB-blocks above 16MB
+            regs->ax = (BIOS_TOTAL_MEMORY_MB - 1) * 1024;
+            regs->bx = 0;
+            regs->cx = (BIOS_TOTAL_MEMORY_MB - 1) * 1024;
+            regs->dx = 0;
+            regs->flags &= ~ISR_FLAGS_CF;
         }else{
             // unsupported
             regs->ax = 0x8600;
@@ -1091,6 +1161,10 @@ __attribute__((externally_visible, regparm(1))) void c_int29_handler(struct inte
         lcd_print_string("INT29\n", 0x07);
         lcd_putc((char)(regs->ax & 0xFF), 0x07);
     #endif
+
+    char c = (char)(regs->ax & 0xFF);
+    lcd_putc(c, 0x07);
+    regs->flags &= ~ISR_FLAGS_CF;
 }
 
 static uint8_t pic_read_isr_master(void) {

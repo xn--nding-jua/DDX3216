@@ -29,9 +29,12 @@
 // 0xF0000 - 0xFFFFF | 64 kB      | Motherboard BIOS (we)
 // -- extended memory -------------------------------------------------------
 // 0x100000 - 0xFFFFFF | 16 MB | Extended Memory Area (see ref-manual on page 5-85 for /DOSCS-mapping)
-// 0x100000 - 0x1FFFFF | 1 MB  | External DRAM Memory (RAM)
-// 0xE00000 - 0xFEFFFF | 2 MB  | External Flash-Memory (RDOSSIZ[3..0] = 0010)
-// 
+//
+// DOSROM can be mapped to extended memory when setting register 0xB8
+// The possible start addresses ranges from 0x100000 to 0xF00000 depending on the size of the FLASH
+// example:
+// 0xE00000 - 0xFEFFFF | 2 MB  | External Flash-Memory (DOSROM) (RDOSSIZ[3..0] = 0010)
+// but for now DOSROM is not enabled and the full 16MB DRAM are available in flat-memory-model
 // 
 // memory-map of external Video-SRAM in CGA Text Mode
 // start     end     | size   | description
@@ -45,7 +48,7 @@
 // 
 // 
 // 1. Reset-Vector is called at end of 4GB Address-range at 0xFFFFFFF0 (ROM is displayed here during "Un"real mode)
-// 2. Far-Jump to address 0x000F0000 in ROM_SEG at 0xF000 (DS is set to ROM_SEG = 0xF000)
+// 2. Far-Jump to address ROM_PHYS_BASE in ROM_SEG at 0xF000 (DS is set to ROM_SEG = 0xF000)
 // 3. CPU is now in "real" 16-bit RealMode
 // 4. DataSegment DS and StackSegment SS are set to 0x0000, CodeSegment CS is kept at 0xF000 but C-Code and ISRs are still called from ROM_SEG
 //
@@ -60,6 +63,8 @@
 .equ BIOS_STACK_TOP,  0x0800    // STACK-Pointer is 0x9F80 + 0x0800 = 0x9F800 + 0x0800 = 0xA0000
 .equ BOOT_STACK_SEG,  0x0000    // only during initialization. Will be changed later to 0x9F80
 .equ BOOT_STACK_TOP,  0x7C00    // STACK-Pointer during boot is 0x0000 + 0x7C00 = 0x00000 + 0x7C00 = 0x07C00
+.equ ROM_PHYS_BASE,   0x000F0000
+.equ ROM_LINK_BASE,   0xFFFF0000
 
 .equ CFG_ADDR,        0x22
 .equ CFG_DATA,        0x23
@@ -909,6 +914,8 @@ pm_memcpy:
 
     // get real linear 32-bit address of GDT
     mov  eax, OFFSET gdt_start
+    //sub  eax, ROM_LINK_BASE
+    //add  eax, ROM_PHYS_BASE
     
     // build the GDTR on the stack temporary as we cannot write to the ROM
     sub  sp, 6
@@ -917,7 +924,7 @@ pm_memcpy:
     mov  DWORD PTR ss:[bp+2], eax
 
     // load GDTR
-    lgdt ss:[bp]                            // load GDT with absolute 32-bit-base from stack
+    data32 lgdt ss:[bp]                     // load GDT with absolute 32-bit-base from stack
     add  sp, 6                              // cleanup the stack
 
     // read parameters from C-struct
@@ -934,6 +941,44 @@ pm_memcpy:
     // store SP in EBX (BX is unused now)
     movzx ebx, sp        // EBX = current 16-bit SP
 
+
+    //////// DEBUG START
+    /*
+        // write char on UART
+        mov dx, 0x1005  // load UART_LSR
+        .wait_for_uart1:
+        in al, dx
+        test al, 0x20
+        jz .wait_for_uart1
+        mov ax, 'm'
+        mov dx, 0x1000  // load UART_THR
+        out dx, al      // send char
+
+        // write char on UART
+        mov dx, 0x1005  // load UART_LSR
+        .wait_for_uart2:
+        in al, dx
+        test al, 0x20
+        jz .wait_for_uart2
+        mov ax, 'e'
+        mov dx, 0x1000  // load UART_THR
+        out dx, al      // send char
+
+        // write char on UART
+        mov dx, 0x1005  // load UART_LSR
+        .wait_for_uart3:
+        in al, dx
+        test al, 0x20
+        jz .wait_for_uart3
+        mov ax, 'm'
+        mov dx, 0x1000  // load UART_THR
+        out dx, al      // send char
+    */
+    //////// DEBUG END
+
+
+
+
     // -------------------------------------------------------
     // enable Protected Mode: CR0 Bit 0 setzen
     // -------------------------------------------------------
@@ -943,6 +988,9 @@ pm_memcpy:
 
     // far-jmp to 32-bit code-segment
     data32 jmp 0x0008:OFFSET .init_pm
+    //.byte 0x66, 0xEA
+    //.long (.init_pm - ROM_LINK_BASE + ROM_PHYS_BASE)
+    //.word 0x0008
 
     // -------------------------------------------------------
     // from here: 32-Bit Protected Mode with flat memory model
@@ -968,6 +1016,7 @@ pm_memcpy:
     .byte 0x66, 0x68                        // 16-bit push
     .word 0x0018                            // 16-bit code selector
     push OFFSET .init_rm
+    //push (.init_rm - ROM_LINK_BASE + ROM_PHYS_BASE)
     retf
 
     // -------------------------------------------------------
@@ -981,6 +1030,7 @@ pm_memcpy:
 
     .byte 0xEA
     .word .pm_memcpy_back_to_rm
+    //.word (.pm_memcpy_back_to_rm - ROM_LINK_BASE)
     .word ROM_SEG
 
 .pm_memcpy_back_to_rm:
