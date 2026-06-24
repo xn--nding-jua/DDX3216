@@ -206,7 +206,7 @@ __attribute__((externally_visible)) void c_int0c_handler() {
 
         if (reason == IIR_RLS) {
             // receiver line status (errors, break)
-            inb(UART_LSR); // LSR lesen löscht diesen Interrupt
+            inb(UART_LSR); // reading LSR clears the interrupt
         }else if (reason == IIR_RDA) {
             // receive data available
             uint8_t c = inb(UART_RBR); // this resets the IRQ

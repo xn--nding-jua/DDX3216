@@ -67,14 +67,22 @@ void uart_print_string_ram(const char* str) {
 }
 
 void uart_interrupt_enable() {
+    // enable FIFO with Trigger-Level to 1 Byte
+    outb(UART_FCR, 0x07);
+
 	// enable receiver data available interrupt
 	outb(UART_IER, 0x01);
 	
-	// set bit 2 in modem control register
+	// set bit 3 in modem control register
 	uint8_t mcr = inb(UART_MCR);
     outb(UART_MCR, mcr | 0x08);
 	
 	// update PIC mask and enable IRQ4
 	uint8_t mask = inb(0x21);
     outb(0x21, mask & ~(1 << 4));
+}
+
+void uart_interrupt_disable() {
+	// disable receiver data available interrupt
+	outb(UART_IER, 0x00);
 }

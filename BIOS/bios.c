@@ -228,6 +228,11 @@ void kbd_init() {
 }
 
 void pic_init() {
+    // see page 4-2 in ProgrammersReferenceManual
+
+    // the ELAN SC300 has two integrated 8259A-compatible interrupt controller
+    // 
+
     // ICW1: Start initialization, edge-triggered, cascade
     outb(0x20, 0x11);   // Master PIC
     outb(0xA0, 0x11);   // Slave PIC
@@ -244,9 +249,9 @@ void pic_init() {
     outb(0x21, 0x01);
     outb(0xA1, 0x01);
 
-    // OCW1: IRQ-Maske - alle außer Timer(0) und Keyboard(1) sperren
-    outb(0x21, 0b11111100);   // demask IRQ0 and IRQ1
-    outb(0xA1, 0xFF);   // Slave komplett sperren
+    // OCW1: IRQ-Mask - lock all Interrupts but keep IRQ0..2 enabled
+    outb(0x21, 0b11111000); // demask IRQ0 (Timer), IRQ1 (Keyboard) and IRQ2 (Cascade)
+    outb(0xA1, 0xFF); // lock slave-PIC as IRQ2 controls slave
 }
 
 void cpu_reset() {
@@ -421,8 +426,8 @@ __attribute__((noreturn)) void bios_main() {
 
     lcd_print_string("Init UART...\n", 0x07);
     uart_init(9600);
-    //pirq_init();
-	//uart_interrupt_enable();
+    pirq_init();
+	uart_interrupt_enable();
 	uart_print_string("AMD Elan SC300 BIOS v0.01\n");
 
     lcd_print_string("Init keyboard...", 0x07); // no linefeed here
